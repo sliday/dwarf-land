@@ -2,7 +2,7 @@
 <html lang="en" data-theme="grunge">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧔</text></svg>">
 <title>Dwarf Land</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daub-ui@latest/daub.css">
@@ -49,7 +49,7 @@
     100% { width: 95%; }
   }
 
-  #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  #game-canvas { position: absolute; top: 0; left: 0; image-rendering: pixelated; }
 
   .hud-top {
     position: absolute; top: 0; left: 0; right: 0;
@@ -178,6 +178,72 @@
   .insp-sponsor .sponsor-active { font-size: 10px; color: #fabd2f; }
   .insp-sponsor .sponsor-btn { background: #504945; color: #fbf1c7; border: 1px solid #7c6f64; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-weight: 600; }
   .insp-sponsor .sponsor-btn:hover { background: #665c54; border-color: #a89984; }
+
+  /* ---- Mobile ---- */
+  .mobile .hud-top { gap: 8px; padding: 6px 8px; }
+  .mobile .hud-stat .value { font-size: 16px; }
+  .mobile .hud-stat .label { font-size: 8px; }
+  @media (max-width: 430px) {
+    .mobile #hud-sponsored-wrap { display: none; }
+    .mobile .hud-stat .value#h-res { font-size: 11px; }
+    .mobile .hud-stat .value#h-city { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
+
+  .mobile .controls {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    flex-direction: row; justify-content: space-around; flex-wrap: wrap;
+    padding: 8px; padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    border-top: 1px solid #504945; border-left: none; border-radius: 0;
+    background: rgba(29,32,33,0.97);
+  }
+  .mobile .controls .section-label { display: none; }
+  .mobile .speed-btn, .mobile .action-btn {
+    min-width: 44px; min-height: 44px; font-size: 18px; padding: 8px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .mobile .event-log {
+    width: 100%; max-width: 100%; bottom: 56px; left: 0; right: 0;
+    max-height: 120px; border-radius: 8px 8px 0 0;
+    border-right: none;
+  }
+  .mobile .event-log.collapsed .log-body { display: none; }
+  .mobile .event-log.collapsed { max-height: 28px; }
+
+  .mobile .inspector-panel {
+    top: auto !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+    width: 100%; max-width: 100%; max-height: 60vh;
+    border-radius: 12px 12px 0 0; border: none; border-top: 1px solid #504945;
+    transform: translateY(100%); transition: transform 0.3s ease;
+    display: block !important;
+  }
+  .mobile .inspector-panel.open { transform: translateY(0); }
+  .mobile .insp-header { cursor: default; }
+  .insp-drag-handle { display: none; }
+  .mobile .insp-drag-handle {
+    display: block; width: 40px; height: 5px; border-radius: 3px; background: #665c54;
+    margin: 6px auto 2px; cursor: grab;
+  }
+
+  .mobile .minimap { width: 100px; height: 50px; opacity: 0.7; }
+  @media (max-width: 430px) { .mobile .minimap { display: none; } }
+
+  .mobile .status-bar { display: none; }
+
+  .mobile-cancel-btn { display: none; }
+  .mobile .mobile-cancel-btn {
+    position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%);
+    min-width: 48px; min-height: 48px; font-size: 16px; z-index: 20;
+    background: #cc241d; color: #fbf1c7; border: none; border-radius: 24px;
+    padding: 8px 16px; font-family: inherit; font-weight: 600; cursor: pointer;
+    display: none;
+  }
+  .mobile .mobile-cancel-btn.visible { display: block; }
+
+  .mobile .mode-border { box-shadow: inset 0 0 0 3px #fabd2f; }
+  .mobile .mode-border.build { box-shadow: inset 0 0 0 3px #83a598; }
+  .mobile .mode-border.farm { box-shadow: inset 0 0 0 3px #8ec07c; }
+  .mobile .mode-border.road { box-shadow: inset 0 0 0 3px #d5c4a1; }
 </style>
 </head>
 <body>
@@ -232,12 +298,14 @@
 </div>
 
 <div class="inspector-panel" id="inspector-panel">
+  <div class="insp-drag-handle" id="insp-drag-handle"></div>
   <div class="insp-header">
     <span class="insp-title" id="insp-title">Inspector</span>
     <button class="insp-close" id="btn-close-insp">&times;</button>
   </div>
   <div class="insp-body" id="insp-body"></div>
 </div>
+<button class="mobile-cancel-btn" id="mobile-cancel-btn">Cancel</button>
 
 <!-- Splash Modal -->
 <div class="db-modal-overlay" id="splash-modal" aria-hidden="true">
@@ -745,7 +813,14 @@ const G = {
   hovTile: null, mapDirty: true,
   homeCity: null, aiCityIndex: 0,
   followDwarf: null,
+  zoom: 1.0,
 };
+
+const isMobile = 'ontouchstart' in window;
+if (isMobile) { document.body.classList.add('mobile'); G.zoom = 1.5; }
+
+// ---- Web Worker ----
+let gameWorker = null, workerActive = false;
 
 // Helper: find city by id
 function cityById(id) { return CITIES.find(c => c.id === id); }
@@ -2708,14 +2783,16 @@ document.getElementById('log-body').addEventListener('click', (e) => {
   G.cam.x = d.x * TILE - canvas.width / 2;
   G.cam.y = d.y * TILE - canvas.height / 2;
   showDwarfInspector(d);
-  inspPanel.style.display = 'block';
+  if (isMobile) inspPanel.classList.add('open'); else inspPanel.style.display = 'block';
 });
 document.getElementById('btn-clear-log').onclick = () => { logEntries.length = 0; renderLog(); };
 
 // ---- Rendering ----
 function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  canvas.width = Math.ceil(window.innerWidth / G.zoom);
+  canvas.height = Math.ceil(window.innerHeight / G.zoom);
+  canvas.style.transform = 'scale(' + G.zoom + ')';
+  canvas.style.transformOrigin = '0 0';
 }
 window.addEventListener('resize', resize);
 
@@ -2971,7 +3048,8 @@ function openInspector(tile) {
   else if (ship) showShipInspector(ship);
   else if (city) showCityInspector(city);
   else showTerrainInspector(tile);
-  inspPanel.style.display = 'block';
+  if (isMobile) inspPanel.classList.add('open');
+  else inspPanel.style.display = 'block';
 }
 
 function showShipInspector(ship) {
@@ -3018,7 +3096,10 @@ function showShipInspector(ship) {
 
   inspBody.textContent = ''; inspBody.appendChild(frag);
 }
-function closeInspector() { inspPanel.style.display = 'none'; }
+function closeInspector() {
+  if (isMobile) inspPanel.classList.remove('open');
+  else inspPanel.style.display = 'none';
+}
 document.getElementById('btn-close-insp').onclick = closeInspector;
 
 // Draggable inspector via header
@@ -3026,6 +3107,7 @@ document.getElementById('btn-close-insp').onclick = closeInspector;
   const header = document.querySelector('.insp-header');
   let dragging = false, ox = 0, oy = 0;
   header.addEventListener('mousedown', (e) => {
+    if (isMobile) return;
     if (e.target.closest('.insp-close')) return;
     dragging = true;
     ox = e.clientX - inspPanel.offsetLeft;
@@ -3129,7 +3211,7 @@ function showDwarfInspector(dw) {
     const carryDiv = document.createElement('div');
     carryDiv.style.cssText = 'font-size:9px;color:#d5c4a1;margin:4px 0;background:#3c3836;padding:2px 4px;border-radius:2px';
     const items = Object.entries(dw.carryItems || {}).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${k}`).join(', ');
-    carryDiv.textContent = `\uD83C\uDF92 Carrying: ${items} (${dw.carrying}/${carryCapacity(dw)})`;
+    carryDiv.textContent = `\uD83C\uDF92 Carrying: ${items} (${dw.carrying}/${dw.carryMax || carryCapacity(dw)})`;
     frag.appendChild(carryDiv);
   }
 
@@ -3298,22 +3380,24 @@ function showTerrainInspector(tile) {
 }
 
 // ---- Input ----
-function tileFromMouse(e) {
-  const gx = Math.floor((e.clientX + G.cam.x) / TILE);
-  const gy = Math.floor((e.clientY + G.cam.y) / TILE);
+function tileFromPoint(cx, cy) {
+  const gx = Math.floor((cx / G.zoom + G.cam.x) / TILE);
+  const gy = Math.floor((cy / G.zoom + G.cam.y) / TILE);
   if (gy < 0 || gy >= MAP_H) return null;
   return { x: wrapX(gx), y: gy, gx };
 }
+function tileFromMouse(e) { return tileFromPoint(e.clientX, e.clientY); }
 
 let rightDrag = false, dragLast = null;
 
 canvas.addEventListener('mousemove', e => {
+  if (isMobile) return;
   const tile = tileFromMouse(e);
   G.hovTile = tile;
 
   if (rightDrag && dragLast) {
-    G.cam.x -= e.clientX - dragLast.x;
-    G.cam.y -= e.clientY - dragLast.y;
+    G.cam.x -= (e.clientX - dragLast.x) / G.zoom;
+    G.cam.y -= (e.clientY - dragLast.y) / G.zoom;
     // Clamp Y, wrap X handled in rendering
     G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
     dragLast = { x: e.clientX, y: e.clientY };
@@ -3337,6 +3421,7 @@ canvas.addEventListener('mousemove', e => {
 });
 
 canvas.addEventListener('mousedown', e => {
+  if (isMobile) return;
   if (e.button === 2) { rightDrag = true; dragLast = { x: e.clientX, y: e.clientY }; return; }
   if (e.button !== 0) return;
   if (G.mode === 'normal') {
@@ -3344,13 +3429,13 @@ canvas.addEventListener('mousedown', e => {
     for (const city of CITIES) {
       if (city.mx === undefined) continue;
       for (const offset of [0, MAP_W, -MAP_W]) {
-        const cpx = (city.mx + offset) * TILE - G.cam.x + TILE / 2;
-        const cpy = city.my * TILE - G.cam.y - 4;
-        const labelW = 80; // approximate label width
-        if (e.clientX > cpx - labelW / 2 && e.clientX < cpx + labelW / 2 && e.clientY > cpy - 15 && e.clientY < cpy + 2) {
+        const cpx = ((city.mx + offset) * TILE - G.cam.x + TILE / 2) * G.zoom;
+        const cpy = (city.my * TILE - G.cam.y - 4) * G.zoom;
+        const labelW = 80 * G.zoom;
+        if (e.clientX > cpx - labelW / 2 && e.clientX < cpx + labelW / 2 && e.clientY > cpy - 15 * G.zoom && e.clientY < cpy + 2 * G.zoom) {
           G.followDwarf = null;
           showCityInspector(city);
-          inspPanel.style.display = 'block';
+          if (isMobile) inspPanel.classList.add('open'); else inspPanel.style.display = 'block';
           return;
         }
       }
@@ -3367,10 +3452,8 @@ canvas.addEventListener('mousedown', e => {
   if (tile) { G.drag = tile; G.sel = { x1: tile.gx, y1: tile.y, x2: tile.gx, y2: tile.y }; }
 });
 
-canvas.addEventListener('mouseup', e => {
-  if (e.button === 2) { rightDrag = false; dragLast = null; return; }
+function finalizeDesignation() {
   if (!G.drag || !G.sel) { G.drag = null; return; }
-
   const s = G.sel;
   let count = 0;
   const minable = new Set([T.MOUNTAIN, T.HILL, T.TUNDRA]);
@@ -3407,10 +3490,28 @@ canvas.addEventListener('mouseup', e => {
     if (count) log(`🛤️ Designated ${count} tiles for road building`, 'build');
   }
 
-  if (count) G.mapDirty = true;
+  if (count) {
+    G.mapDirty = true;
+    if (gameWorker) {
+      const changes = [];
+      const target = G.mode === 'mine' ? T.D_MINE : G.mode === 'build' ? T.D_BUILD : G.mode === 'farm' ? T.D_FARM : T.D_ROAD;
+      for (let y = s.y1; y <= s.y2; y++)
+        for (let gx = s.x1; gx <= s.x2; gx++) {
+          const x = wrapX(gx);
+          if (G.map[y][x] === target) changes.push({ x, y, tile: target });
+        }
+      if (changes.length) gameWorker.postMessage({ type: 'designate', changes });
+    }
+  }
   G.drag = null; G.sel = null;
   setMode('normal');
   updateHUD();
+}
+
+canvas.addEventListener('mouseup', e => {
+  if (isMobile) return;
+  if (e.button === 2) { rightDrag = false; dragLast = null; return; }
+  finalizeDesignation();
 });
 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -3426,17 +3527,122 @@ function handleKeys() {
   if (keys['s'] || keys['ArrowDown']) G.cam.y += spd;
   if (keys['a'] || keys['ArrowLeft']) G.cam.x -= spd;
   if (keys['d'] || keys['ArrowRight']) G.cam.x += spd;
-  if (keys[' ']) { G.paused = !G.paused; keys[' '] = false; updateSpeedUI(); }
+  if (keys[' ']) { G.paused = !G.paused; keys[' '] = false; if (gameWorker) gameWorker.postMessage({ type: 'control', paused: G.paused }); updateSpeedUI(); }
   if (keys['Escape']) { setMode('normal'); closeInspector(); G.followDwarf = null; keys['Escape'] = false; }
   // Clamp Y
   G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
 }
 
 canvas.addEventListener('wheel', e => {
-  G.cam.x += e.deltaX;
-  G.cam.y += e.deltaY;
+  G.cam.x += e.deltaX / G.zoom;
+  G.cam.y += e.deltaY / G.zoom;
   G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
   e.preventDefault();
+}, { passive: false });
+
+// ---- Touch ----
+const ZOOM_LEVELS = [0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
+function snapZoom(z) {
+  let best = ZOOM_LEVELS[0];
+  for (const lv of ZOOM_LEVELS) { if (Math.abs(lv - z) < Math.abs(best - z)) best = lv; }
+  return best;
+}
+const touch = { startPos: null, startTime: 0, lastDist: 0, lastCentroid: null,
+  isPanning: false, isPinching: false, isDragging: false,
+  TAP_THRESHOLD: 10, LONG_PRESS_MS: 400 };
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t0 = e.touches[0];
+  if (e.touches.length === 1) {
+    touch.startPos = { x: t0.clientX, y: t0.clientY };
+    touch.startTime = Date.now();
+    touch.isPanning = false; touch.isDragging = false;
+    if (G.mode !== 'normal') {
+      const tile = tileFromPoint(t0.clientX, t0.clientY);
+      if (tile) { G.drag = tile; G.sel = { x1: tile.gx, y1: tile.y, x2: tile.gx, y2: tile.y }; touch.isDragging = true; }
+    }
+  } else if (e.touches.length === 2) {
+    touch.isPanning = false; touch.isDragging = false;
+    const t1 = e.touches[1];
+    touch.lastDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+    touch.lastCentroid = { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+    touch.isPinching = true;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t0 = e.touches[0];
+  if (e.touches.length === 1 && !touch.isPinching) {
+    if (touch.isDragging && G.mode !== 'normal') {
+      const tile = tileFromPoint(t0.clientX, t0.clientY);
+      if (tile && G.drag) {
+        G.sel = {
+          x1: Math.min(G.drag.gx, tile.gx), y1: Math.min(G.drag.y, tile.y),
+          x2: Math.max(G.drag.gx, tile.gx), y2: Math.max(G.drag.y, tile.y)
+        };
+      }
+    } else if (touch.startPos) {
+      const dx = t0.clientX - touch.startPos.x;
+      const dy = t0.clientY - touch.startPos.y;
+      if (!touch.isPanning && Math.hypot(dx, dy) > touch.TAP_THRESHOLD) touch.isPanning = true;
+      if (touch.isPanning) {
+        G.cam.x -= dx / G.zoom;
+        G.cam.y -= dy / G.zoom;
+        G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
+        touch.startPos = { x: t0.clientX, y: t0.clientY };
+      }
+    }
+  } else if (e.touches.length === 2 && touch.isPinching) {
+    const t1 = e.touches[1];
+    const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+    const centroid = { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+    if (touch.lastDist > 0) {
+      const scale = dist / touch.lastDist;
+      const newZoom = Math.max(0.75, Math.min(3.0, G.zoom * scale));
+      G.zoom = newZoom;
+      resize();
+    }
+    if (touch.lastCentroid) {
+      G.cam.x -= (centroid.x - touch.lastCentroid.x) / G.zoom;
+      G.cam.y -= (centroid.y - touch.lastCentroid.y) / G.zoom;
+      G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
+    }
+    touch.lastDist = dist;
+    touch.lastCentroid = centroid;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (touch.isPinching && e.touches.length < 2) {
+    G.zoom = snapZoom(G.zoom);
+    resize();
+    touch.isPinching = false; touch.lastDist = 0; touch.lastCentroid = null;
+    return;
+  }
+  if (touch.isDragging && G.mode !== 'normal') {
+    finalizeDesignation();
+    touch.isDragging = false; touch.startPos = null;
+    return;
+  }
+  if (touch.startPos && !touch.isPanning) {
+    const elapsed = Date.now() - touch.startTime;
+    if (elapsed < touch.LONG_PRESS_MS) {
+      const tile = tileFromPoint(touch.startPos.x, touch.startPos.y);
+      if (tile) {
+        G.followDwarf = null;
+        openInspector(tile);
+      }
+    }
+  }
+  touch.startPos = null; touch.isPanning = false; touch.isDragging = false;
+}, { passive: false });
+
+canvas.addEventListener('touchcancel', e => {
+  touch.startPos = null; touch.isPanning = false; touch.isPinching = false;
+  touch.isDragging = false; touch.lastDist = 0; touch.lastCentroid = null;
 }, { passive: false });
 
 // ---- Buttons ----
@@ -3447,6 +3653,19 @@ function setMode(m) {
   if (m === 'build') document.getElementById('btn-room').classList.add('active');
   if (m === 'farm') document.getElementById('btn-farm').classList.add('active');
   if (m === 'road') document.getElementById('btn-road').classList.add('active');
+  if (isMobile) {
+    canvas.classList.remove('mode-border', 'build', 'farm', 'road');
+    const cancelBtn = document.getElementById('mobile-cancel-btn');
+    if (m !== 'normal') {
+      canvas.classList.add('mode-border');
+      if (m === 'build') canvas.classList.add('build');
+      else if (m === 'farm') canvas.classList.add('farm');
+      else if (m === 'road') canvas.classList.add('road');
+      cancelBtn.classList.add('visible');
+    } else {
+      cancelBtn.classList.remove('visible');
+    }
+  }
 }
 
 document.getElementById('btn-mine').onclick = () => setMode(G.mode === 'mine' ? 'normal' : 'mine');
@@ -3467,9 +3686,59 @@ document.querySelectorAll('.speed-btn').forEach(btn => {
     const spd = parseInt(btn.dataset.speed);
     if (spd === 0) G.paused = !G.paused;
     else { G.speed = spd; G.paused = false; }
+    if (gameWorker) gameWorker.postMessage({ type: 'control', speed: G.speed, paused: G.paused });
     updateSpeedUI();
   });
 });
+
+// ---- Mobile UI setup ----
+if (isMobile) {
+  // Collapsible event log
+  const eventLog = document.querySelector('.event-log');
+  eventLog.classList.add('collapsed');
+  document.querySelector('.log-header').addEventListener('click', () => {
+    eventLog.classList.toggle('collapsed');
+  });
+
+  // Cancel button for designation mode
+  document.getElementById('mobile-cancel-btn').addEventListener('click', () => {
+    setMode('normal'); G.drag = null; G.sel = null;
+  });
+
+  // Inspector swipe-down to close
+  (function() {
+    const handle = document.getElementById('insp-drag-handle');
+    let startY = 0, swiping = false;
+    handle.addEventListener('touchstart', e => {
+      startY = e.touches[0].clientY; swiping = true; e.preventDefault();
+    }, { passive: false });
+    handle.addEventListener('touchmove', e => {
+      if (!swiping) return;
+      const dy = e.touches[0].clientY - startY;
+      if (dy > 50) { closeInspector(); swiping = false; }
+      e.preventDefault();
+    }, { passive: false });
+    handle.addEventListener('touchend', () => { swiping = false; });
+  })();
+
+  // Minimap tap-to-jump
+  const minimap = document.getElementById('minimap');
+  minimap.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const rect = minimap.getBoundingClientRect();
+    const tx = (e.touches[0].clientX - rect.left) / rect.width * MAP_W;
+    const ty = (e.touches[0].clientY - rect.top) / rect.height * MAP_H;
+    G.cam.x = tx * TILE - canvas.width / 2;
+    G.cam.y = ty * TILE - canvas.height / 2;
+    G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
+  }, { passive: false });
+
+  // Update splash text for mobile
+  const splashP = document.querySelector('#splash-modal .db-modal__body p:last-of-type');
+  if (splashP && splashP.textContent.includes('Pan with WASD')) {
+    splashP.textContent = 'Tap to inspect. Drag to pan. Pinch to zoom.';
+  }
+}
 
 // ---- AI Client ----
 const AI = {
@@ -3693,6 +3962,10 @@ function getSerializableState() {
 }
 
 async function saveGameState() {
+  if (workerActive && gameWorker) {
+    gameWorker.postMessage({ type: 'save_request' });
+    return;
+  }
   try {
     await fetch(`${AI.apiBase}/api/state/save`, {
       method: 'POST',
@@ -3872,6 +4145,11 @@ async function restoreState() {
 
 // Auto-save on tab close
 window.addEventListener('beforeunload', () => {
+  if (workerActive && gameWorker) {
+    // Worker save_request is async; best-effort via auto-save every 60s
+    gameWorker.postMessage({ type: 'save_request' });
+    return;
+  }
   const blob = new Blob([JSON.stringify(getSerializableState())], { type: 'application/json' });
   navigator.sendBeacon(`${AI.apiBase}/api/state/save`, blob);
 });
@@ -3902,7 +4180,7 @@ function gameLoop(ts) {
     }
   }
 
-  if (!G.paused) {
+  if (!workerActive && !G.paused) {
     tickAccum += dt * G.speed;
     const TICK = 100;
     let ticked = 0;
@@ -3925,7 +4203,9 @@ function gameLoop(ts) {
 
     // AI calls (real-time intervals, independent of game speed)
     aiTickAll();
+  }
 
+  if (!G.paused) {
     // Auto-save every 60s
     const now = Date.now();
     if (now - lastSaveTime > SAVE_INTERVAL) {
@@ -3935,6 +4215,91 @@ function gameLoop(ts) {
   }
 
   render();
+}
+
+// ---- Worker Init ----
+function initWorker() {
+  if (typeof Worker === 'undefined') return;
+  try {
+    gameWorker = new Worker('/game-worker.js');
+  } catch (e) { console.warn('Worker init failed, using main thread:', e); return; }
+
+  gameWorker.onmessage = function(e) {
+    const data = e.data;
+    switch (data.type) {
+      case 'snapshot':
+        G.dwarves = data.dwarves;
+        G.ships = data.ships;
+        G.tick = data.tick;
+        G.year = data.year;
+        G.season = data.season;
+        G.stats = data.stats;
+        // Apply map deltas
+        if (data.mapChanges.length) {
+          for (const ch of data.mapChanges) G.map[ch.y][ch.x] = ch.tile;
+          G.mapDirty = true;
+        }
+        // Update city resources
+        if (data.cities) {
+          for (const cd of data.cities) {
+            const city = cityById(cd.id);
+            if (city) city.res = cd.res;
+          }
+        }
+        // Display buffered logs
+        for (const l of data.logs) log(l.msg, l.type);
+        // Show buffered toasts
+        for (const t of data.toasts) {
+          if (typeof DAUB !== 'undefined' && DAUB.toast) DAUB.toast(t);
+        }
+        if (G.tick % 30 === 0) updateHUD();
+        break;
+      case 'save_response':
+        try {
+          fetch(`${AI.apiBase}/api/state/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data.state),
+          });
+        } catch (_) {}
+        break;
+    }
+  };
+
+  gameWorker.onerror = function(e) {
+    console.error('Worker error:', e);
+    workerActive = false;
+    gameWorker = null;
+  };
+
+  // Build flat map buffer for transfer
+  const flat = new Uint8Array(MAP_W * MAP_H);
+  for (let y = 0; y < MAP_H; y++)
+    for (let x = 0; x < MAP_W; x++) flat[y * MAP_W + x] = G.map[y][x];
+
+  gameWorker.postMessage({
+    type: 'init',
+    map: flat.buffer,
+    cities: CITIES.map(c => ({ ...c, discoveries: undefined })),
+    cultures: CULTURES,
+    dwarfNames: DWARF_NAMES,
+    surnames: SURNAMES,
+    apiBase: AI.apiBase,
+    dwarves: G.dwarves.map(d => ({
+      ...d, path: [], target: null,
+      usedNames: undefined,
+    })),
+    ships: G.ships,
+    state: {
+      tick: G.tick, year: G.year, season: G.season, speed: G.speed,
+      paused: G.paused, stats: G.stats,
+      homeCityId: G.homeCity?.id,
+      aiCityIndex: G.aiCityIndex,
+    },
+  }, [flat.buffer]);
+
+  workerActive = true;
+  console.log('Game simulation moved to Web Worker');
 }
 
 // ---- Init ----
@@ -3965,6 +4330,7 @@ async function init() {
   updateHUD();
   G.mapDirty = true;
   lastSaveTime = Date.now();
+  initWorker();
   const loader = document.getElementById('loader');
   if (loader) { loader.classList.add('fade-out'); setTimeout(() => loader.remove(), 700); }
   requestAnimationFrame(gameLoop);

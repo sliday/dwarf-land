@@ -56,6 +56,9 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - City ideology labels computed from aggregate personality (Militant, Spiritual, Mercantile, etc.)
 - Contextual Mine/Build/Farm/Road actions in dwarf inspector
 - Splash screen for new visitors + in-game mechanics guide
+- Full mobile support: touch pan, pinch-to-zoom (0.75x–3.0x), tap-to-inspect
+- Responsive layout: bottom sheet inspector, collapsible event log, thumb-zone toolbar
+- iOS safe area support, 44px touch targets, designation mode with cancel button
 
 ### Performance
 - BFS pathfinding capped at 2000 steps (covers ~44x44 area)
