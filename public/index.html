@@ -1020,6 +1020,7 @@ function toMap(lon, lat) {
   return [mx, Math.max(0, Math.min(MAP_H - 1, my))];
 }
 function wrapX(x) { return ((x % MAP_W) + MAP_W) % MAP_W; }
+function wrapY(y) { return ((y % MAP_H) + MAP_H) % MAP_H; }
 
 // ---- Noise ----
 function noise(x, y) {
@@ -1151,6 +1152,31 @@ function generateMap() {
       }
     }
     G.map.push(row);
+  }
+
+  // Stage 1.5: Biome border scatter — bleed terrain at biome edges for natural transitions
+  const SCATTER_BIOMES = new Set([T.FOREST, T.TAIGA, T.TUNDRA, T.PLAINS, T.DESERT, T.JUNGLE, T.MOUNTAIN, T.HILL, T.BEACH]);
+  for (let y = 1; y < MAP_H - 1; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      const t = G.map[y][x];
+      if (!SCATTER_BIOMES.has(t)) continue;
+      // Check if this is a border tile (any neighbor has different biome)
+      const neighbors = [
+        G.map[y-1][wrapX(x)], G.map[y+1][wrapX(x)],
+        G.map[y][wrapX(x-1)], G.map[y][wrapX(x+1)]
+      ];
+      for (const nt of neighbors) {
+        if (nt !== t && SCATTER_BIOMES.has(nt) && nt !== T.OCEAN) {
+          // 12% chance to scatter this tile's type into neighbor area
+          // Use noise for deterministic, organic-looking bleed
+          const sn = noise(x * 0.3 + 777, y * 0.3 + 777);
+          if (sn > 0.25 && Math.random() < 0.12) {
+            G.map[y][x] = nt;
+          }
+          break;
+        }
+      }
+    }
   }
 
   // Stage 2: Resource overlay — scatter valuable, renewable, and edible resources
@@ -1455,8 +1481,7 @@ function generateMap() {
 
 // ---- Pathfinding (Dijkstra with terrain costs and x-wrapping) ----
 function isWalkable(x, y) {
-  if (y < 0 || y >= MAP_H) return false;
-  const t = G.map[y][wrapX(x)];
+  const t = G.map[wrapY(y)][wrapX(x)];
   if (WALKABLE.has(t)) return true;
   const props = TERRAIN_PROPS[t];
   return props && props.speed > 0;
@@ -1917,6 +1942,42 @@ function tryTrade(d) {
   return false;
 }
 
+function tryTradeCaravan(d) {
+  const home = cityOf(d);
+  if (!home || !home.res) return false;
+  if (d.hunger < 30 || d.energy < 25) return false;
+  const target = bfs(d.x, d.y, (x, y) => {
+    const t = G.map[wrapY(y)][wrapX(x)];
+    if (t !== T.CITY) return false;
+    const c = CITIES.find(c => c.mx === wrapX(x) && c.my === wrapY(y));
+    return c && c.id !== home.id;
+  }, false);
+  if (!target || target.length < 5 || target.length > 200) return false;
+  const dest = target[target.length - 1];
+  const destCity = CITIES.find(c => c.mx === dest[0] && c.my === dest[1]);
+  if (!destCity || !destCity.res) return false;
+  const tradeGoods = [];
+  const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs'];
+  for (const k of keys) {
+    const homeAmt = home.res[k] || 0;
+    const destAmt = destCity.res[k] || 0;
+    if (homeAmt > 20 && destAmt < 10) tradeGoods.push(k);
+  }
+  if (tradeGoods.length === 0) return false;
+  const good = tradeGoods[Math.floor(Math.random() * tradeGoods.length)];
+  const amt = Math.min(Math.floor(home.res[good] / 3), carryCapacity(d));
+  if (amt < 2) return false;
+  home.res[good] -= amt;
+  d.carrying = amt;
+  d.carryItems = { [good]: amt };
+  d.target = { type: 'trade_caravan', cityId: destCity.id, good, amt };
+  d.path = target;
+  d.state = 'walk';
+  log(`${d.name} \uD83D\uDC2A set out as merchant from ${home.name} to ${destCity.name} with ${amt} ${good}`, 'trade', 2, null, d.x, d.y);
+  addEvent(d, 'trade', `Departed as merchant to ${destCity.name} with ${amt} ${good}`);
+  return true;
+}
+
 function aiIdle(d) {
   if (d._tickSlot === undefined) d._tickSlot = G.dwarves.indexOf(d) % 4;
   if (G.tick % 4 !== d._tickSlot) return;
@@ -2052,6 +2113,7 @@ function aiIdle(d) {
   if (Math.random() < 0.02 && (d.ambition ?? 50) > 60) {
     if (trySeaSailing(d)) return;
   }
+  if (Math.random() < 0.03 && tryTradeCaravan(d)) return;
 
   d.state = 'wander'; d.timer = 20 + Math.floor(Math.random() * 40);
 }
@@ -2084,6 +2146,32 @@ function aiWalk(d) {
         starving.hunger = Math.min(100, starving.hunger + amt * 12);
         starving.starveTicks = 0; starving.state = 'idle';
         log(`${d.name} \uD83E\uDD1D rescued ${starving.name} with food!`, 'eat');
+      }
+      d.target = null; d.state = 'idle'; return;
+    }
+    else if (tt === 'trade_caravan') {
+      const destCity = CITIES.find(c => c.id === d.target.cityId);
+      if (destCity && destCity.res && d.carrying > 0) {
+        const good = d.target.good;
+        const amt = d.carryItems[good] || d.carrying;
+        destCity.res[good] = (destCity.res[good] || 0) + amt;
+        const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs'];
+        let returnGood = null, returnAmt = 0;
+        for (const k of keys) {
+          if (k === good) continue;
+          if ((destCity.res[k] || 0) > 15) { returnGood = k; returnAmt = Math.min(Math.floor(destCity.res[k] / 3), amt); break; }
+        }
+        if (returnGood && returnAmt > 0) {
+          destCity.res[returnGood] -= returnAmt;
+          d.carrying = returnAmt; d.carryItems = { [returnGood]: returnAmt };
+          log(`${d.name} \uD83D\uDC2A delivered ${amt} ${good} to ${destCity.name}, returning with ${returnAmt} ${returnGood}`, 'trade', 3, null, d.x, d.y);
+          addEvent(d, 'trade', `Traded ${amt} ${good} at ${destCity.name} for ${returnAmt} ${returnGood}`);
+        } else {
+          d.carrying = 0; d.carryItems = {};
+          log(`${d.name} \uD83D\uDC2A delivered ${amt} ${good} to ${destCity.name}`, 'trade', 2, null, d.x, d.y);
+          addEvent(d, 'trade', `Delivered ${amt} ${good} to ${destCity.name}`);
+        }
+        d.happiness = Math.min(100, d.happiness + 10);
       }
       d.target = null; d.state = 'idle'; return;
     }
@@ -3034,6 +3122,19 @@ function tickSeason() {
       }
     }
 
+    // Repopulate cities: cities with food and beds but low pop get new dwarves
+    if (G.dwarves.length < 300) {
+      for (const city of CITIES) {
+        if (!city.res || city.mx === undefined) continue;
+        const pop = G.dwarves.filter(d => d.cityId === city.id).length;
+        if (pop < 2 && city.res.food >= 5) {
+          spawnDwarfAtCity(city);
+        } else if (pop < (city.res.beds || 1) && city.res.food >= pop * 3 && Math.random() < 0.4) {
+          spawnDwarfAtCity(city);
+        }
+      }
+    }
+
     // Spawn animals
     spawnAnimalsFB();
   }
@@ -3164,8 +3265,7 @@ function ditherEdges(ctx, px, py, wx, wy) {
   if (t === T.OCEAN) return;
   const edges = [[0,-1,true],[0,1,true],[-1,0,false],[1,0,false]];
   for (const [dx, dy, horiz] of edges) {
-    const nx = wrapX(wx + dx), ny = wy + dy;
-    if (ny < 0 || ny >= MAP_H) continue;
+    const nx = wrapX(wx + dx), ny = wrapY(wy + dy);
     const nt = G.map[ny][nx];
     if (nt === T.OCEAN) continue;
     const sameType = nt === t;
@@ -3199,15 +3299,15 @@ function patchTile(gx, gy) {
   const c = gx - tileBufferCamTX;
   const r = gy - tileBufferCamTY;
   if (c < 0 || r < 0 || c * TILE >= tileBuffer.width || r * TILE >= tileBuffer.height) return;
-  const wx = wrapX(gx);
-  const t = G.map[gy][wx];
+  const wx = wrapX(gx), wy = wrapY(gy);
+  const t = G.map[wy][wx];
   const px = c * TILE, py = r * TILE;
   const base = BG_COLORS[t] || '#042040';
-  tileBufferCtx.fillStyle = varyColor(base, wx, gy);
+  tileBufferCtx.fillStyle = varyColor(base, wx, wy);
   tileBufferCtx.fillRect(px, py, TILE, TILE);
-  ditherEdges(tileBufferCtx, px, py, wx, gy);
+  ditherEdges(tileBufferCtx, px, py, wx, wy);
   let em = EMOJI[t];
-  if (t === T.GRAVE) { const gd = G.graves[`${wx},${gy}`]; if (gd) em = gd.emoji; }
+  if (t === T.GRAVE) { const gd = G.graves[`${wx},${wy}`]; if (gd) em = gd.emoji; }
   if (em && t !== T.OCEAN) {
     try { tileBufferCtx.drawImage(getEmojiImg(em), px, py); } catch (e) {}
   }
@@ -3230,7 +3330,7 @@ function renderTileBuffer(startGX, startGY, endGX, endGY) {
   const tileGrid = new Array(rows);
   for (let r = 0; r < rows; r++) {
     tileGrid[r] = new Uint8Array(cols);
-    const gy = startGY + r;
+    const gy = wrapY(startGY + r);
     for (let c = 0; c < cols; c++) {
       tileGrid[r][c] = G.map[gy][wrapX(startGX + c)];
     }
@@ -3280,12 +3380,12 @@ function renderTileBuffer(startGX, startGY, endGX, endGY) {
       const sz = bestN * TILE;
       const base = BG_COLORS[t] || '#042040';
       if (bestN === 1) {
-        tileBufferCtx.fillStyle = varyColor(base, wrapX(startGX + c), startGY + r);
+        tileBufferCtx.fillStyle = varyColor(base, wrapX(startGX + c), wrapY(startGY + r));
         tileBufferCtx.fillRect(px, py, TILE, TILE);
       } else {
         for (let rr = 0; rr < bestN; rr++) {
           for (let cc = 0; cc < bestN; cc++) {
-            tileBufferCtx.fillStyle = varyColor(base, wrapX(startGX + c + cc), startGY + r + rr);
+            tileBufferCtx.fillStyle = varyColor(base, wrapX(startGX + c + cc), wrapY(startGY + r + rr));
             tileBufferCtx.fillRect(px + cc * TILE, py + rr * TILE, TILE, TILE);
           }
         }
@@ -3295,13 +3395,13 @@ function renderTileBuffer(startGX, startGY, endGX, endGY) {
       for (let rr = 0; rr < bestN; rr++) {
         for (let cc = 0; cc < bestN; cc++) {
           if (rr > 0 && rr < bestN - 1 && cc > 0 && cc < bestN - 1) continue;
-          ditherEdges(tileBufferCtx, px + cc * TILE, py + rr * TILE, wrapX(startGX + c + cc), startGY + r + rr);
+          ditherEdges(tileBufferCtx, px + cc * TILE, py + rr * TILE, wrapX(startGX + c + cc), wrapY(startGY + r + rr));
         }
       }
 
       // Draw emoji
       let em = EMOJI[t];
-      if (t === T.GRAVE && bestN === 1) { const gd = G.graves[`${wrapX(startGX + c)},${startGY + r}`]; if (gd) em = gd.emoji; }
+      if (t === T.GRAVE && bestN === 1) { const gd = G.graves[`${wrapX(startGX + c)},${wrapY(startGY + r)}`]; if (gd) em = gd.emoji; }
       if (em && t !== T.OCEAN) {
         try { tileBufferCtx.drawImage(getEmojiImg(em, bestN), px, py); } catch (e) {}
       }
@@ -3320,9 +3420,9 @@ function render() {
 
   // Calculate visible tile range with padding for smooth scroll
   const startGX = Math.floor(G.cam.x / TILE) - TILE_PAD;
-  const startGY = Math.max(0, Math.floor(G.cam.y / TILE) - TILE_PAD);
+  const startGY = Math.floor(G.cam.y / TILE) - TILE_PAD;
   const endGX = startGX + Math.ceil(w / TILE) + 1 + TILE_PAD * 2;
-  const endGY = Math.min(MAP_H, Math.floor((G.cam.y + h) / TILE) + 1 + TILE_PAD);
+  const endGY = Math.floor((G.cam.y + h) / TILE) + 1 + TILE_PAD;
 
   // Re-render tile buffer only when camera moves to new tile or map changes
   const camMoved = startGX !== tileBufferCamTX || startGY !== tileBufferCamTY || G.season !== tileBufferSeason;
@@ -3554,6 +3654,8 @@ function updateHUD() {
       const span = document.createElement('span');
       span.title = RES_NAMES[key];
       span.textContent = icon + (r[key] ?? 0) + ' ';
+      span.style.cursor = 'pointer';
+      span.onclick = (e) => { e.stopPropagation(); showResourceRanking(key); };
       resEl.appendChild(span);
     }
   }
@@ -4053,12 +4155,31 @@ function showTerrainInspector(tile) {
   inspBody.textContent = ''; inspBody.appendChild(frag);
 }
 
+function showResourceRanking(resKey) {
+  const icon = RES_ICONS.find(([, k]) => k === resKey);
+  inspTitle.textContent = (icon ? icon[0] + ' ' : '') + (RES_NAMES[resKey] || resKey);
+  const frag = document.createDocumentFragment();
+  const ranked = CITIES.filter(c => c.res && c.res[resKey] !== undefined)
+    .sort((a, b) => (b.res[resKey] || 0) - (a.res[resKey] || 0))
+    .slice(0, 15);
+  if (ranked.length) {
+    for (const c of ranked) {
+      const row = document.createElement('div'); row.style.cssText = 'font-size:11px;color:#d5c4a1;cursor:pointer;padding:1px 0';
+      row.textContent = (c.emoji || '') + ' ' + c.name + ': ' + Math.floor(c.res[resKey] || 0);
+      row.onclick = () => { G.cam.x = c.mx * TILE - canvas.width / 2; G.cam.y = c.my * TILE - canvas.height / 2; showCityInspector(c); };
+      frag.appendChild(row);
+    }
+  }
+  inspBody.textContent = ''; inspBody.appendChild(frag);
+  inspPanel.classList.remove('hidden');
+  inspCurrent = { type: 'resource', key: resKey };
+}
+
 // ---- Input ----
 function tileFromPoint(cx, cy) {
   const gx = Math.floor((cx / G.zoom + G.cam.x) / TILE);
   const gy = Math.floor((cy / G.zoom + G.cam.y) / TILE);
-  if (gy < 0 || gy >= MAP_H) return null;
-  return { x: wrapX(gx), y: gy, gx };
+  return { x: wrapX(gx), y: wrapY(gy), gx };
 }
 function tileFromMouse(e) { return tileFromPoint(e.clientX, e.clientY); }
 
@@ -4073,7 +4194,6 @@ canvas.addEventListener('mousemove', e => {
     G.cam.x -= (e.clientX - dragLast.x) / G.zoom;
     G.cam.y -= (e.clientY - dragLast.y) / G.zoom;
     // Clamp Y, wrap X handled in rendering
-    G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
     dragLast = { x: e.clientX, y: e.clientY };
     return;
   }
@@ -4267,8 +4387,7 @@ canvas.addEventListener('touchmove', e => {
       if (touch.isPanning) {
         G.cam.x -= dx / G.zoom;
         G.cam.y -= dy / G.zoom;
-        G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
-        touch.startPos = { x: t0.clientX, y: t0.clientY };
+            touch.startPos = { x: t0.clientX, y: t0.clientY };
       }
     }
   } else if (e.touches.length === 2 && touch.isPinching) {
@@ -4284,8 +4403,7 @@ canvas.addEventListener('touchmove', e => {
     if (touch.lastCentroid) {
       G.cam.x -= (centroid.x - touch.lastCentroid.x) / G.zoom;
       G.cam.y -= (centroid.y - touch.lastCentroid.y) / G.zoom;
-      G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
-    }
+      }
     touch.lastDist = dist;
     touch.lastCentroid = centroid;
   }
@@ -4414,7 +4532,6 @@ if (isMobile) {
     const ty = (e.touches[0].clientY - rect.top) / rect.height * MAP_H;
     G.cam.x = tx * TILE - canvas.width / 2;
     G.cam.y = ty * TILE - canvas.height / 2;
-    G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
   }, { passive: false });
 
   // Update splash text for mobile
@@ -4434,7 +4551,6 @@ if (!isMobile) {
     const ty = (e.clientY - rect.top) / rect.height * MAP_H;
     G.cam.x = tx * TILE - canvas.width / 2;
     G.cam.y = ty * TILE - canvas.height / 2;
-    G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
   });
 }
 
@@ -4504,8 +4620,7 @@ if (!isMobile) {
         G.followDwarf = d;
         G.cam.x = d.x * TILE - canvas.width / 2;
         G.cam.y = d.y * TILE - canvas.height / 2;
-        G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
-        const tile = { x: d.x, y: d.y, gx: d.x };
+            const tile = { x: d.x, y: d.y, gx: d.x };
         openInspector(tile);
       };
       results.appendChild(row);
@@ -4974,8 +5089,7 @@ function gameLoop(ts) {
     if (fd) {
       G.cam.x = fd.x * TILE - canvas.width / 2 + TILE / 2;
       G.cam.y = fd.y * TILE - canvas.height / 2 + TILE / 2;
-      G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
-    } else {
+      } else {
       G.followDwarf = null;
     }
   }

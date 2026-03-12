@@ -131,6 +131,7 @@ function placeGrave(d) {
 
 // Helpers
 function wrapX(x) { return ((x % MAP_W) + MAP_W) % MAP_W; }
+function wrapY(y) { return ((y % MAP_H) + MAP_H) % MAP_H; }
 function cityById(id) { return CITIES.find(c => c.id === id); }
 function cityOf(d) { return cityById(d.cityId) || CITIES[0]; }
 function nearestCity(x, y) {
@@ -148,15 +149,13 @@ function defaultRes() { return {stone:0,wood:0,food:50,iron:0,gold:0,cloth:0,ale
 
 // Pathfinding
 function isWalkable(x, y) {
-  if (y < 0 || y >= MAP_H) return false;
-  const t = G.map[y][wrapX(x)];
+  const t = G.map[wrapY(y)][wrapX(x)];
   if (WALKABLE.has(t)) return true;
   const props = TERRAIN_PROPS[t];
   return props && props.speed > 0;
 }
 function terrainCost(x, y) {
-  if (y < 0 || y >= MAP_H) return Infinity;
-  const t = G.map[y][wrapX(x)];
+  const t = G.map[wrapY(y)][wrapX(x)];
   const props = TERRAIN_PROPS[t];
   if (!props || props.speed <= 0) return Infinity;
   return props.speed;
@@ -225,8 +224,7 @@ function adjWalkable(tx, ty) {
   return null;
 }
 function isWater(x, y) {
-  if (y < 0 || y >= MAP_H) return false;
-  const t = G.map[y][wrapX(x)];
+  const t = G.map[wrapY(y)][wrapX(x)];
   return t === T.OCEAN || t === T.FISH_SPOT || t === T.CORAL;
 }
 function isCoastal(x, y) {
@@ -602,6 +600,46 @@ function tryTrade(d) {
   return false;
 }
 
+function tryTradeCaravan(d) {
+  const home = cityOf(d);
+  if (!home || !home.res) return false;
+  if (d.hunger < 30 || d.energy < 25) return false;
+  // Find a different city reachable by road (BFS limited to road/asphalt/railroad tiles)
+  const roadTiles = new Set([T.ROAD, T.ASPHALT, T.RAILROAD, T.CITY]);
+  const target = bfs(d.x, d.y, (x, y) => {
+    const t = G.map[wrapY(y)][wrapX(x)];
+    if (t !== T.CITY) return false;
+    const c = CITIES.find(c => c.mx === wrapX(x) && c.my === wrapY(y));
+    return c && c.id !== home.id;
+  }, false);
+  if (!target || target.length < 5 || target.length > 200) return false;
+  const dest = target[target.length - 1];
+  const destCity = CITIES.find(c => c.mx === dest[0] && c.my === dest[1]);
+  if (!destCity || !destCity.res) return false;
+  // Find what home has surplus and dest needs
+  const tradeGoods = [];
+  const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs'];
+  for (const k of keys) {
+    const homeAmt = home.res[k] || 0;
+    const destAmt = destCity.res[k] || 0;
+    if (homeAmt > 20 && destAmt < 10) tradeGoods.push(k);
+  }
+  if (tradeGoods.length === 0) return false;
+  // Load up surplus goods
+  const good = tradeGoods[Math.floor(Math.random() * tradeGoods.length)];
+  const amt = Math.min(Math.floor(home.res[good] / 3), carryCapacity(d));
+  if (amt < 2) return false;
+  home.res[good] -= amt;
+  d.carrying = amt;
+  d.carryItems = { [good]: amt };
+  d.target = { type: 'trade_caravan', cityId: destCity.id, good, amt };
+  d.path = target;
+  d.state = 'walk';
+  log(`${d.name} \uD83D\uDC2A set out as merchant from ${home.name} to ${destCity.name} with ${amt} ${good}`, 'trade', 2, null, d.x, d.y);
+  addEvent(d, 'trade', `Departed as merchant to ${destCity.name} with ${amt} ${good}`);
+  return true;
+}
+
 function aiIdle(d) {
   if (d._tickSlot === undefined) d._tickSlot = G.dwarves.indexOf(d) % 4;
   if (G.tick % 4 !== d._tickSlot) return;
@@ -717,6 +755,7 @@ function aiIdle(d) {
   if (Math.random() < 0.02 && (d.ambition ?? 50) > 60) {
     if (trySeaSailing(d)) return;
   }
+  if (Math.random() < 0.03 && tryTradeCaravan(d)) return;
   d.state = 'wander'; d.timer = 20 + Math.floor(Math.random() * 40);
 }
 
@@ -743,6 +782,32 @@ function aiWalk(d) {
         starving.hunger = Math.min(100, starving.hunger + amt * 12);
         starving.starveTicks = 0; starving.state = 'idle';
         log(`${d.name} \uD83E\uDD1D rescued ${starving.name} with food!`, 'eat', 2);
+      }
+      d.target = null; d.state = 'idle'; return;
+    } else if (tt === 'trade_caravan') {
+      const destCity = CITIES.find(c => c.id === d.target.cityId);
+      if (destCity && destCity.res && d.carrying > 0) {
+        const good = d.target.good;
+        const amt = d.carryItems[good] || d.carrying;
+        destCity.res[good] = (destCity.res[good] || 0) + amt;
+        // Get something back that dest has surplus of
+        const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs'];
+        let returnGood = null, returnAmt = 0;
+        for (const k of keys) {
+          if (k === good) continue;
+          if ((destCity.res[k] || 0) > 15) { returnGood = k; returnAmt = Math.min(Math.floor(destCity.res[k] / 3), amt); break; }
+        }
+        if (returnGood && returnAmt > 0) {
+          destCity.res[returnGood] -= returnAmt;
+          d.carrying = returnAmt; d.carryItems = { [returnGood]: returnAmt };
+          log(`${d.name} \uD83D\uDC2A delivered ${amt} ${good} to ${destCity.name}, returning with ${returnAmt} ${returnGood}`, 'trade', 3, null, d.x, d.y);
+          addEvent(d, 'trade', `Traded ${amt} ${good} at ${destCity.name} for ${returnAmt} ${returnGood}`);
+        } else {
+          d.carrying = 0; d.carryItems = {};
+          log(`${d.name} \uD83D\uDC2A delivered ${amt} ${good} to ${destCity.name}`, 'trade', 2, null, d.x, d.y);
+          addEvent(d, 'trade', `Delivered ${amt} ${good} to ${destCity.name}`);
+        }
+        d.happiness = Math.min(100, d.happiness + 10);
       }
       d.target = null; d.state = 'idle'; return;
     } else d.state = 'idle';
@@ -1097,8 +1162,7 @@ function tryFoundCity(d) {
   const cx = d.x, cy = d.y;
   for (let dy = -1; dy <= 1; dy++)
     for (let dx = -1; dx <= 1; dx++) {
-      const x = wrapX(cx+dx), y = cy+dy;
-      if (y < 0 || y >= MAP_H) continue;
+      const x = wrapX(cx+dx), y = wrapY(cy+dy);
       if (dx === 0 && dy === 0) mapSet(x, y, T.CITY);
       else if (dy === -1) { mapSet(x, y, T.BED); newCity.res.beds++; }
       else if (dy === 1) mapSet(x, y, T.STOCKPILE);
@@ -1468,8 +1532,7 @@ function tickSeason() {
         const r = 15;
         for (let dy = -r; dy <= r; dy++)
           for (let dx = -r; dx <= r; dx++) {
-            const fx = wrapX(city.mx+dx), fy = city.my+dy;
-            if (fy < 0 || fy >= MAP_H) continue;
+            const fx = wrapX(city.mx+dx), fy = wrapY(city.my+dy);
             const t = G.map[fy][fx];
             if (t === T.FARM) farmCount++;
             else if (t === T.FISH_SPOT || t === T.CRAB) fishCount++;
@@ -1537,6 +1600,19 @@ function tickSeason() {
         }
         if (t===T.BEACH && Math.random()<0.15) mapSet(rx,ry,T.CRAB);
         if ((t===T.FOREST||t===T.PLAINS||t===T.TAIGA) && Math.random()<0.04) mapSet(rx,ry,T.DEER);
+      }
+    }
+
+    // Repopulate cities: cities with food and beds but low pop get new dwarves
+    if (G.dwarves.length < 300) {
+      for (const city of CITIES) {
+        if (!city.res || city.mx === undefined) continue;
+        const pop = G.dwarves.filter(d => d.cityId === city.id).length;
+        if (pop < 2 && city.res.food >= 5) {
+          spawnDwarfAtCity(city);
+        } else if (pop < (city.res.beds || 1) && city.res.food >= pop * 3 && Math.random() < 0.4) {
+          spawnDwarfAtCity(city);
+        }
       }
     }
 
