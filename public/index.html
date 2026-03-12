@@ -287,7 +287,18 @@
     <button class="action-btn" id="btn-room" title="Designate tiles for building walls">&#x1f9f1; Build</button>
     <button class="action-btn" id="btn-farm" title="Designate tiles for farming">&#x1f33e; Farm</button>
     <button class="action-btn" id="btn-road" title="Designate tiles for road construction (1 stone/tile)">&#x1f6e4;&#xfe0f; Road</button>
+    <button class="action-btn" id="btn-search" title="Search for a dwarf by name">&#x1f50d;</button>
     <button class="action-btn" id="btn-about" onclick="DAUB.openModal('about-modal')">?</button>
+  </div>
+</div>
+
+<div id="search-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:50;align-items:flex-start;justify-content:center;padding-top:80px">
+  <div style="background:#282828;border:1px solid #504945;border-radius:8px;width:90%;max-width:400px;max-height:60vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:12px;border-bottom:1px solid #3c3836;display:flex;gap:8px;align-items:center">
+      <input id="search-input" type="text" placeholder="Search dwarf by name..." style="flex:1;background:#3c3836;border:1px solid #504945;border-radius:4px;padding:8px 12px;color:#ebdbb2;font-family:inherit;font-size:14px;outline:none" autocomplete="off">
+      <button id="search-close" style="background:none;border:none;color:#a89984;font-size:20px;cursor:pointer;padding:4px">&times;</button>
+    </div>
+    <div id="search-results" style="overflow-y:auto;padding:4px 0;scrollbar-width:thin;scrollbar-color:#504945 transparent"></div>
   </div>
 </div>
 
@@ -3739,6 +3750,81 @@ if (isMobile) {
     splashP.textContent = 'Tap to inspect. Drag to pan. Pinch to zoom.';
   }
 }
+
+// ---- Dwarf Search ----
+(function() {
+  const overlay = document.getElementById('search-overlay');
+  const input = document.getElementById('search-input');
+  const results = document.getElementById('search-results');
+  const closeBtn = document.getElementById('search-close');
+
+  function openSearch() {
+    overlay.style.display = 'flex';
+    input.value = '';
+    results.textContent = '';
+    setTimeout(() => input.focus(), 50);
+  }
+  function closeSearch() {
+    overlay.style.display = 'none';
+    input.value = '';
+    results.textContent = '';
+  }
+
+  document.getElementById('btn-search').onclick = openSearch;
+  closeBtn.onclick = closeSearch;
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeSearch(); });
+
+  window.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      e.preventDefault();
+      openSearch();
+    }
+    if (e.key === 'Escape' && overlay.style.display === 'flex') {
+      closeSearch();
+      e.stopPropagation();
+    }
+  }, true);
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    results.textContent = '';
+    if (q.length < 2) return;
+    const matches = G.dwarves.filter(d => d.name && d.name.toLowerCase().includes(q)).slice(0, 20);
+    if (!matches.length) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding:12px;color:#665c54;font-size:12px;text-align:center';
+      empty.textContent = 'No dwarves found';
+      results.appendChild(empty);
+      return;
+    }
+    for (const d of matches) {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;border-bottom:1px solid #3c3836';
+      row.onmouseenter = () => row.style.background = '#3c3836';
+      row.onmouseleave = () => row.style.background = '';
+      const city = cityOf(d);
+      const stateEmoji = d.hunger > STARVE_IMMOBILE ? '\u{1F480}' : d.state === 'sleep' ? '\u{1F634}' : d.state === 'eat' ? '\u{1F372}' : d.state === 'mine' ? '\u26CF' : '\u{1F9D4}';
+      const nameSpan = document.createElement('span');
+      nameSpan.style.color = d.color || '#ebdbb2';
+      nameSpan.textContent = stateEmoji + ' ' + d.name + (d.sponsored ? ' \u2B50' : '');
+      const citySpan = document.createElement('span');
+      citySpan.style.cssText = 'color:#665c54;font-size:10px';
+      citySpan.textContent = city ? city.name : '';
+      row.appendChild(nameSpan);
+      row.appendChild(citySpan);
+      row.onclick = () => {
+        closeSearch();
+        G.followDwarf = d;
+        G.cam.x = d.x * TILE - canvas.width / 2;
+        G.cam.y = d.y * TILE - canvas.height / 2;
+        G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
+        const tile = { x: d.x, y: d.y, gx: d.x };
+        openInspector(tile);
+      };
+      results.appendChild(row);
+    }
+  });
+})();
 
 // ---- AI Client ----
 const AI = {
