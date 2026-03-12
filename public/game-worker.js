@@ -479,7 +479,7 @@ function tickDwarf(d) {
   }
 
   // Children (age 0-19): reduced needs drain, wander near city, no work
-  const isChild = (d.age || 20) < 20;
+  const isChild = (d.age ?? 20) < 20;
   d.hunger = Math.max(0, d.hunger - (isChild ? 0.015 : 0.03));
   d.energy = Math.max(0, d.energy - (isChild ? 0.01 : 0.02));
   d.happiness = Math.max(0, Math.min(100, d.happiness - 0.005));
@@ -735,7 +735,7 @@ function tryTradeCaravan(d) {
 function aiIdle(d) {
   if (d._tickSlot === undefined) d._tickSlot = G.dwarves.indexOf(d) % 4;
   if (G.tick % 4 !== d._tickSlot) return;
-  if ((d.age || 20) < 20) { d.state = 'wander'; d.timer = 15 + Math.floor(Math.random() * 20); return; }
+  if ((d.age ?? 20) < 20) { d.state = 'wander'; d.timer = 15 + Math.floor(Math.random() * 20); return; }
   if (executeIntent(d)) return;
   if (d.carryItems?.food > 0) {
     const starving = G.dwarves.find(o => o.cityId === d.cityId && o.state === 'starving' && o.id !== d.id);
@@ -1735,7 +1735,7 @@ function tickSeason() {
       G.year++;
       const deadIds = [];
       for (const d of G.dwarves) {
-        d.age = (d.age || 20) + 1;
+        d.age = (d.age ?? 20) + 1;
         if (d.age >= 70 && Math.random() < 0.03 * (d.age - 69)) {
           placeGrave(d);
           log(`${d.name} \u2620\uFE0F passed away at age ${d.age}`, 'system', 4, null, d.x, d.y);

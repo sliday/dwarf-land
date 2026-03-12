@@ -56,11 +56,12 @@
     display: flex; justify-content: center; gap: 48px;
     padding: 8px 20px;
     background: linear-gradient(to bottom,
-      hsla(var(--season-hue, 0), var(--season-sat, 0%), 15%, 0.95),
-      hsla(var(--season-hue, 0), var(--season-sat, 0%), 15%, 0));
+      hsla(var(--season-hue, 0), var(--season-sat, 0%), 10%, 0.97),
+      hsla(var(--season-hue, 0), var(--season-sat, 0%), 10%, 0.7));
     pointer-events: none; z-index: 10;
   }
-  .hud-stat { text-align: center; }
+  .hud-stat { text-align: center; pointer-events: auto; cursor: pointer; border-radius: 6px; padding: 2px 8px; transition: background 0.15s; }
+  .hud-stat:hover { background: rgba(255,255,255,0.07); }
   .hud-stat .label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #a89984; font-weight: 700; }
   .hud-stat .value { font-size: 28px; font-weight: bold; color: #ebdbb2; font-variant-numeric: tabular-nums; }
 
@@ -283,14 +284,14 @@
 <canvas id="game-canvas"></canvas>
 
 <div class="hud-top">
-  <div class="hud-stat"><div class="label">Dwarves</div><div class="value" id="h-pop">0</div></div>
-  <div class="hud-stat" style="position:relative;pointer-events:auto;cursor:pointer" id="hud-city-wrap">
+  <div class="hud-stat" id="hud-pop-wrap"><div class="label">Dwarves</div><div class="value" id="h-pop">0</div></div>
+  <div class="hud-stat" style="position:relative" id="hud-city-wrap">
     <div class="label">City</div>
     <div class="value" id="h-city" style="font-size:16px">-</div>
     <div id="city-dropdown" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);background:rgba(29,32,33,0.97);border:1px solid #504945;border-radius:6px;max-height:300px;overflow-y:auto;z-index:30;min-width:180px;scrollbar-width:thin;scrollbar-color:#504945 transparent"></div>
   </div>
-  <div class="hud-stat"><div class="label">Resources</div><div class="value" id="h-res" style="font-size:14px">-</div></div>
-  <div class="hud-stat"><div class="label">Year</div><div class="value" id="h-year">1</div></div>
+  <div class="hud-stat" id="hud-res-wrap"><div class="label">Resources</div><div class="value" id="h-res" style="font-size:14px">-</div></div>
+  <div class="hud-stat" id="hud-year-wrap"><div class="label">Year</div><div class="value" id="h-year">1</div></div>
   <div class="hud-stat" id="hud-sponsored-wrap" style="cursor:pointer" title="Click to see sponsored dwarves"><div class="label">Sponsored</div><div class="value" id="h-sponsored" style="font-size:16px;color:#fabd2f">$0</div></div>
 </div>
 
@@ -1788,7 +1789,7 @@ function tickDwarf(d) {
   if (d.poisonTicks > 0) { d.hp -= 1; d.poisonTicks--; }
   if (d.hp < d.maxHp && d.hunger > 20 && d.energy > 30 && G.tick % 50 === 0) d.hp = Math.min(d.maxHp, d.hp + 1);
 
-  const isChild = (d.age || 20) < 20;
+  const isChild = (d.age ?? 20) < 20;
   d.hunger = Math.max(0, d.hunger - (isChild ? 0.015 : 0.03));
   d.energy = Math.max(0, d.energy - (isChild ? 0.01 : 0.02));
   d.happiness = Math.max(0, Math.min(100, d.happiness - 0.005));
@@ -2001,7 +2002,7 @@ function tryTradeCaravan(d) {
 function aiIdle(d) {
   if (d._tickSlot === undefined) d._tickSlot = G.dwarves.indexOf(d) % 4;
   if (G.tick % 4 !== d._tickSlot) return;
-  if ((d.age || 20) < 20) { d.state = 'wander'; d.timer = 15 + Math.floor(Math.random() * 20); return; }
+  if ((d.age ?? 20) < 20) { d.state = 'wander'; d.timer = 15 + Math.floor(Math.random() * 20); return; }
   if (executeIntent(d)) return;
   if (d.carryItems?.food > 0) {
     const starving = G.dwarves.find(o => o.cityId === d.cityId && o.state === 'starving' && o.id !== d.id);
@@ -3007,7 +3008,7 @@ function tickSeason() {
       // Age all dwarves
       const deadIds = [];
       for (const d of G.dwarves) {
-        d.age = (d.age || 20) + 1;
+        d.age = (d.age ?? 20) + 1;
         // Ancient dwarves have a small death chance
         if (d.age >= 70 && Math.random() < 0.03 * (d.age - 69)) {
           log(`${d.name} \u2620\uFE0F passed away at age ${d.age}`, 'system');
@@ -4008,7 +4009,7 @@ function showDwarfInspector(dw) {
   const city = cityOf(dw);
   const culture = CULTURES[city?.culture];
   const sexEmoji = dw.sex === 'F' ? '♀' : '♂';
-  const ageCategory = (dw.age || 20) < 20 ? 'Child' : (dw.age || 20) >= 60 ? 'Elder' : 'Adult';
+  const ageCategory = (dw.age ?? 20) < 20 ? 'Child' : (dw.age ?? 20) >= 60 ? 'Elder' : 'Adult';
   inspTitle.textContent = sexEmoji + ' ' + dw.name + (dw.sponsored ? ' ⭐' : '');
   const s = dw.stats || {};
   const mod = v => { const m = Math.floor((v - 10) / 2); return m >= 0 ? '+' + m : '' + m; };
@@ -4033,7 +4034,7 @@ function showDwarfInspector(dw) {
 
   const ageLine = document.createElement('div');
   ageLine.style.cssText = 'font-size:10px;color:#a89984;margin:2px 0';
-  ageLine.textContent = ageCategory + ', age ' + (dw.age || 20);
+  ageLine.textContent = ageCategory + ', age ' + (dw.age ?? 20);
   frag.appendChild(ageLine);
 
   if (city) {
@@ -5058,6 +5059,108 @@ async function loadSponsorships() {
     }
   } catch (e) { /* silent */ }
 }
+
+// Population panel
+document.getElementById('hud-pop-wrap').onclick = () => {
+  const stateEmojis = {sleeping:'💤',mining:'⛏️',eating:'🍖',building:'🔨',farming:'🌱',hauling:'📦',gathering:'🧺',crafting:'✨',seek_craft:'✨',sailing:'⛵',driving:'🚗',wander:'🚶',walk:'🚶',idle:'🧔',fleeing:'😰',starving:'💀',seek_food:'🍖',seek_sleep:'💤',dead:'☠️'};
+  const alive = G.dwarves.filter(d => !d.dead);
+  inspTitle.textContent = '🧔 Population (' + alive.length + ' dwarves)';
+  const frag = document.createDocumentFragment();
+
+  // By state
+  const stateCounts = {};
+  for (const d of alive) { const s = d.state || 'idle'; stateCounts[s] = (stateCounts[s] || 0) + 1; }
+  const stateHeader = document.createElement('div');
+  stateHeader.style.cssText = 'font-size:11px;color:#fabd2f;margin-bottom:4px;font-weight:bold';
+  stateHeader.textContent = 'By Activity';
+  frag.appendChild(stateHeader);
+  for (const [state, count] of Object.entries(stateCounts).sort((a, b) => b[1] - a[1])) {
+    const row = document.createElement('div');
+    row.style.cssText = 'font-size:11px;color:#d5c4a1;padding:1px 0';
+    row.textContent = (stateEmojis[state] || '🧔') + ' ' + state + ': ' + count;
+    frag.appendChild(row);
+  }
+
+  // By city
+  const cityCounts = {};
+  for (const d of alive) { const cid = d.cityId || 'unknown'; cityCounts[cid] = (cityCounts[cid] || 0) + 1; }
+  const cityHeader = document.createElement('div');
+  cityHeader.style.cssText = 'font-size:11px;color:#fabd2f;margin:8px 0 4px;font-weight:bold';
+  cityHeader.textContent = 'By City';
+  frag.appendChild(cityHeader);
+  for (const [cid, count] of Object.entries(cityCounts).sort((a, b) => b[1] - a[1])) {
+    const city = cityById(cid);
+    if (!city) continue;
+    const row = document.createElement('div');
+    row.style.cssText = 'font-size:11px;color:#d5c4a1;cursor:pointer;padding:1px 0';
+    row.textContent = (city.emoji || '') + ' ' + city.name + ': ' + count;
+    row.onclick = () => { G.cam.x = city.mx * TILE - canvas.width / 2; G.cam.y = city.my * TILE - canvas.height / 2; showCityInspector(city); };
+    frag.appendChild(row);
+  }
+
+  inspBody.textContent = ''; inspBody.appendChild(frag);
+  inspPanel.classList.remove('hidden');
+  if (isMobile) inspPanel.classList.add('open'); else inspPanel.style.display = 'block';
+  inspCurrent = { type: 'population' };
+};
+
+// Timeline panel
+document.getElementById('hud-year-wrap').onclick = () => {
+  const seasonEmoji = SEASON_EMOJIS[G.season];
+  const seasonName = SEASONS[G.season];
+  inspTitle.textContent = '📅 Year ' + G.year + ' — ' + seasonEmoji + ' ' + seasonName;
+  const frag = document.createDocumentFragment();
+
+  // Season info
+  const seasonRow = document.createElement('div');
+  seasonRow.style.cssText = 'font-size:12px;color:#ebdbb2;margin-bottom:6px';
+  seasonRow.textContent = seasonEmoji + ' ' + seasonName + ' of Year ' + G.year;
+  frag.appendChild(seasonRow);
+
+  // Tick count
+  const tickRow = document.createElement('div');
+  tickRow.style.cssText = 'font-size:11px;color:#928374;margin-bottom:8px';
+  tickRow.textContent = '⏱ Game tick: ' + (G.tick || 0);
+  frag.appendChild(tickRow);
+
+  // Graveyard
+  const graveCount = Object.keys(G.graves || {}).length;
+  if (graveCount > 0) {
+    const graveRow = document.createElement('div');
+    graveRow.style.cssText = 'font-size:11px;color:#fb4934;margin-bottom:8px';
+    graveRow.textContent = '⚰️ Graveyard: ' + graveCount + ' fallen';
+    frag.appendChild(graveRow);
+  }
+
+  // Recent events
+  const evtHeader = document.createElement('div');
+  evtHeader.style.cssText = 'font-size:11px;color:#fabd2f;margin-bottom:4px;font-weight:bold';
+  evtHeader.textContent = 'Recent Events';
+  frag.appendChild(evtHeader);
+  const recent = logEntries.slice(-20).reverse();
+  if (recent.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'font-size:11px;color:#928374';
+    empty.textContent = 'No events yet.';
+    frag.appendChild(empty);
+  } else {
+    for (const entry of recent) {
+      const row = document.createElement('div');
+      row.style.cssText = 'font-size:10px;color:#d5c4a1;padding:1px 0;border-bottom:1px solid #3c3836';
+      if (entry.lx != null && entry.ly != null) {
+        row.style.cursor = 'pointer';
+        row.onclick = ((lx, ly) => () => { G.cam.x = lx * TILE - canvas.width / 2; G.cam.y = ly * TILE - canvas.height / 2; })(entry.lx, entry.ly);
+      }
+      row.textContent = entry.ts + ' ' + entry.msg;
+      frag.appendChild(row);
+    }
+  }
+
+  inspBody.textContent = ''; inspBody.appendChild(frag);
+  inspPanel.classList.remove('hidden');
+  if (isMobile) inspPanel.classList.add('open'); else inspPanel.style.display = 'block';
+  inspCurrent = { type: 'timeline' };
+};
 
 // Sponsored dwarves panel
 document.getElementById('hud-sponsored-wrap').onclick = async () => {
