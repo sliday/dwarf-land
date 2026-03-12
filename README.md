@@ -14,8 +14,11 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - Terrain speed system with Dijkstra pathfinding (mountains = slow, roads = fast, spatial indexing for O(1) neighbor lookups)
 - Auto-generated roads between cities using A* (land-only, no ocean crossing)
 - 3-tier road system: gravel (🟫 1 stone) → asphalt (⬛ 2 stone + 1 iron) → railroad (🔲 3 iron + 2 wood), each progressively faster
+- **Road gap auto-repair**: dwarves detect broken single-lane roads (1-2 tile gaps) within 10 tiles and auto-fix them using 1 stone
 - **Persistent terrain**: all tile changes (builds, farms, roads, mines, designations) saved as deltas and restored on reload
 - **Loop Hero rendering**: adjacent same-type terrain tiles grouped into larger squares with scaled emojis (greedy cover, world-aligned for scroll stability)
+- **Shore dithering**: ocean-beach edges get extended pixel dithering for natural coastline transitions
+- **Ocean waves**: animated blue shimmer on ocean tiles adjacent to shore, simulating gentle waves
 - **Named graves**: dwarves leave a randomized tombstone (🪦💀☠️⚰️🕯️) with their name permanently on the map; click to see who rests there
 - Per-city resources and culturally-named populations
 - Cities auto-expand when population and resources allow (beds, stockpiles, tables)
@@ -130,14 +133,14 @@ Pay to upgrade a dwarf's AI reasoning tier via Polar.sh. Sponsored dwarves get a
 - **AI:** OpenRouter via Vercel AI SDK v6 + Zod v4 schemas
 - **Payments:** Polar.sh (@polar-sh/sdk)
 - **Frontend:** Vanilla JS canvas + DAUB UI (grunge theme)
-- **Tests:** Vitest (338 tests across 20 files)
+- **Tests:** Vitest (355 tests across 21 files)
 
 ## Development
 
 ```bash
 npm install
 npm run dev              # local dev server
-npm test                 # run 338 tests
+npm test                 # run 355 tests
 npm run test:watch       # vitest watch mode
 npm run db:migrate:local # apply D1 migrations locally
 npm run db:migrate:remote # apply D1 migrations to production
