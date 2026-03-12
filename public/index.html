@@ -3512,6 +3512,7 @@ function render() {
   ctx.drawImage(tileBuffer, offsetX, offsetY);
 
   // Ocean wave animation — shimmer on ocean tiles adjacent to shore
+  const now = performance.now() * 0.001;
   for (let gy = Math.max(0, startGY); gy < Math.min(MAP_H, endGY); gy++) {
     for (let gx = startGX; gx < endGX; gx++) {
       const wx = wrapX(gx);
@@ -3532,6 +3533,41 @@ function render() {
       if (px < -TILE || py < -TILE || px > w + TILE || py > h + TILE) continue;
       ctx.fillStyle = `rgba(180,220,255,${alpha})`;
       ctx.fillRect(px, py, TILE, TILE);
+    }
+  }
+
+  // Shore foam animation — animated dither on land tiles adjacent to ocean
+  for (let gy = Math.max(0, startGY); gy < Math.min(MAP_H, endGY); gy++) {
+    for (let gx = startGX; gx < endGX; gx++) {
+      const wx = wrapX(gx);
+      const t = G.map[gy][wx];
+      if (t === T.OCEAN) continue;
+      // Check which edges face ocean
+      for (const [dx, dy, horiz] of [[0,-1,true],[0,1,true],[-1,0,false],[1,0,false]]) {
+        const nx = wrapX(wx + dx), ny = gy + dy;
+        if (ny < 0 || ny >= MAP_H || G.map[ny][nx] !== T.OCEAN) continue;
+        const px = gx * TILE - G.cam.x;
+        const py = gy * TILE - G.cam.y;
+        if (px < -TILE || py < -TILE || px > w + TILE || py > h + TILE) continue;
+        // Animate foam depth (2-5 pixels) based on wave phase
+        const phase = Math.sin(wx * 0.6 + gy * 0.4 + now * 1.5) * 0.5 + 0.5;
+        const foamDepth = 2 + Math.floor(phase * 3);
+        ctx.fillStyle = `rgba(200,230,255,${0.15 + phase * 0.15})`;
+        const h = (wx * 7 + gy * 13 + dx * 3) | 0;
+        for (let d = 0; d < foamDepth; d++) {
+          const bits = (h * (d + 1) * 0x45d9f3b) >>> 0;
+          for (let i = 0; i < TILE; i++) {
+            if (!((bits >>> (i & 7)) & 1)) continue;
+            if (horiz) {
+              const ly = dy < 0 ? d : TILE - 1 - d;
+              ctx.fillRect(px + i, py + ly, 1, 1);
+            } else {
+              const lx = dx < 0 ? d : TILE - 1 - d;
+              ctx.fillRect(px + lx, py + i, 1, 1);
+            }
+          }
+        }
+      }
     }
   }
 
