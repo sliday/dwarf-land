@@ -455,7 +455,7 @@ const T = {
 const MAX_COVER = 5;
 const GROUPABLE = new Set([
   T.OCEAN, T.TUNDRA, T.TAIGA, T.FOREST, T.PLAINS, T.DESERT,
-  T.JUNGLE, T.MOUNTAIN, T.HILL, T.BEACH, T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD,
+  T.JUNGLE, T.MOUNTAIN, T.HILL, T.BEACH,
   T.FARM, T.MUSHROOM, T.FACTORY
 ]);
 
@@ -1467,8 +1467,8 @@ function generateMap() {
           const x = wrapX(cur[0]), y = cur[1];
           const t = G.map[y][x];
           // Don't overwrite buildings or city tiles
-          if (t !== T.CITY && t !== T.BED && t !== T.STOCKPILE && t !== T.TABLE && t !== T.FLOOR && t !== T.WALL && t !== T.DOOR && t !== T.FARM && t !== T.ROAD && t !== T.ASPHALT && t !== T.RAILROAD) {
-            G.map[y][x] = T.ROAD; count++;
+          if (t !== T.CITY && t !== T.BED && t !== T.STOCKPILE && t !== T.TABLE && t !== T.FLOOR && t !== T.WALL && t !== T.DOOR && t !== T.FARM && t !== T.ROAD && t !== T.ASPHALT && t !== T.RAILROAD && t !== T.PATH) {
+            G.map[y][x] = T.PATH; count++;
           }
           cur = par.get(key(cur[0], cur[1]));
         }
