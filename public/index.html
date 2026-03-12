@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧔</text></svg>">
-<title>Dwarf Planet</title>
+<title>Dwarf Land</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daub-ui@latest/daub.css">
 <script src="https://cdn.jsdelivr.net/npm/daub-ui@latest/daub.js"></script>
 <style>
@@ -194,7 +194,7 @@
 <div class="db-modal-overlay" id="splash-modal" aria-hidden="true">
   <div class="db-modal" style="max-width:480px">
     <div class="db-modal__header">
-      <h2 class="db-h3">Dwarf Planet</h2>
+      <h2 class="db-h3">Dwarf Land</h2>
     </div>
     <div class="db-modal__body db-prose db-prose--sm">
       <p>A living world of AI-powered dwarves. 28 cities across the globe, each with unique cultures and autonomous citizens making decisions in real time.</p>
@@ -212,7 +212,7 @@
 <div class="db-modal-overlay" id="about-modal" aria-hidden="true">
   <div class="db-modal" style="max-width:560px;max-height:80vh;display:flex;flex-direction:column">
     <div class="db-modal__header" style="flex-shrink:0">
-      <h2 class="db-h3">How Dwarf Planet Works</h2>
+      <h2 class="db-h3">How Dwarf Land Works</h2>
       <button class="db-btn db-btn--ghost db-btn--sm" onclick="DAUB.closeModal('about-modal')">&times;</button>
     </div>
     <div class="db-modal__body db-prose db-prose--sm" style="overflow-y:auto;flex:1;min-height:0">
@@ -1742,7 +1742,7 @@ function tickSeason() {
     }
     const name = SEASONS[G.season];
     log(`🌍 ${name} of Year ${G.year}`, 'system');
-    if (typeof DAUB !== 'undefined') DAUB.toast({ type: 'info', title: name + ', Year ' + G.year, message: 'The seasons turn across Dwarf Planet...' });
+    if (typeof DAUB !== 'undefined') DAUB.toast({ type: 'info', title: name + ', Year ' + G.year, message: 'The seasons turn across Dwarf Land...' });
 
     if (G.season === 0 || G.season === 1) {
       // Per-city harvest based on nearby farms and resource tiles
@@ -2882,7 +2882,7 @@ async function init() {
   createMmBuffer();
   generateMap();
 
-  log(`🌍 Welcome to Dwarf Planet!`, 'system');
+  log(`🌍 Welcome to Dwarf Land!`, 'system');
   log(`🏘️ Home city: ${G.homeCity.name} ${G.homeCity.emoji}`, 'city');
   log(`🎮 WASD/arrows to pan, scroll to move, right-drag to pan`, 'system');
   log(`⛏️ Use Mine/Build/Farm buttons, then click-drag on map`, 'system');

@@ -1,4 +1,4 @@
-# Dwarf Planet
+# Dwarf Land
 
 AI-powered civilization simulator. Autonomous dwarves make decisions using tiered AI models (Gemini, Claude, GPT). Built on Cloudflare Workers.
 

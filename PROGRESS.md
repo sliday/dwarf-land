@@ -1,4 +1,4 @@
-# Dwarf Planet - Progress
+# Dwarf Land - Progress
 
 ## Phase 1: Cloudflare Workers + Simple AI ✅ COMPLETE
 
