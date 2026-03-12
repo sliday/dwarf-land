@@ -344,14 +344,20 @@ app.get('/api/sponsor/list', async (c) => {
 // Success page for sponsorship checkout completion
 app.get('/success', async (c) => {
   const checkoutId = c.req.query('checkout_id') || '';
+  let dwarfId = '';
   // Auto-activate: user landed here = Polar charged them
   if (checkoutId) {
     try {
       await c.env.DB.prepare(
         "UPDATE dwarf_sponsorships SET status='active', activated_at=datetime('now') WHERE checkout_id=? AND status='pending'"
       ).bind(checkoutId).run();
+      const row = await c.env.DB.prepare(
+        "SELECT dwarf_id FROM dwarf_sponsorships WHERE checkout_id=?"
+      ).bind(checkoutId).first<{ dwarf_id: string }>();
+      if (row) dwarfId = row.dwarf_id;
     } catch (_) { /* best-effort */ }
   }
+  const returnUrl = dwarfId ? `/?dwarfId=${encodeURIComponent(dwarfId)}` : '/';
   return c.html(`<!DOCTYPE html>
 <html lang="en" data-theme="grunge">
 <head>
@@ -368,7 +374,7 @@ app.get('/success', async (c) => {
   <h1 class="db-h3" style="margin-bottom:8px">Brain Upgraded!</h1>
   <p class="db-body" style="margin-bottom:24px">Your sponsored dwarf now has enhanced AI reasoning. They'll make smarter decisions for a limited number of turns.</p>
   <p class="db-caption" style="margin-bottom:24px;opacity:0.6">Checkout: ${checkoutId.slice(0, 8)}...</p>
-  <a href="/" class="db-btn db-btn--primary">Return to Dwarf Land</a>
+  <a href="${returnUrl}" class="db-btn db-btn--primary">Return to Dwarf Land</a>
 </div>
 </body>
 </html>`);
