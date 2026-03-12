@@ -8,14 +8,14 @@ const T = {
   MUSHROOM:16,FARM:17,CITY:18,D_MINE:19,D_BUILD:20,D_FARM:21,
   IRON_ORE:22,GOLD_VEIN:23,GEMS:24,BERRY_BUSH:25,HERB_PATCH:26,CLAY:27,
   FISH_SPOT:28,DEER:29,CORAL:30,CRAB:31,ROAD:32,D_ROAD:33,RAILROAD:34,
-  GRAVE:35,ASPHALT:36
+  GRAVE:35,ASPHALT:36,FACTORY:37
 };
 const WALKABLE = new Set([
   T.TUNDRA,T.TAIGA,T.FOREST,T.PLAINS,T.DESERT,T.JUNGLE,T.HILL,T.BEACH,T.MOUNTAIN,
   T.FLOOR,T.STOCKPILE,T.BED,T.TABLE,T.DOOR,T.MUSHROOM,T.FARM,T.CITY,
   T.D_MINE,T.D_FARM,T.D_ROAD,T.ROAD,T.ASPHALT,T.RAILROAD,
   T.BERRY_BUSH,T.HERB_PATCH,T.CLAY,T.DEER,T.CRAB,
-  T.GRAVE
+  T.GRAVE,T.FACTORY
 ]);
 const WILD_FOOD = new Set([T.MUSHROOM,T.BERRY_BUSH,T.CRAB]);
 const GATHERABLE = new Set([T.BERRY_BUSH,T.HERB_PATCH,T.IRON_ORE,T.GOLD_VEIN,T.GEMS,T.FISH_SPOT,T.CRAB,T.DEER,T.CLAY,T.CORAL]);
@@ -32,8 +32,25 @@ const TERRAIN_PROPS = {
   [T.BERRY_BUSH]:{speed:1},[T.HERB_PATCH]:{speed:1},[T.CLAY]:{speed:1},
   [T.FISH_SPOT]:{speed:0},[T.DEER]:{speed:1},[T.CORAL]:{speed:0},[T.CRAB]:{speed:1},
   [T.RAILROAD]:{speed:0.2},
+  [T.FACTORY]:{speed:1},
 };
 const SHIP_COST = { wood:10, cloth:3, iron:2 }, SHIP_CARGO_MAX = 20;
+const VEHICLE_TYPES = {
+  cart:  { emoji:'\uD83D\uDC34', capacity:8,  minRoad:T.ROAD,     name:'Horse Cart' },
+  car:   { emoji:'\uD83D\uDE97', capacity:15, minRoad:T.ASPHALT,  name:'Car' },
+  train: { emoji:'\uD83D\uDE82', capacity:40, minRoad:T.RAILROAD, name:'Train' },
+};
+const MAX_VEHICLES = 50;
+function createVehicle(type, x, y, cityId) {
+  return {
+    id:'v_'+Math.random().toString(36).slice(2,8),
+    type, x, y, cityId,
+    driverId:null,
+    cargo:{}, cargoTotal:0,
+    state:'parked',
+    target:null, path:[],
+  };
+}
 const MAX_INVENTORY = 6;
 const TERRAIN_CRAFT_ITEMS = {
   [T.OCEAN]:{emoji:'💧',name:'Water'},[T.FISH_SPOT]:{emoji:'💧',name:'Water'},
@@ -108,7 +125,7 @@ const G = {
   year:1, season:0,
   dwarves:[], usedNames:new Set(),
   animals:[], animalGrid:{},
-  ships:[], stats:{mined:0,built:0,farmed:0},
+  ships:[], vehicles:[], stats:{mined:0,built:0,farmed:0},
   graves:{},
   homeCity:null, aiCityIndex:0, dwarfGrid:{},
   mapDeltas:{},
@@ -477,10 +494,10 @@ function tickDwarf(d) {
   } else { d.starveTicks = 0; }
   if (d.state === 'starving') { tryShareFood(d); return; }
   if (d.hunger < 20 && d.state !== 'eating' && d.state !== 'going_eat'
-      && d.state !== 'wander' && d.state !== 'seek_food') {
+      && d.state !== 'wander' && d.state !== 'seek_food' && d.state !== 'driving') {
     d.state = 'seek_food'; d.target = null; d.path = [];
   } else if (d.energy < 15 && d.state !== 'sleeping' && d.state !== 'going_sleep'
-      && d.state !== 'wander' && d.state !== 'seek_sleep') {
+      && d.state !== 'wander' && d.state !== 'seek_sleep' && d.state !== 'driving') {
     d.state = 'seek_sleep'; d.target = null; d.path = [];
   }
   switch (d.state) {
@@ -502,6 +519,7 @@ function tickDwarf(d) {
     case 'crafting': aiCraft(d); break;
     case 'sailing': aiSail(d); break;
     case 'going_rescue': aiWalk(d); break;
+    case 'driving': aiDrive(d); break;
   }
 }
 
@@ -600,6 +618,42 @@ function tryTrade(d) {
   return false;
 }
 
+function findVehicleRoute(fromCity, toCity, minRoad) {
+  const allowedTiles = minRoad === T.RAILROAD ? new Set([T.RAILROAD,T.CITY,T.FACTORY])
+    : minRoad === T.ASPHALT ? new Set([T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY])
+    : new Set([T.ROAD,T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY]);
+  const visited = new Set();
+  const parent = new Map();
+  const queue = [[fromCity.mx, fromCity.my]];
+  const startKey = `${fromCity.mx},${fromCity.my}`;
+  visited.add(startKey);
+  while (queue.length > 0) {
+    const [cx,cy] = queue.shift();
+    if (cx === toCity.mx && cy === toCity.my) {
+      const path = [];
+      let k = `${cx},${cy}`;
+      while (k !== startKey) {
+        const [px,py] = k.split(',').map(Number);
+        path.unshift([px,py]);
+        k = parent.get(k);
+      }
+      return path;
+    }
+    for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = wrapX(cx+dx), ny = cy+dy;
+      if (ny < 0 || ny >= MAP_H) continue;
+      const key = `${nx},${ny}`;
+      if (visited.has(key)) continue;
+      if (!allowedTiles.has(G.map[ny][nx])) continue;
+      visited.add(key);
+      parent.set(key, `${cx},${cy}`);
+      queue.push([nx,ny]);
+    }
+    if (visited.size > 2000) break;
+  }
+  return null;
+}
+
 function tryTradeCaravan(d) {
   const home = cityOf(d);
   if (!home || !home.res) return false;
@@ -625,8 +679,43 @@ function tryTradeCaravan(d) {
     if (homeAmt > 20 && destAmt < 10) tradeGoods.push(k);
   }
   if (tradeGoods.length === 0) return false;
-  // Load up surplus goods
   const good = tradeGoods[Math.floor(Math.random() * tradeGoods.length)];
+
+  // Try to use a vehicle first
+  const vehicle = G.vehicles.find(v =>
+    v.cityId === home.id && !v.driverId && v.state === 'parked'
+  );
+  if (vehicle) {
+    const vt = VEHICLE_TYPES[vehicle.type];
+    const pairKey = [home.id, destCity.id].sort().join('-');
+    const tiers = G.roadGraph?.[pairKey];
+    const tierOk = vt.minRoad === T.ROAD ? tiers?.gravel
+      : vt.minRoad === T.ASPHALT ? tiers?.asphalt
+      : tiers?.railroad;
+    if (tierOk) {
+      const vPath = findVehicleRoute(home, destCity, vt.minRoad);
+      if (vPath && vPath.length > 0) {
+        const amt = Math.min(Math.floor(home.res[good] / 3), vt.capacity);
+        if (amt >= 2) {
+          home.res[good] -= amt;
+          vehicle.cargo = { [good]: amt };
+          vehicle.cargoTotal = amt;
+          vehicle.driverId = d.id;
+          vehicle.state = 'en_route';
+          vehicle.target = { cityId: destCity.id, good, amt };
+          vehicle.path = vPath;
+          d.state = 'driving';
+          d.target = { type: 'drive_vehicle', vehicleId: vehicle.id, cityId: destCity.id, good, amt };
+          d.path = [];
+          log(`${d.name} ${vt.emoji} loaded ${amt} ${good} onto ${vt.name} for ${destCity.name}`, 'trade', 3, null, d.x, d.y);
+          addEvent(d, 'trade', `Driving ${vt.name} to ${destCity.name} with ${amt} ${good}`);
+          return true;
+        }
+      }
+    }
+  }
+
+  // Fallback: walk on foot
   const amt = Math.min(Math.floor(home.res[good] / 3), carryCapacity(d));
   if (amt < 2) return false;
   home.res[good] -= amt;
@@ -759,6 +848,44 @@ function aiIdle(d) {
   d.state = 'wander'; d.timer = 20 + Math.floor(Math.random() * 40);
 }
 
+function aiDrive(d) {
+  if (!d.target || d.target.type !== 'drive_vehicle') { d.state = 'idle'; return; }
+  const v = G.vehicles.find(veh => veh.id === d.target.vehicleId);
+  if (!v) { d.state = 'idle'; d.target = null; return; }
+  // Vehicle moves the dwarf (handled in tickVehicle). Check if arrived.
+  if (v.state === 'parked' && v.path.length === 0) {
+    const destCity = CITIES.find(c => c.id === d.target.cityId);
+    const vt = VEHICLE_TYPES[v.type];
+    if (destCity && destCity.res) {
+      const good = v.target?.good || d.target.good;
+      const amt = v.cargo[good] || 0;
+      if (amt > 0) {
+        destCity.res[good] = (destCity.res[good] || 0) + amt;
+        const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs'];
+        let returnGood = null, returnAmt = 0;
+        for (const k of keys) {
+          if (k === good) continue;
+          if ((destCity.res[k] || 0) > 15) { returnGood = k; returnAmt = Math.min(Math.floor(destCity.res[k] / 3), amt); break; }
+        }
+        if (returnGood && returnAmt > 0) {
+          destCity.res[returnGood] -= returnAmt;
+          v.cargo = { [returnGood]: returnAmt }; v.cargoTotal = returnAmt;
+          log(`${d.name} ${vt.emoji} delivered ${amt} ${good} to ${destCity.name}, returning with ${returnAmt} ${returnGood}`, 'trade', 3, null, d.x, d.y);
+          addEvent(d, 'trade', `${vt.name}: traded ${amt} ${good} at ${destCity.name} for ${returnAmt} ${returnGood}`);
+        } else {
+          v.cargo = {}; v.cargoTotal = 0;
+          log(`${d.name} ${vt.emoji} delivered ${amt} ${good} to ${destCity.name}`, 'trade', 2, null, d.x, d.y);
+          addEvent(d, 'trade', `${vt.name}: delivered ${amt} ${good} to ${destCity.name}`);
+        }
+        d.happiness = Math.min(100, d.happiness + 12);
+      }
+    }
+    // Release vehicle and driver
+    v.driverId = null; v.target = null;
+    d.target = null; d.state = 'idle'; d.carrying = 0; d.carryItems = {};
+  }
+}
+
 function aiWalk(d) {
   if (d.path.length === 0) {
     if (!d.target) { d.state = 'idle'; return; }
@@ -864,17 +991,17 @@ function aiBuild(d) {
       addEvent(d, 'build', 'Built a wall');
       d.happiness = Math.min(100, d.happiness + 3);
     } else if (G.map[y][x] === T.D_ROAD && res.stone >= 1) {
-      res.stone -= 1; mapSet(x, y, T.ROAD); G.stats.built++;
+      res.stone -= 1; mapSet(x, y, T.ROAD); G.stats.built++; G.roadGraphDirty = true;
       log(`${d.name} 🟫 built a gravel road`, 'build', 1);
       addEvent(d, 'build', 'Built a road');
       d.happiness = Math.min(100, d.happiness + 2);
     } else if (d.target.type === 'upgrade_road' && G.map[y][x] === T.ROAD && res.stone >= 2 && res.iron >= 1) {
-      res.stone -= 2; res.iron -= 1; mapSet(x, y, T.ASPHALT); G.stats.built++;
+      res.stone -= 2; res.iron -= 1; mapSet(x, y, T.ASPHALT); G.stats.built++; G.roadGraphDirty = true;
       log(`${d.name} ⬛ paved road to asphalt!`, 'build', 2);
       addEvent(d, 'build', 'Paved road to asphalt');
       d.happiness = Math.min(100, d.happiness + 3);
     } else if (d.target.type === 'upgrade_road' && G.map[y][x] === T.ASPHALT && res.iron >= 3 && res.wood >= 2) {
-      res.iron -= 3; res.wood -= 2; mapSet(x, y, T.RAILROAD); G.stats.built++;
+      res.iron -= 3; res.wood -= 2; mapSet(x, y, T.RAILROAD); G.stats.built++; G.roadGraphDirty = true;
       log(`${d.name} 🔲 upgraded to railroad!`, 'build', 3);
       addEvent(d, 'build', 'Upgraded to railroad');
       d.happiness = Math.min(100, d.happiness + 5);
@@ -1036,6 +1163,99 @@ function tickShip(ship) {
   }
 }
 function tickShips() { for (const ship of G.ships) tickShip(ship); }
+
+// ---- Road connectivity graph ----
+function rebuildRoadGraph() {
+  G.roadGraph = {};
+  const tiers = [
+    { name:'gravel', tiles:new Set([T.ROAD,T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY]) },
+    { name:'asphalt', tiles:new Set([T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY]) },
+    { name:'railroad', tiles:new Set([T.RAILROAD,T.CITY,T.FACTORY]) },
+  ];
+  for (const tier of tiers) {
+    for (const startCity of CITIES) {
+      if (startCity.mx === undefined) continue;
+      const visited = new Set();
+      const queue = [[startCity.mx, startCity.my]];
+      visited.add(`${startCity.mx},${startCity.my}`);
+      let steps = 0;
+      while (queue.length > 0 && steps < 2000) {
+        const [cx,cy] = queue.shift(); steps++;
+        for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+          const nx = wrapX(cx+dx), ny = cy+dy;
+          if (ny < 0 || ny >= MAP_H) continue;
+          const key = `${nx},${ny}`;
+          if (visited.has(key)) continue;
+          const t = G.map[ny][nx];
+          if (!tier.tiles.has(t)) continue;
+          visited.add(key);
+          const destCity = CITIES.find(c => c.mx === nx && c.my === ny && c.id !== startCity.id);
+          if (destCity) {
+            const pairKey = [startCity.id, destCity.id].sort().join('-');
+            if (!G.roadGraph[pairKey]) G.roadGraph[pairKey] = {};
+            G.roadGraph[pairKey][tier.name] = true;
+          }
+          queue.push([nx, ny]);
+        }
+      }
+    }
+  }
+  G.roadGraphDirty = false;
+}
+
+function vehicleCargo(v) { return Object.values(v.cargo).reduce((s,n) => s+n, 0); }
+
+function tickVehicle(v) {
+  if (v.state !== 'en_route' || v.path.length === 0) return;
+  const [nx,ny] = v.path.shift();
+  v.x = nx; v.y = ny;
+  // Move driver along with vehicle
+  const driver = v.driverId ? G.dwarves.find(d => d.id === v.driverId) : null;
+  if (driver) { driver.x = nx; driver.y = ny; }
+  if (v.path.length === 0) {
+    v.state = 'parked';
+    // Update city assignment to destination
+    const destCity = CITIES.find(c => Math.abs(c.mx - v.x) <= 2 && Math.abs(c.my - v.y) <= 2);
+    if (destCity) v.cityId = destCity.id;
+  }
+}
+
+function tickVehicles() { for (const v of G.vehicles) tickVehicle(v); }
+
+function spawnVehicles() {
+  if (G.vehicles.length >= MAX_VEHICLES) return;
+  for (const [pairKey, tiers] of Object.entries(G.roadGraph)) {
+    const [idA, idB] = pairKey.split('-');
+    const cityA = cityById(idA), cityB = cityById(idB);
+    if (!cityA || !cityB) continue;
+    const pairVehicles = G.vehicles.filter(v => {
+      const ids = [v.cityId, v.target?.cityId].filter(Boolean);
+      return (ids.includes(idA) && ids.includes(idB)) ||
+             (v.cityId === idA || v.cityId === idB);
+    });
+    if (tiers.gravel) {
+      const carts = pairVehicles.filter(v => v.type === 'cart');
+      if (carts.length < 1 && G.vehicles.length < MAX_VEHICLES) {
+        G.vehicles.push(createVehicle('cart', cityA.mx, cityA.my, cityA.id));
+        log(`${cityA.name} \uD83D\uDC34 built a horse cart for trade with ${cityB.name}`, 'city', 3);
+      }
+    }
+    if (tiers.asphalt) {
+      const cars = pairVehicles.filter(v => v.type === 'car');
+      if (cars.length < 2 && G.vehicles.length < MAX_VEHICLES) {
+        G.vehicles.push(createVehicle('car', cityA.mx, cityA.my, cityA.id));
+        log(`${cityA.name} \uD83D\uDE97 manufactured a car for trade with ${cityB.name}`, 'city', 3);
+      }
+    }
+    if (tiers.railroad) {
+      const trains = pairVehicles.filter(v => v.type === 'train');
+      if (trains.length < 1 && G.vehicles.length < MAX_VEHICLES) {
+        G.vehicles.push(createVehicle('train', cityA.mx, cityA.my, cityA.id));
+        log(`${cityA.name} \uD83D\uDE82 commissioned a train for the ${cityB.name} line`, 'city', 4);
+      }
+    }
+  }
+}
 
 function tryBuildShip(city) {
   if (!city || !city.res) return null;
@@ -1499,6 +1719,23 @@ function tickSeason() {
         }
       }
       if (deadIds.length) G.dwarves = G.dwarves.filter(dw => !deadIds.includes(dw.id));
+      // Factory car manufacturing (once per year)
+      for (const city of CITIES) {
+        if (!city.res || city.mx === undefined) continue;
+        if (G.vehicles.length >= MAX_VEHICLES) break;
+        const r = city.res;
+        let factoryCount = 0;
+        for (let dy = -6; dy <= 6; dy++)
+          for (let dx = -6; dx <= 6; dx++) {
+            const fx = wrapX(city.mx+dx), fy = city.my+dy;
+            if (fy >= 0 && fy < MAP_H && G.map[fy][fx] === T.FACTORY) factoryCount++;
+          }
+        if (factoryCount > 0 && r.iron >= 5 && r.wood >= 3) {
+          r.iron -= 5; r.wood -= 3;
+          G.vehicles.push(createVehicle('car', city.mx, city.my, city.id));
+          log(`${city.name} \uD83C\uDFED factory produced a \uD83D\uDE97 car!`, 'city', 3);
+        }
+      }
       // Generate per-city year resolutions
       const resolutions = [];
       for (const city of CITIES) {
@@ -1582,6 +1819,45 @@ function tickSeason() {
         }
       }
 
+      // Auto-place factories at eligible cities
+      for (const city of CITIES) {
+        if (!city.res || city.mx === undefined) continue;
+        const r = city.res;
+        if (r.stone < 10 || r.iron < 8 || r.wood < 5) continue;
+        // Check if city already has a factory nearby
+        let hasFactory = false;
+        for (let dy = -6; dy <= 6 && !hasFactory; dy++)
+          for (let dx = -6; dx <= 6 && !hasFactory; dx++) {
+            const fx = wrapX(city.mx+dx), fy = city.my+dy;
+            if (fy >= 0 && fy < MAP_H && G.map[fy][fx] === T.FACTORY) hasFactory = true;
+          }
+        if (hasFactory) continue;
+        // Find an expansion tile
+        const expandable = new Set([T.PLAINS,T.FOREST,T.TAIGA,T.DESERT,T.TUNDRA,T.BEACH,T.HILL,T.FLOOR]);
+        let placed = false;
+        for (let radius = 2; radius <= 5 && !placed; radius++)
+          for (let dy = -radius; dy <= radius && !placed; dy++)
+            for (let dx = -radius; dx <= radius && !placed; dx++) {
+              if (Math.abs(dx) < radius && Math.abs(dy) < radius) continue;
+              const x = wrapX(city.mx+dx), y = city.my+dy;
+              if (y < 0 || y >= MAP_H) continue;
+              if (!expandable.has(G.map[y][x])) continue;
+              let adjBuilding = false;
+              for (const [nx,ny] of [[x-1,y],[x+1,y],[x,y-1],[x,y+1]]) {
+                const wx = wrapX(nx);
+                if (ny >= 0 && ny < MAP_H) {
+                  const nt = G.map[ny][wx];
+                  if (nt===T.BED||nt===T.STOCKPILE||nt===T.TABLE||nt===T.FLOOR||nt===T.CITY||nt===T.WALL) { adjBuilding = true; break; }
+                }
+              }
+              if (!adjBuilding) continue;
+              r.stone -= 10; r.iron -= 8; r.wood -= 5;
+              mapSet(x, y, T.FACTORY);
+              log(`${city.name} \uD83C\uDFED built a factory!`, 'city', 5);
+              placed = true;
+            }
+      }
+
       for (let i = 0; i < 80; i++) {
         const rx = Math.floor(Math.random()*MAP_W);
         const ry = 10+Math.floor(Math.random()*(MAP_H-20));
@@ -1615,6 +1891,10 @@ function tickSeason() {
         }
       }
     }
+
+    // Rebuild road graph and spawn vehicles
+    if (!G.roadGraph || G.roadGraphDirty) rebuildRoadGraph();
+    spawnVehicles();
 
     // Spawn animals
     spawnAnimals();
@@ -1805,6 +2085,10 @@ function getSerializableState() {
       id:s.id,x:s.x,y:s.y,captainId:s.captainId,cityId:s.cityId,
       cargo:s.cargo,state:s.state,
     })),
+    vehicles:G.vehicles.map(v => ({
+      id:v.id,type:v.type,x:v.x,y:v.y,cityId:v.cityId,
+      driverId:v.driverId,cargo:v.cargo,state:v.state,
+    })),
     mapDeltas:G.mapDeltas,
     graves:G.graves,
   };
@@ -1826,6 +2110,7 @@ self.onmessage = function(e) {
       AI_API_BASE = data.apiBase || '';
       G.dwarves = data.dwarves || [];
       G.ships = (data.ships || []).map(s => ({...s, path:s.path||[], target:s.target||null}));
+      G.vehicles = (data.vehicles || []).map(v => ({...v, path:v.path||[], target:v.target||null}));
       G.tick = data.state?.tick || 0;
       G.year = data.state?.year || 1;
       G.season = data.state?.season || 0;
@@ -1908,6 +2193,14 @@ self.onmessage = function(e) {
           path:[], target:null,
         }));
       }
+      if (saved.vehicles?.length) {
+        G.vehicles = saved.vehicles.map(v => ({
+          ...createVehicle(v.type, v.x, v.y, v.cityId),
+          id:v.id, driverId:v.driverId||null, cargo:v.cargo||{}, state:v.state||'parked',
+          cargoTotal:Object.values(v.cargo||{}).reduce((a,b)=>a+b,0),
+          path:[], target:null,
+        }));
+      }
       // Restore map deltas
       if (saved.mapDeltas) {
         G.mapDeltas = saved.mapDeltas;
@@ -1946,6 +2239,7 @@ function startTickLoop() {
       for (const d of G.dwarves) tickDwarf(d);
       G.dwarves = G.dwarves.filter(d => !d.dead);
       tickShips();
+      tickVehicles();
       tickAnimals();
       tickSeason();
     }
@@ -1979,6 +2273,12 @@ function startTickLoop() {
         cargo:s.cargo,cargoTotal:s.cargoTotal||0,state:s.state,
         target:s.target?{cityId:s.target.cityId}:null,
         pathLength:s.path?.length||0,
+      })),
+      vehicles:G.vehicles.map(v => ({
+        id:v.id,type:v.type,x:v.x,y:v.y,cityId:v.cityId,
+        driverId:v.driverId,cargo:v.cargo,cargoTotal:v.cargoTotal||0,
+        state:v.state,target:v.target?{cityId:v.target.cityId}:null,
+        pathLength:v.path?.length||0,
       })),
       cities:CITIES.filter(c => c.res).map(c => ({id:c.id,res:{...c.res},mx:c.mx,my:c.my,name:c.name,emoji:c.emoji})),
       logs:pendingLogs.splice(0),
