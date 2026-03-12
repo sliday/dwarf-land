@@ -63,7 +63,7 @@
   .hud-stat { text-align: center; pointer-events: auto; cursor: pointer; border-radius: 6px; padding: 2px 8px; transition: background 0.15s; }
   .hud-stat:hover { background: rgba(255,255,255,0.07); }
   .hud-stat .label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #a89984; font-weight: 700; }
-  .hud-stat .value { font-size: 28px; font-weight: bold; color: #ebdbb2; font-variant-numeric: tabular-nums; }
+  .hud-stat .value { font-size: 20px; font-weight: bold; color: #ebdbb2; font-variant-numeric: tabular-nums; }
 
   .minimap {
     position: absolute; top: 8px; right: 8px;
@@ -196,7 +196,7 @@
 
   /* ---- Mobile ---- */
   .mobile .hud-top { gap: 8px; padding: 6px 8px; }
-  .mobile .hud-stat .value { font-size: 16px; }
+  .mobile .hud-stat .value { font-size: 14px; }
   .mobile .hud-stat .label { font-size: 8px; }
   @media (max-width: 430px) {
     .mobile #hud-sponsored-wrap { display: none; }
@@ -287,12 +287,12 @@
   <div class="hud-stat" id="hud-pop-wrap"><div class="label">Dwarves</div><div class="value" id="h-pop">0</div></div>
   <div class="hud-stat" style="position:relative" id="hud-city-wrap">
     <div class="label">City</div>
-    <div class="value" id="h-city" style="font-size:16px">-</div>
+    <div class="value" id="h-city">-</div>
     <div id="city-dropdown" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);background:rgba(29,32,33,0.97);border:1px solid #504945;border-radius:6px;max-height:300px;overflow-y:auto;z-index:30;min-width:180px;scrollbar-width:thin;scrollbar-color:#504945 transparent"></div>
   </div>
-  <div class="hud-stat" id="hud-res-wrap"><div class="label">Resources</div><div class="value" id="h-res" style="font-size:14px">-</div></div>
+  <div class="hud-stat" id="hud-res-wrap"><div class="label">Resources</div><div class="value" id="h-res" style="font-size:13px">-</div></div>
   <div class="hud-stat" id="hud-year-wrap"><div class="label">Year</div><div class="value" id="h-year">1</div></div>
-  <div class="hud-stat" id="hud-sponsored-wrap" style="cursor:pointer" title="Click to see sponsored dwarves"><div class="label">Sponsored</div><div class="value" id="h-sponsored" style="font-size:16px;color:#fabd2f">$0</div></div>
+  <div class="hud-stat" id="hud-sponsored-wrap" title="Click to see sponsored dwarves"><div class="label">Sponsored</div><div class="value" id="h-sponsored" style="color:#fabd2f">$0</div></div>
 </div>
 
 <div id="year-banner" class="hidden"></div>
@@ -911,7 +911,7 @@ const G = {
   animals: [],
   stats: { mined: 0, built: 0, farmed: 0 },
   mapDeltas: {},
-  graves: {},
+  graves: {}, yearResolutions: [],
   cam: { x: 0, y: 0 },
   mode: 'normal', drag: null, sel: null,
   hovTile: null, mapDirty: true,
@@ -3253,7 +3253,7 @@ function renderLog() {
   el.innerHTML = collapsed.map(e => {
     const countBadge = e.count > 1 ? `<span class="log-count">\u00d7${e.count}</span>` : '';
     const locAttr = e.lx != null && e.ly != null ? ` data-lx="${e.lx}" data-ly="${e.ly}" style="cursor:pointer"` : '';
-    return `<div class="log-entry t-${e.type}"${locAttr}><span class="ts">${e.ts}</span><span class="msg">${linkifyDwarfNames(e.msg)}${countBadge}</span></div>`;
+    return `<div class="log-entry t-${e.type}"${locAttr}><span class="msg">${linkifyDwarfNames(e.msg)}${countBadge}</span></div>`;
   }).join('');
   if (atBottom) el.scrollTop = el.scrollHeight;
 }
@@ -5184,27 +5184,53 @@ document.getElementById('hud-year-wrap').onclick = () => {
   seasonRow.textContent = seasonEmoji + ' ' + seasonName + ' of Year ' + G.year;
   frag.appendChild(seasonRow);
 
-  // Tick count
+  // Tick count + graveyard
   const tickRow = document.createElement('div');
-  tickRow.style.cssText = 'font-size:11px;color:#928374;margin-bottom:8px';
+  tickRow.style.cssText = 'font-size:11px;color:#928374;margin-bottom:4px';
   tickRow.textContent = '⏱ Game tick: ' + (G.tick || 0);
   frag.appendChild(tickRow);
-
-  // Graveyard
   const graveCount = Object.keys(G.graves || {}).length;
   if (graveCount > 0) {
     const graveRow = document.createElement('div');
-    graveRow.style.cssText = 'font-size:11px;color:#fb4934;margin-bottom:8px';
+    graveRow.style.cssText = 'font-size:11px;color:#fb4934;margin-bottom:6px';
     graveRow.textContent = '⚰️ Graveyard: ' + graveCount + ' fallen';
     frag.appendChild(graveRow);
   }
 
+  // Year resolutions history (newest first)
+  const history = (G.yearResolutions || []).slice().reverse();
+  if (history.length > 0) {
+    const resHeader = document.createElement('div');
+    resHeader.style.cssText = 'font-size:11px;color:#fabd2f;margin:4px 0 4px;font-weight:bold';
+    resHeader.textContent = '📜 Year Resolutions';
+    frag.appendChild(resHeader);
+    for (const entry of history) {
+      const yearLabel = document.createElement('div');
+      yearLabel.style.cssText = 'font-size:10px;color:#ebdbb2;margin-top:6px;font-weight:bold';
+      yearLabel.textContent = '— Year ' + entry.year + ' —';
+      frag.appendChild(yearLabel);
+      for (const r of entry.resolutions) {
+        const row = document.createElement('div');
+        row.style.cssText = 'font-size:10px;color:#d5c4a1;padding:1px 0;padding-left:8px;cursor:pointer';
+        row.textContent = (r.emoji || '') + ' ' + r.name + ': ' + r.resolution;
+        const cid = r.cityId;
+        row.onclick = () => { const c = cityById(cid); if (c && c.mx !== undefined) { G.cam.x = c.mx * TILE - canvas.width / 2; G.cam.y = c.my * TILE - canvas.height / 2; showCityInspector(c); } };
+        frag.appendChild(row);
+      }
+    }
+  } else {
+    const noRes = document.createElement('div');
+    noRes.style.cssText = 'font-size:11px;color:#928374;margin:4px 0';
+    noRes.textContent = '📜 No year resolutions yet — resolutions are set each new year.';
+    frag.appendChild(noRes);
+  }
+
   // Recent events
   const evtHeader = document.createElement('div');
-  evtHeader.style.cssText = 'font-size:11px;color:#fabd2f;margin-bottom:4px;font-weight:bold';
+  evtHeader.style.cssText = 'font-size:11px;color:#fabd2f;margin:8px 0 4px;font-weight:bold';
   evtHeader.textContent = 'Recent Events';
   frag.appendChild(evtHeader);
-  const recent = logEntries.slice(-20).reverse();
+  const recent = logEntries.slice(-15).reverse();
   if (recent.length === 0) {
     const empty = document.createElement('div');
     empty.style.cssText = 'font-size:11px;color:#928374';
@@ -5356,6 +5382,7 @@ async function restoreState() {
 
   // Restore graves
   if (saved.graves) G.graves = saved.graves;
+  if (saved.yearResolutions) G.yearResolutions = saved.yearResolutions;
 
   // Ensure minimum population: at least 2 dwarves per city
   for (const city of CITIES) {
@@ -5488,7 +5515,7 @@ function initWorker() {
         for (const l of data.logs) log(l.msg, l.type, l.rarity, l.season, l.cityEmoji, l.lx, l.ly);
         // Show buffered toasts
         for (const t of data.toasts) {
-          if (t.type === 'year_resolutions') { showYearBanner(t.year, t.resolutions); continue; }
+          if (t.type === 'year_resolutions') { G.yearResolutions.push({year:t.year, resolutions:t.resolutions}); showYearBanner(t.year, t.resolutions); continue; }
           if (typeof DAUB !== 'undefined' && DAUB.toast) DAUB.toast(t);
         }
         if (G.tick % 30 === 0) updateHUD();

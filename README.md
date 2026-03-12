@@ -68,6 +68,7 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - Click inspector for dwarves (stats, inventory, carry, events), cities (ideology), terrain, ships
 - **Live inspector**: open panels auto-refresh every 30 ticks — watch stats change in real time
 - Follow/lock camera on a specific dwarf with pulsing ring indicator
+- **Clickable HUD stats**: all top bar stats are interactive — Dwarves (sortable/filterable population list), City (dropdown switcher), Resources (per-resource city rankings), Year (timeline with past resolutions), Sponsored (sponsored dwarves list)
 - City switcher dropdown in top HUD — click city name to jump to any of 125 cities
 - City ideology labels computed from aggregate personality (Militant, Spiritual, Mercantile, etc.)
 - Contextual Mine/Build/Farm/Road designation buttons with drag-to-designate

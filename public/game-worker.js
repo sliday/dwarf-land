@@ -126,7 +126,7 @@ const G = {
   dwarves:[], usedNames:new Set(),
   animals:[], animalGrid:{},
   ships:[], vehicles:[], stats:{mined:0,built:0,farmed:0},
-  graves:{},
+  graves:{}, yearResolutions:[],
   homeCity:null, aiCityIndex:0, dwarfGrid:{},
   mapDeltas:{},
 };
@@ -1781,7 +1781,7 @@ function tickSeason() {
         else resolution = 'Grow the population steadily';
         resolutions.push({cityId:city.id, name:city.name, emoji:city.emoji, resolution});
       }
-      if (resolutions.length) pendingToasts.push({type:'year_resolutions', year:G.year, resolutions});
+      if (resolutions.length) { G.yearResolutions.push({year:G.year, resolutions}); pendingToasts.push({type:'year_resolutions', year:G.year, resolutions}); }
     }
     const name = SEASONS[G.season];
     log(`🌍 ${name} of Year ${G.year}`, 'system', 3);
@@ -2119,6 +2119,7 @@ function getSerializableState() {
       inventory:d.inventory||[],
       hp:d.hp,maxHp:d.maxHp,ac:d.ac,poisonTicks:d.poisonTicks||0,pet:d.pet||null,
       sex:d.sex||'M',
+      sponsored:d.sponsored||false,sponsorTier:d.sponsorTier||null,sponsorCallsRemaining:d.sponsorCallsRemaining||0,
     })),
     animals:G.animals.map(a => ({
       id:a.id,type:a.type,x:a.x,y:a.y,hp:a.hp,maxHp:a.maxHp,ac:a.ac,
@@ -2136,6 +2137,7 @@ function getSerializableState() {
     })),
     mapDeltas:G.mapDeltas,
     graves:G.graves,
+    yearResolutions:G.yearResolutions,
   };
 }
 
@@ -2166,6 +2168,7 @@ self.onmessage = function(e) {
       G.aiCityIndex = data.state?.aiCityIndex || 0;
       G.mapDeltas = data.state?.mapDeltas || {};
       G.graves = data.state?.graves || {};
+      G.yearResolutions = data.state?.yearResolutions || [];
       // Restore dwarf paths/targets to empty (they were stripped for transfer)
       for (const d of G.dwarves) {
         if (!d.path) d.path = [];
