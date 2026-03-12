@@ -13,11 +13,13 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - **Forest islands**: noise-based forest clusters naturally dot the plains for visual variety and wood sources
 - Terrain speed system with Dijkstra pathfinding (mountains = slow, roads = fast, spatial indexing for O(1) neighbor lookups)
 - Auto-generated dirt paths between cities using A* (land-only, no ocean crossing); dwarves upgrade over time
-- 4-tier road system: dirt path (👣 free) → gravel (🟫 1 stone) → asphalt (⬛ 2 stone + 1 iron) → railroad (🟰 rotated on ⬛, 3 iron + 2 wood), each progressively faster
+- 4-tier road system: dirt path (👣 free) → gravel (🟫 1 stone) → asphalt (⬛ 2 stone + 1 iron) → railroad (# on ⬛, 3 iron + 2 wood); single-lane rendering, each tier progressively faster
 - **Road gap auto-repair**: dwarves detect broken single-lane roads (1-2 tile gaps) within 10 tiles and auto-fix them with a dirt path
 - **Persistent terrain**: all tile changes (builds, farms, roads, mines, designations) saved as deltas and restored on reload
 - **Loop Hero rendering**: adjacent same-type terrain tiles grouped into larger squares with scaled emojis (greedy cover, world-aligned for scroll stability)
-- **Shore dithering**: ocean-beach edges get extended pixel dithering for natural coastline transitions
+- **Latitude-aware beaches**: beach umbrella emoji (🏖️) only on tropical/temperate shores (below 45°) adjacent to ocean; high-latitude beaches show clean sand
+- **Desert variety**: most desert tiles show plain dark sand (#a8882a); scattered 🌵 (12%), 🪨 (3%), and 🗿 on ocean-adjacent desert shores
+- **Shore dithering**: ocean-beach edges get extended pixel dithering for natural coastline transitions; skipped on small inland water bodies
 - **Ocean waves**: animated blue shimmer on ocean tiles adjacent to shore, simulating gentle waves
 - **Road pulse**: connected road tiles glow with a traveling wave animation; disconnected segments stay static
 - **Named graves**: dwarves leave a randomized tombstone (🪦💀☠️⚰️🕯️) with their name permanently on the map; click to see who rests there
@@ -70,6 +72,7 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - Dwarves auto-select the best available vehicle for trade routes
 
 ### Ships & Sea Travel
+- Coastal cities start with 2 ships; up to 50 ships globally
 - Ships built at coastal cities (10 wood + 3 cloth + 2 iron)
 - **Ship beaching**: docked ships move onto adjacent land tiles so dwarves can walk to them; ships launch back to water when sailing begins
 - **Ocean wildlife**: sharks, whales, and dolphins swim in the ocean (up to 400 animals total)
@@ -88,7 +91,7 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - City ideology labels computed from aggregate personality (Militant, Spiritual, Mercantile, etc.)
 - Contextual Mine/Build/Farm/Road designation buttons with drag-to-designate
 - Speed slider (⏸ → 1x → 2x → 5x) for simulation speed control
-- Event log with season emoji timestamps (🌱☀️🍂❄️) and rarity filter with consecutive entry collapsing (×N); all events with locations are clickable (pans camera)
+- Event log with season emoji timestamps (🌱☀️🍂❄️) and rarity filter with consecutive entry collapsing (×N); **all dwarf names and city names are clickable** (jump camera to subject); all city events include coordinates
 - **Temperature tinting**: HUD and status bar shift warm amber → cool blue based on camera latitude and season
 - **Year resolutions banner**: each new year shows per-city goals (farming, expansion, crafting) based on population stats
 - **Graveyard panel**: click fallen count in Year panel to browse all graves; each grave shows cause of death, age, home city, and an AI-generated epitaph (gemini-3.1-flash-lite)
