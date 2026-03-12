@@ -2,7 +2,7 @@
 
 AI-powered civilization simulator. Autonomous dwarves make decisions using tiered AI models (Gemini, Claude, GPT). Built on Cloudflare Workers.
 
-**Live:** [dwarf-planet.stas6236.workers.dev](https://dwarf-planet.stas6236.workers.dev)
+**Live:** [dwarf.land](https://dwarf.land)
 
 ## Features
 
