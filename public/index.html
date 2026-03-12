@@ -268,7 +268,7 @@
 
 <script>
 // ============================================================
-// DWARF PLANET - Autonomous Fortress on Planet Earth
+// DWARF LAND - Autonomous Fortress Simulator
 // ============================================================
 
 const TILE = 20;
@@ -3809,8 +3809,8 @@ async function init() {
   requestAnimationFrame(gameLoop);
 
   // Show splash on first visit
-  if (!localStorage.getItem('dwarf-planet-visited')) {
-    localStorage.setItem('dwarf-planet-visited', '1');
+  if (!localStorage.getItem('dwarf-land-visited')) {
+    localStorage.setItem('dwarf-land-visited', '1');
     setTimeout(() => DAUB.openModal('splash-modal'), 500);
   }
 }
