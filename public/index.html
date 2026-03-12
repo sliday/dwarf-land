@@ -59,6 +59,8 @@
   .log-entry.t-system .msg { color: #b8bb26; }
   .log-entry.t-farm .msg { color: #8ec07c; }
   .log-entry.t-city .msg { color: #d3869b; }
+  .log-entry.t-trade .msg { color: #d79921; }
+  .log-entry.t-craft .msg { color: #b16286; }
 
   .controls {
     position: absolute; bottom: 24px; right: 0;
@@ -147,7 +149,11 @@
 
 <div class="hud-top">
   <div class="hud-stat"><div class="label">Dwarves</div><div class="value" id="h-pop">0</div></div>
-  <div class="hud-stat"><div class="label">City</div><div class="value" id="h-city" style="font-size:16px">-</div></div>
+  <div class="hud-stat" style="position:relative;pointer-events:auto;cursor:pointer" id="hud-city-wrap">
+    <div class="label">City</div>
+    <div class="value" id="h-city" style="font-size:16px">-</div>
+    <div id="city-dropdown" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);background:rgba(29,32,33,0.97);border:1px solid #504945;border-radius:6px;max-height:300px;overflow-y:auto;z-index:30;min-width:180px;scrollbar-width:thin;scrollbar-color:#504945 transparent"></div>
+  </div>
   <div class="hud-stat"><div class="label">Resources</div><div class="value" id="h-res" style="font-size:14px">-</div></div>
   <div class="hud-stat"><div class="label">Year</div><div class="value" id="h-year">1</div></div>
   <div class="hud-stat"><div class="label">Sponsored</div><div class="value" id="h-sponsored" style="font-size:16px;color:#fabd2f">$0</div></div>
@@ -210,12 +216,11 @@
 
 <!-- About / Mechanics Modal -->
 <div class="db-modal-overlay" id="about-modal" aria-hidden="true">
-  <div class="db-modal" style="max-width:560px;max-height:80vh;display:flex;flex-direction:column">
-    <div class="db-modal__header" style="flex-shrink:0">
+  <div class="db-modal" style="max-width:720px">
+    <div class="db-modal__header">
       <h2 class="db-h3">How Dwarf Land Works</h2>
-      <button class="db-btn db-btn--ghost db-btn--sm" onclick="DAUB.closeModal('about-modal')">&times;</button>
     </div>
-    <div class="db-modal__body db-prose db-prose--sm" style="overflow-y:auto;flex:1;min-height:0">
+    <div class="db-modal__body db-prose db-prose--sm db-scroll-area" style="max-height:65vh">
       <h4>The World</h4>
       <p>A 500&times;250 tile planet with continents, oceans, mountains, forests, and deserts. 28 real-world cities with culturally named dwarves. The map wraps horizontally &mdash; it's a globe.</p>
 
@@ -231,22 +236,32 @@
 
       <h4>Sponsorship</h4>
       <p>Click a dwarf and sponsor their brain. They get a star badge and upgraded AI reasoning for a limited number of decisions:</p>
-      <table class="db-table" style="font-size:12px;width:100%;overflow:visible">
-        <tr><th>Tier</th><th>Price</th><th>AI Level</th><th>Decisions</th></tr>
-        <tr><td>Bronze</td><td>$1</td><td>Medium</td><td>100</td></tr>
-        <tr><td>Silver</td><td>$3</td><td>Complex</td><td>75</td></tr>
-        <tr><td>Gold</td><td>$10</td><td>Premium</td><td>100</td></tr>
+      <table class="db-table db-table--compact" style="font-size:12px">
+        <thead><tr><th>Tier</th><th>Price</th><th>AI Level</th><th>Decisions</th></tr></thead>
+        <tbody>
+          <tr><td>Bronze</td><td>$1</td><td>Medium</td><td>100</td></tr>
+          <tr><td>Silver</td><td>$3</td><td>Complex</td><td>75</td></tr>
+          <tr><td>Gold</td><td>$10</td><td>Premium</td><td>100</td></tr>
+        </tbody>
       </table>
 
+      <h4>Crafting</h4>
+      <p>Dwarves collect items from terrain (Water, Earth, Fire, Wind) and combine them at workshops. Any two items can be combined &mdash; AI generates new results and caches them forever. 296 seed recipes included.</p>
+
+      <h4>Trading &amp; Ships</h4>
+      <p>Dwarves from different cities trade when they meet. Smarter dwarves (higher INT) get better deals. Ambitious dwarves build ships and sail across oceans to trade with distant cities.</p>
+
+      <h4>Infrastructure</h4>
+      <p>Roads connect cities automatically. Dwarves upgrade roads to railroads (3 iron + 2 wood) for ultra-fast travel. Cities auto-expand when population and resources allow.</p>
+
       <h4>Resources &amp; Building</h4>
-      <p>Each city has its own resource pool (food, wood, stone, iron, gold, cloth, ale, herbs). Dwarves mine, farm, build, eat, sleep, and socialize autonomously. Use the Mine/Build/Farm buttons to designate areas on the map.</p>
+      <p>Each city has its own resource pool (food, wood, stone, iron, gold, cloth, ale, herbs). Dwarves mine, farm, build, eat, sleep, and socialize autonomously. Use the Mine/Build/Farm/Road buttons to designate areas on the map.</p>
 
       <h4>Continuous World</h4>
       <p>The world is alive while you watch. State saves automatically every 60 seconds. Come back anytime &mdash; your dwarves remember everything.</p>
-
-      <div style="margin-top:12px">
-        <button class="db-btn db-btn--primary" onclick="DAUB.closeModal('about-modal')">Got it</button>
-      </div>
+    </div>
+    <div class="db-modal__footer">
+      <button class="db-btn db-btn--primary" onclick="DAUB.closeModal('about-modal')">Got it</button>
     </div>
   </div>
 </div>
@@ -271,14 +286,15 @@ const T = {
   IRON_ORE: 22, GOLD_VEIN: 23, GEMS: 24,
   BERRY_BUSH: 25, HERB_PATCH: 26, CLAY: 27,
   FISH_SPOT: 28, DEER: 29, CORAL: 30, CRAB: 31,
-  ROAD: 32, D_ROAD: 33
+  ROAD: 32, D_ROAD: 33,
+  RAILROAD: 34
 };
 
 const WALKABLE = new Set([
   T.TUNDRA, T.TAIGA, T.FOREST, T.PLAINS, T.DESERT, T.JUNGLE, T.HILL, T.BEACH,
   T.MOUNTAIN,
   T.FLOOR, T.STOCKPILE, T.BED, T.TABLE, T.DOOR, T.MUSHROOM, T.FARM, T.CITY,
-  T.D_MINE, T.D_FARM, T.D_ROAD, T.ROAD,
+  T.D_MINE, T.D_FARM, T.D_ROAD, T.ROAD, T.RAILROAD,
   T.BERRY_BUSH, T.HERB_PATCH, T.CLAY, T.DEER, T.CRAB
 ]);
 
@@ -317,6 +333,7 @@ const TERRAIN_PROPS = {
   [T.DEER]:      { speed: 1, desc: 'Wild game roaming' },
   [T.CORAL]:     { speed: 0, desc: 'Coral reef (walk adjacent)' },
   [T.CRAB]:      { speed: 1, desc: 'Crabs on the shore' },
+  [T.RAILROAD]:  { speed: 0.2, desc: 'Railroad, extremely fast travel' },
 };
 
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
@@ -331,7 +348,7 @@ const EMOJI = {
   [T.IRON_ORE]: '⚙️', [T.GOLD_VEIN]: '✨', [T.GEMS]: '💎',
   [T.BERRY_BUSH]: '🫐', [T.HERB_PATCH]: '🌿', [T.CLAY]: '🏺',
   [T.FISH_SPOT]: '🐟', [T.DEER]: '🦌', [T.CORAL]: '🪸', [T.CRAB]: '🦀',
-  [T.ROAD]: '🛤️', [T.D_ROAD]: '🚧'
+  [T.ROAD]: '🛤️', [T.D_ROAD]: '🚧', [T.RAILROAD]: '🚂'
 };
 
 const BG_COLORS = {
@@ -346,7 +363,7 @@ const BG_COLORS = {
   [T.IRON_ORE]: '#8a6a4a', [T.GOLD_VEIN]: '#8a7a20', [T.GEMS]: '#5a3a7a',
   [T.BERRY_BUSH]: '#2a4a2a', [T.HERB_PATCH]: '#3a5a2a', [T.CLAY]: '#9a7a5a',
   [T.FISH_SPOT]: '#1a5a8a', [T.DEER]: '#4a6a3a', [T.CORAL]: '#6a3a5a', [T.CRAB]: '#c4965a',
-  [T.ROAD]: '#8a7a5a', [T.D_ROAD]: '#7a6a4a'
+  [T.ROAD]: '#8a7a5a', [T.D_ROAD]: '#7a6a4a', [T.RAILROAD]: '#5a5a6a'
 };
 
 const TILE_NAMES = {
@@ -361,7 +378,7 @@ const TILE_NAMES = {
   [T.IRON_ORE]: '⚙️ Iron Ore', [T.GOLD_VEIN]: '✨ Gold Vein', [T.GEMS]: '💎 Gems',
   [T.BERRY_BUSH]: '🫐 Berry Bush', [T.HERB_PATCH]: '🌿 Herb Patch', [T.CLAY]: '🏺 Clay',
   [T.FISH_SPOT]: '🐟 Fish', [T.DEER]: '🦌 Wild Game', [T.CORAL]: '🪸 Coral', [T.CRAB]: '🦀 Crabs',
-  [T.ROAD]: '🛤️ Road', [T.D_ROAD]: '🚧 Road (planned)'
+  [T.ROAD]: '🛤️ Road', [T.D_ROAD]: '🚧 Road (planned)', [T.RAILROAD]: '🚂 Railroad'
 };
 
 // ---- Continent shapes: [lon, lat, radiusX, radiusY] ellipses ----
@@ -504,6 +521,7 @@ const G = {
   map: [], tick: 0, speed: 1, paused: false,
   year: 1, season: 0,
   dwarves: [], usedNames: new Set(),
+  ships: [], // Array of ship objects
   stats: { mined: 0, built: 0, farmed: 0 },
   cam: { x: 0, y: 0 },
   mode: 'normal', drag: null, sel: null,
@@ -875,7 +893,7 @@ function generateMap() {
           const x = wrapX(cur[0]), y = cur[1];
           const t = G.map[y][x];
           // Don't overwrite buildings or city tiles
-          if (t !== T.CITY && t !== T.BED && t !== T.STOCKPILE && t !== T.TABLE && t !== T.FLOOR && t !== T.WALL && t !== T.DOOR && t !== T.FARM && t !== T.ROAD) {
+          if (t !== T.CITY && t !== T.BED && t !== T.STOCKPILE && t !== T.TABLE && t !== T.FLOOR && t !== T.WALL && t !== T.DOOR && t !== T.FARM && t !== T.ROAD && t !== T.RAILROAD) {
             G.map[y][x] = T.ROAD; count++;
           }
           cur = par.get(key(cur[0], cur[1]));
@@ -889,9 +907,10 @@ function generateMap() {
         if (ny < 0 || ny >= MAP_H) continue;
         const nk = key(nx, ny);
         const t = G.map[ny][wrapX(nx)];
-        // Road cost: prefer existing roads, plains; avoid ocean
+        // Road cost: prefer existing roads, plains; ocean is impassable for roads
         let tc;
-        if (t === T.OCEAN) tc = 100;
+        if (t === T.OCEAN || t === T.FISH_SPOT || t === T.CORAL) tc = Infinity;
+        else if (t === T.RAILROAD) tc = 0.1;
         else if (t === T.ROAD) tc = 0.3;
         else { const p = TERRAIN_PROPS[t]; tc = p ? Math.max(p.speed, 0.5) : 5; }
         const ng = cost + tc;
@@ -1198,6 +1217,7 @@ function tickDwarf(d) {
     case 'hauling': aiWalk(d); break;
     case 'seek_craft': aiSeekCraft(d); break;
     case 'crafting': aiCraft(d); break;
+    case 'sailing': aiSail(d); break;
   }
 }
 
@@ -1276,9 +1296,11 @@ function tryTrade(d) {
       if (give) other.inventory.push(give);
       if (get1) d.inventory.push(get1);
       if (get2) d.inventory.push(get2);
-      log(`${d.name} \uD83E\uDD1D outsmarted ${other.name} in a trade!`, 'trade');
-      addEvent(d, 'trade', `Traded with ${other.name} (favorable)`);
-      addEvent(other, 'trade', `Traded with ${d.name} (unfavorable)`);
+      const gaveStr = give ? give.emoji + give.name : '?';
+      const gotStr = [get1, get2].filter(Boolean).map(i => i.emoji + i.name).join(', ') || '?';
+      log(`${d.name} \uD83E\uDD1D outsmarted ${other.name}: gave ${gaveStr}, got ${gotStr}`, 'trade');
+      addEvent(d, 'trade', `Gave ${gaveStr} to ${other.name}, got ${gotStr} (favorable)`);
+      addEvent(other, 'trade', `Gave ${gotStr} to ${d.name}, got ${gaveStr} (unfavorable)`);
     } else if (intDiff <= -5) {
       // Other is smarter
       const give1 = d.inventory.shift();
@@ -1287,18 +1309,22 @@ function tryTrade(d) {
       if (give1) other.inventory.push(give1);
       if (give2) other.inventory.push(give2);
       if (get) d.inventory.push(get);
-      log(`${other.name} \uD83E\uDD1D outsmarted ${d.name} in a trade!`, 'trade');
-      addEvent(d, 'trade', `Traded with ${other.name} (unfavorable)`);
-      addEvent(other, 'trade', `Traded with ${d.name} (favorable)`);
+      const gaveStr = [give1, give2].filter(Boolean).map(i => i.emoji + i.name).join(', ') || '?';
+      const gotStr = get ? get.emoji + get.name : '?';
+      log(`${other.name} \uD83E\uDD1D outsmarted ${d.name}: ${d.name} gave ${gaveStr}, got ${gotStr}`, 'trade');
+      addEvent(d, 'trade', `Gave ${gaveStr} to ${other.name}, got ${gotStr} (unfavorable)`);
+      addEvent(other, 'trade', `Gave ${gotStr} to ${d.name}, got ${gaveStr} (favorable)`);
     } else {
       // Equal 1:1 swap
       const give = d.inventory.shift();
       const get = other.inventory.shift();
       if (give) other.inventory.push(give);
       if (get) d.inventory.push(get);
-      log(`${d.name} \uD83E\uDD1D traded with ${other.name}`, 'trade');
-      addEvent(d, 'trade', `Traded with ${other.name}`);
-      addEvent(other, 'trade', `Traded with ${d.name}`);
+      const gaveStr = give ? give.emoji + give.name : '?';
+      const gotStr = get ? get.emoji + get.name : '?';
+      log(`${d.name} \uD83E\uDD1D traded with ${other.name}: ${gaveStr} \u2194 ${gotStr}`, 'trade');
+      addEvent(d, 'trade', `Traded ${gaveStr} for ${gotStr} with ${other.name}`);
+      addEvent(other, 'trade', `Traded ${gotStr} for ${gaveStr} with ${d.name}`);
     }
     d.happiness = Math.min(100, d.happiness + 3);
     other.happiness = Math.min(100, other.happiness + 3);
@@ -1363,6 +1389,17 @@ function aiIdle(d) {
     }
   }
 
+  // Railroad upgrade (costs 3 iron + 2 wood, upgrades existing road)
+  if (res.iron >= 3 && res.wood >= 2 && Math.random() < 0.15) {
+    const rrp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.ROAD, false);
+    if (rrp && rrp.length < 30) {
+      const last = rrp[rrp.length - 1];
+      if (G.map[last[1]][last[0]] === T.ROAD) {
+        d.target = { type: 'upgrade_road', x: last[0], y: last[1] }; d.path = rrp; d.state = 'walk'; return;
+      }
+    }
+  }
+
   const fp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.D_FARM, false);
   if (fp) {
     const last = fp[fp.length - 1];
@@ -1401,6 +1438,11 @@ function aiIdle(d) {
     }
   }
 
+  // Adventurous or ambitious dwarves may try sailing
+  if (Math.random() < 0.02 && (d.ambition ?? 50) > 60) {
+    if (trySeaSailing(d)) return;
+  }
+
   d.state = 'wander'; d.timer = 20 + Math.floor(Math.random() * 40);
 }
 
@@ -1409,7 +1451,7 @@ function aiWalk(d) {
     if (!d.target) { d.state = 'idle'; return; }
     const tt = d.target.type;
     if (tt === 'mine' || tt === 'chop') d.state = 'mining';
-    else if (tt === 'build' || tt === 'road') d.state = 'building';
+    else if (tt === 'build' || tt === 'road' || tt === 'upgrade_road') d.state = 'building';
     else if (tt === 'farm') d.state = 'farming';
     else if (tt === 'gather') d.state = 'gathering';
     else if (tt === 'eat') d.state = 'eating';
@@ -1491,6 +1533,12 @@ function aiBuild(d) {
       log(`${d.name} 🛤️ built a road`, 'build');
       addEvent(d, 'build', 'Built a road');
       d.happiness = Math.min(100, d.happiness + 2);
+      G.mapDirty = true;
+    } else if (d.target.type === 'upgrade_road' && G.map[y][x] === T.ROAD && res.iron >= 3 && res.wood >= 2) {
+      res.iron -= 3; res.wood -= 2; G.map[y][x] = T.RAILROAD; G.stats.built++;
+      log(`${d.name} 🚂 upgraded road to railroad!`, 'build');
+      addEvent(d, 'build', 'Upgraded road to railroad');
+      d.happiness = Math.min(100, d.happiness + 5);
       G.mapDirty = true;
     }
     d.target = null; d.timer = 0; d.state = 'idle';
@@ -1640,6 +1688,245 @@ function aiCraft(d) {
   }
 }
 
+// ---- Ships ----
+const SHIP_COST = { wood: 10, cloth: 3, iron: 2 };
+const SHIP_CARGO_MAX = 20;
+
+function createShip(x, y, captainId, cityId) {
+  return {
+    id: 's_' + Math.random().toString(36).slice(2, 8),
+    x, y, captainId, cityId,
+    cargo: {}, // resource storage { food: 5, wood: 3, ... }
+    cargoTotal: 0,
+    state: 'docked', // docked, sailing, waiting
+    target: null, // { x, y } destination
+    path: [],
+  };
+}
+
+function shipCargo(ship) {
+  return Object.values(ship.cargo).reduce((s, v) => s + v, 0);
+}
+
+function isWater(x, y) {
+  if (y < 0 || y >= MAP_H) return false;
+  const t = G.map[y][wrapX(x)];
+  return t === T.OCEAN || t === T.FISH_SPOT || t === T.CORAL;
+}
+
+function isCoastal(x, y) {
+  // Land tile adjacent to water
+  if (!isWalkable(x, y)) return false;
+  for (const [dx, dy] of [[0,-1],[1,0],[0,1],[-1,0]]) {
+    if (isWater(wrapX(x + dx), y + dy)) return true;
+  }
+  return false;
+}
+
+function bfsWater(sx, sy, goalFn) {
+  const key = (x, y) => wrapX(x) + y * MAP_W;
+  const queue = [[sx, sy]];
+  const visited = new Set([key(sx, sy)]);
+  const par = new Map();
+  const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
+  let steps = 0;
+  while (queue.length > 0 && steps < 6000) {
+    const [cx, cy] = queue.shift(); steps++;
+    if (goalFn(wrapX(cx), cy) && !(cx === sx && cy === sy)) {
+      const path = []; let cur = [cx, cy];
+      while (cur[0] !== sx || cur[1] !== sy) { path.unshift([wrapX(cur[0]), cur[1]]); cur = par.get(key(cur[0], cur[1])); }
+      return path;
+    }
+    for (const [dx, dy] of dirs) {
+      const nx = cx + dx, ny = cy + dy;
+      const nk = key(nx, ny);
+      if (visited.has(nk)) continue;
+      if (!isWater(nx, ny) && !goalFn(wrapX(nx), ny)) continue;
+      visited.add(nk);
+      par.set(nk, [cx, cy]);
+      queue.push([nx, ny]);
+    }
+  }
+  return null;
+}
+
+function tryBuildShip(city) {
+  if (!city || !city.res) return null;
+  const r = city.res;
+  if (r.wood < SHIP_COST.wood || r.cloth < SHIP_COST.cloth || r.iron < SHIP_COST.iron) return null;
+  // Find coastal tile near city
+  let launchX = null, launchY = null;
+  for (let dy = -3; dy <= 3 && launchX === null; dy++) {
+    for (let dx = -3; dx <= 3 && launchX === null; dx++) {
+      const x = wrapX(city.mx + dx), y = city.my + dy;
+      if (y >= 0 && y < MAP_H && isWater(x, y)) {
+        // Check adjacent to land
+        for (const [ddx, ddy] of [[0,-1],[1,0],[0,1],[-1,0]]) {
+          const lx = wrapX(x + ddx), ly = y + ddy;
+          if (ly >= 0 && ly < MAP_H && isWalkable(lx, ly)) {
+            launchX = x; launchY = y; break;
+          }
+        }
+      }
+    }
+  }
+  if (launchX === null) return null;
+  r.wood -= SHIP_COST.wood; r.cloth -= SHIP_COST.cloth; r.iron -= SHIP_COST.iron;
+  const ship = createShip(launchX, launchY, null, city.id);
+  G.ships.push(ship);
+  log(`${city.name} ⛵ built a ship!`, 'city');
+  return ship;
+}
+
+function tickShip(ship) {
+  if (ship.state === 'docked' || ship.state === 'waiting') return;
+  if (ship.state === 'sailing' && ship.path.length > 0) {
+    const [nx, ny] = ship.path.shift();
+    ship.x = nx; ship.y = ny;
+    // Auto-fish from fish spots
+    if (G.map[ny][nx] === T.FISH_SPOT && Math.random() < 0.3) {
+      ship.cargo.food = (ship.cargo.food || 0) + 2;
+      ship.cargoTotal = shipCargo(ship);
+    }
+    if (ship.path.length === 0) {
+      ship.state = 'docked';
+      ship.target = null;
+    }
+  }
+}
+
+function tickShips() {
+  for (const ship of G.ships) tickShip(ship);
+}
+
+// Captain boards ship, sails to destination coastal city, disembarks
+function boardShip(d, ship, destCity) {
+  if (!destCity || destCity.mx === undefined) return false;
+  // Find water tile adjacent to destination city
+  let destWX = null, destWY = null;
+  for (let dy = -3; dy <= 3 && destWX === null; dy++) {
+    for (let dx = -3; dx <= 3 && destWX === null; dx++) {
+      const x = wrapX(destCity.mx + dx), y = destCity.my + dy;
+      if (y >= 0 && y < MAP_H && isWater(x, y)) { destWX = x; destWY = y; }
+    }
+  }
+  if (destWX === null) return false;
+  const path = bfsWater(ship.x, ship.y, (x, y) => x === destWX && y === destWY);
+  if (!path || path.length === 0) return false;
+  ship.captainId = d.id;
+  ship.state = 'sailing';
+  ship.path = path;
+  ship.target = { x: destWX, y: destWY, cityId: destCity.id };
+  // Transfer dwarf carry to ship cargo
+  if (d.carryItems) {
+    for (const [k, v] of Object.entries(d.carryItems)) {
+      ship.cargo[k] = (ship.cargo[k] || 0) + v;
+    }
+    d.carryItems = {}; d.carrying = 0;
+  }
+  d.state = 'sailing';
+  d.target = { type: 'sail', shipId: ship.id };
+  log(`${d.name} ⛵ set sail from ${cityOf(d).name} to ${destCity.name}!`, 'system');
+  addEvent(d, 'sail', `Boarded ship to ${destCity.name}`);
+  return true;
+}
+
+function aiSail(d) {
+  const ship = G.ships.find(s => s.id === d.target?.shipId);
+  if (!ship) { d.state = 'idle'; d.target = null; return; }
+  // Follow ship position
+  d.x = ship.x; d.y = ship.y;
+  if (ship.state === 'docked' && ship.target) {
+    // Arrived! Disembark near destination city
+    const destCity = cityById(ship.target.cityId);
+    if (destCity) {
+      // Find walkable tile adjacent to ship
+      let disembarkX = null, disembarkY = null;
+      for (const [dx, dy] of [[0,-1],[1,0],[0,1],[-1,0]]) {
+        const nx = wrapX(ship.x + dx), ny = ship.y + dy;
+        if (ny >= 0 && ny < MAP_H && isWalkable(nx, ny)) {
+          disembarkX = nx; disembarkY = ny; break;
+        }
+      }
+      if (disembarkX !== null) {
+        d.x = disembarkX; d.y = disembarkY;
+        // Transfer cargo to city
+        for (const [k, v] of Object.entries(ship.cargo)) {
+          if (destCity.res && destCity.res[k] !== undefined) destCity.res[k] += v;
+        }
+        const cargoAmt = shipCargo(ship);
+        ship.cargo = {}; ship.cargoTotal = 0;
+        d.cityId = destCity.id; // Transfer allegiance
+        ship.captainId = null;
+        log(`${d.name} ⚓ arrived at ${destCity.name}${cargoAmt > 0 ? ` with ${cargoAmt} goods` : ''}!`, 'system');
+        addEvent(d, 'sail', `Arrived at ${destCity.name}`);
+      }
+    }
+    d.state = 'idle'; d.target = null;
+  } else if (ship.state === 'docked' && !ship.target) {
+    // Ship lost its way
+    d.state = 'idle'; d.target = null;
+    ship.captainId = null;
+  }
+  // Feed captain from ship cargo while sailing
+  if (d.hunger < 30 && (ship.cargo.food || 0) > 0) {
+    ship.cargo.food--; ship.cargoTotal = shipCargo(ship);
+    d.hunger = Math.min(100, d.hunger + 30);
+  }
+  // Sleep aboard
+  if (d.energy < 20) {
+    d.energy = Math.min(100, d.energy + 1.5);
+  }
+}
+
+// Idle dwarves near coast with excess resources may build/board ships
+function trySeaSailing(d) {
+  if (G.ships.length >= 20) return false; // global ship cap
+  const city = cityOf(d);
+  if (!city || !city.res) return false;
+  // Only sail if city is coastal
+  if (!isCoastal(city.mx, city.my)) {
+    // Check nearby tiles
+    let coastal = false;
+    for (let dy = -4; dy <= 4 && !coastal; dy++)
+      for (let dx = -4; dx <= 4 && !coastal; dx++) {
+        const x = wrapX(city.mx + dx), y = city.my + dy;
+        if (y >= 0 && y < MAP_H && isCoastal(x, y)) coastal = true;
+      }
+    if (!coastal) return false;
+  }
+  // Find an available ship at this city
+  let ship = G.ships.find(s => s.cityId === city.id && !s.captainId && s.state === 'docked');
+  // Build one if resources allow and none available
+  if (!ship && city.res.wood >= SHIP_COST.wood && city.res.cloth >= SHIP_COST.cloth && city.res.iron >= SHIP_COST.iron) {
+    ship = tryBuildShip(city);
+  }
+  if (!ship) return false;
+  // Pick a random distant coastal city to sail to
+  const otherCities = CITIES.filter(c => c.id !== city.id && c.mx !== undefined);
+  const coastalCities = otherCities.filter(c => {
+    for (let dy = -3; dy <= 3; dy++)
+      for (let dx = -3; dx <= 3; dx++) {
+        const x = wrapX(c.mx + dx), y = c.my + dy;
+        if (y >= 0 && y < MAP_H && isWater(x, y)) return true;
+      }
+    return false;
+  });
+  if (!coastalCities.length) return false;
+  const dest = coastalCities[Math.floor(Math.random() * coastalCities.length)];
+  // Walk to coast first
+  const coastPath = bfs(d.x, d.y, (x, y) => {
+    for (const [dx, dy] of [[0,-1],[1,0],[0,1],[-1,0]]) {
+      if (isWater(wrapX(x + dx), y + dy)) return true;
+    }
+    return false;
+  }, false);
+  if (coastPath && coastPath.length < 20) {
+    return boardShip(d, ship, dest);
+  }
+  return false;
+}
+
 function aiSeekFood(d) {
   const res = cityOf(d).res;
   // Try wild food sources first: mushrooms, berries, crabs, fish
@@ -1770,6 +2057,61 @@ function tickSeason() {
         if (city.res.food > 50 + cityPop * 5) city.res.ale += Math.min(5, Math.floor((city.res.food - 50) / 20));
       }
       log(`🌾 Harvest season! Cities gather from farms, fisheries, and foraging.`, 'farm');
+
+      // City expansion: auto-grow fortress when resources and population allow
+      for (const city of CITIES) {
+        if (!city.res || city.mx === undefined) continue;
+        const cityPop = G.dwarves.filter(d => d.cityId === city.id).length;
+        const r = city.res;
+        // Expand when pop >= beds and have materials
+        if (cityPop >= (r.beds || 1) && r.stone >= 8 && r.wood >= 4) {
+          // Find adjacent tiles around fortress to expand into
+          let expanded = 0;
+          const cx = city.mx, cy = city.my;
+          const expandable = new Set([T.PLAINS, T.FOREST, T.TAIGA, T.DESERT, T.TUNDRA, T.BEACH, T.HILL, T.FLOOR]);
+          for (let radius = 2; radius <= 6 && expanded < 3; radius++) {
+            for (let dy = -radius; dy <= radius && expanded < 3; dy++) {
+              for (let dx = -radius; dx <= radius && expanded < 3; dx++) {
+                if (Math.abs(dx) < radius && Math.abs(dy) < radius) continue; // only perimeter
+                const x = wrapX(cx + dx), y = cy + dy;
+                if (y < 0 || y >= MAP_H) continue;
+                if (!expandable.has(G.map[y][x])) continue;
+                // Check at least one neighboring tile is a building
+                let adjBuilding = false;
+                for (const [nx, ny] of [[x-1,y],[x+1,y],[x,y-1],[x,y+1]]) {
+                  const wx = wrapX(nx);
+                  if (ny >= 0 && ny < MAP_H) {
+                    const nt = G.map[ny][wx];
+                    if (nt === T.BED || nt === T.STOCKPILE || nt === T.TABLE || nt === T.FLOOR || nt === T.CITY || nt === T.WALL) {
+                      adjBuilding = true; break;
+                    }
+                  }
+                }
+                if (!adjBuilding) continue;
+                // Decide what to build: cycle bed/stockpile/table/floor
+                const pick = (expanded + cityPop) % 4;
+                if (pick === 0 && r.stone >= 3 && r.wood >= 1) {
+                  G.map[y][x] = T.BED; r.stone -= 2; r.wood -= 1; r.beds++;
+                  expanded++;
+                } else if (pick === 1 && r.stone >= 2) {
+                  G.map[y][x] = T.STOCKPILE; r.stone -= 2;
+                  expanded++;
+                } else if (pick === 2 && r.wood >= 2) {
+                  G.map[y][x] = T.TABLE; r.wood -= 2; r.tables++;
+                  expanded++;
+                } else if (r.stone >= 1) {
+                  G.map[y][x] = T.FLOOR; r.stone -= 1;
+                  expanded++;
+                }
+              }
+            }
+          }
+          if (expanded > 0) {
+            log(`🏘️ ${city.name} expanded! (+${expanded} structures)`, 'city');
+            G.mapDirty = true;
+          }
+        }
+      }
       // Regrow renewable resources globally
       for (let i = 0; i < 80; i++) {
         const rx = Math.floor(Math.random() * MAP_W);
@@ -1948,7 +2290,8 @@ function render() {
       const dEmoji = d.state === 'sleeping' ? '💤' : d.state === 'mining' ? '⛏️' :
                      d.state === 'eating' || d.state === 'going_eat' ? '🍖' :
                      d.state === 'building' ? '🔨' : d.state === 'farming' ? '🌱' :
-                     d.state === 'hauling' ? '📦' : d.state === 'gathering' ? '🧺' : '🧔';
+                     d.state === 'hauling' ? '📦' : d.state === 'gathering' ? '🧺' :
+                     d.state === 'sailing' ? '⛵' : '🧔';
       ctx.fillText(dEmoji, px + TILE / 2, py + TILE / 2 + 1);
       if (d.sponsored) {
         ctx.font = '8px sans-serif';
@@ -1964,6 +2307,17 @@ function render() {
         ctx.arc(px + TILE / 2, py + TILE / 2, TILE * 0.7 + pulse * 3, 0, Math.PI * 2);
         ctx.stroke();
       }
+      break;
+    }
+  }
+
+  // Draw ships
+  for (const ship of G.ships) {
+    for (const offset of [0, MAP_W, -MAP_W]) {
+      const px = (ship.x + offset) * TILE - G.cam.x;
+      const py = ship.y * TILE - G.cam.y;
+      if (px < -TILE || py < -TILE || px > w + TILE || py > h + TILE) continue;
+      ctx.fillText('⛵', px + TILE / 2, py + TILE / 2 + 1);
       break;
     }
   }
@@ -2000,6 +2354,11 @@ function renderMinimap() {
   for (const d of G.dwarves) {
     mmCtx.fillRect(d.x * sx, d.y * sy, 2, 2);
   }
+  // Ship dots
+  mmCtx.fillStyle = '#83a598';
+  for (const s of G.ships) {
+    mmCtx.fillRect(s.x * sx, s.y * sy, 2, 2);
+  }
 }
 
 // ---- HUD ----
@@ -2020,6 +2379,46 @@ function updateHUD() {
   }
 }
 
+// ---- City Switcher Dropdown ----
+(function() {
+  const wrap = document.getElementById('hud-city-wrap');
+  const dd = document.getElementById('city-dropdown');
+  let open = false;
+
+  wrap.onclick = (e) => {
+    if (open) { dd.style.display = 'none'; open = false; return; }
+    dd.textContent = '';
+    const placed = CITIES.filter(c => c.mx !== undefined).sort((a, b) => a.name.localeCompare(b.name));
+    for (const city of placed) {
+      const pop = G.dwarves.filter(d => d.cityId === city.id).length;
+      const item = document.createElement('div');
+      item.style.cssText = 'padding:6px 12px;font-size:12px;color:#ebdbb2;cursor:pointer;white-space:nowrap;display:flex;justify-content:space-between;gap:12px';
+      item.onmouseenter = () => item.style.background = '#3c3836';
+      item.onmouseleave = () => item.style.background = 'none';
+      const name = document.createElement('span');
+      name.textContent = city.emoji + ' ' + city.name;
+      const popSpan = document.createElement('span');
+      popSpan.style.cssText = 'color:#665c54;font-size:10px';
+      popSpan.textContent = pop + ' pop';
+      item.append(name, popSpan);
+      item.onclick = (ev) => {
+        ev.stopPropagation();
+        G.cam.x = city.mx * TILE - canvas.width / 2;
+        G.cam.y = city.my * TILE - canvas.height / 2;
+        G.followDwarf = null;
+        dd.style.display = 'none'; open = false;
+        updateHUD();
+      };
+      dd.appendChild(item);
+    }
+    dd.style.display = 'block'; open = true;
+  };
+
+  document.addEventListener('click', (e) => {
+    if (open && !wrap.contains(e.target)) { dd.style.display = 'none'; open = false; }
+  });
+})();
+
 // ---- Inspector (Click-based panel) ----
 const inspPanel = document.getElementById('inspector-panel');
 const inspTitle = document.getElementById('insp-title');
@@ -2028,12 +2427,59 @@ function esc(s) { const el = document.createElement('div'); el.textContent = s; 
 
 function openInspector(tile) {
   const dwarves = G.dwarves.filter(dw => dw.x === tile.x && dw.y === tile.y);
+  const ship = G.ships.find(s => s.x === tile.x && s.y === tile.y);
   const city = CITIES.find(c => c.mx === tile.x && c.my === tile.y);
   if (dwarves.length > 1) showDwarfList(dwarves);
   else if (dwarves.length === 1) showDwarfInspector(dwarves[0]);
+  else if (ship) showShipInspector(ship);
   else if (city) showCityInspector(city);
   else showTerrainInspector(tile);
   inspPanel.style.display = 'block';
+}
+
+function showShipInspector(ship) {
+  inspTitle.textContent = '⛵ Ship ' + ship.id.slice(2);
+  const frag = document.createDocumentFragment();
+  const city = cityById(ship.cityId);
+  const captain = G.dwarves.find(d => d.id === ship.captainId);
+
+  const stLine = document.createElement('div');
+  stLine.style.cssText = 'font-size:10px;color:#a89984;margin:4px 0';
+  stLine.textContent = 'State: ' + ship.state + (city ? ' | Home: ' + city.name : '');
+  frag.appendChild(stLine);
+
+  if (captain) {
+    const capLine = document.createElement('div');
+    capLine.className = 'idwarf-link';
+    capLine.style.color = captain.color;
+    capLine.textContent = '👤 Captain: ' + captain.name;
+    capLine.onclick = () => showDwarfInspector(captain);
+    frag.appendChild(capLine);
+  } else {
+    const noCapLine = document.createElement('div');
+    noCapLine.style.cssText = 'font-size:10px;color:#665c54;margin:2px 0';
+    noCapLine.textContent = '👤 No captain (available)';
+    frag.appendChild(noCapLine);
+  }
+
+  const cargoTotal = shipCargo(ship);
+  if (cargoTotal > 0) {
+    const cargoDiv = document.createElement('div');
+    cargoDiv.style.cssText = 'font-size:9px;color:#d5c4a1;margin:4px 0;background:#3c3836;padding:2px 4px;border-radius:2px';
+    const items = Object.entries(ship.cargo).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${k}`).join(', ');
+    cargoDiv.textContent = '📦 Cargo: ' + items + ' (' + cargoTotal + '/' + SHIP_CARGO_MAX + ')';
+    frag.appendChild(cargoDiv);
+  }
+
+  if (ship.target) {
+    const destCity = cityById(ship.target.cityId);
+    const destLine = document.createElement('div');
+    destLine.style.cssText = 'font-size:10px;color:#83a598;margin:2px 0';
+    destLine.textContent = '🧭 Destination: ' + (destCity ? destCity.name : 'Unknown') + ' (' + ship.path.length + ' tiles)';
+    frag.appendChild(destLine);
+  }
+
+  inspBody.textContent = ''; inspBody.appendChild(frag);
 }
 function closeInspector() { inspPanel.style.display = 'none'; }
 document.getElementById('btn-close-insp').onclick = closeInspector;
@@ -2076,7 +2522,7 @@ function showDwarfInspector(dw) {
     dw.state === 'eating' ? '🍖' : dw.state === 'building' ? '🔨' : dw.state === 'farming' ? '🌱' :
     dw.state === 'hauling' ? '📦' : dw.state === 'gathering' ? '🧺' :
     dw.state === 'crafting' ? '✨' : dw.state === 'seek_craft' ? '✨' :
-    dw.state === 'wander' ? '🚶' : '🧔';
+    dw.state === 'sailing' ? '⛵' : dw.state === 'wander' ? '🚶' : '🧔';
   const city = cityOf(dw);
   const culture = CULTURES[city?.culture];
   inspTitle.textContent = dw.name;
@@ -2415,7 +2861,7 @@ canvas.addEventListener('mouseup', e => {
       }
     if (count) log(`🌱 Designated ${count} farm plots`, 'farm');
   } else if (G.mode === 'road') {
-    const roadable = new Set([T.PLAINS, T.DESERT, T.TUNDRA, T.HILL, T.BEACH, T.FOREST, T.TAIGA, T.JUNGLE, T.FLOOR, T.MOUNTAIN]);
+    const roadable = new Set([T.PLAINS, T.DESERT, T.TUNDRA, T.HILL, T.BEACH, T.FOREST, T.TAIGA, T.JUNGLE, T.FLOOR, T.MOUNTAIN, T.MUSHROOM]);
     for (let y = s.y1; y <= s.y2; y++)
       for (let gx = s.x1; gx <= s.x2; gx++) {
         const x = wrapX(gx);
@@ -2702,6 +3148,10 @@ function getSerializableState() {
     })),
     stats: G.stats,
     homeCity: G.homeCity ? { name: G.homeCity.name, mx: G.homeCity.mx, my: G.homeCity.my } : null,
+    ships: G.ships.map(s => ({
+      id: s.id, x: s.x, y: s.y, captainId: s.captainId, cityId: s.cityId,
+      cargo: s.cargo, state: s.state,
+    })),
   };
 }
 
@@ -2805,6 +3255,17 @@ async function restoreState() {
     G.homeCity = CITIES.find(c => c.name === saved.homeCity.name) || G.homeCity;
   }
 
+  // Restore ships
+  if (saved.ships?.length) {
+    G.ships = saved.ships.map(s => ({
+      ...createShip(s.x, s.y, s.captainId, s.cityId),
+      id: s.id, cargo: s.cargo || {}, state: s.state || 'docked',
+      cargoTotal: Object.values(s.cargo || {}).reduce((a, b) => a + b, 0),
+      path: [], target: null,
+    }));
+    log(`⛵ Restored ${G.ships.length} ships`, 'system');
+  }
+
   // Ensure minimum population: at least 2 dwarves per city
   for (const city of CITIES) {
     if (city.mx === undefined) continue;
@@ -2857,6 +3318,7 @@ function gameLoop(ts) {
     while (tickAccum >= TICK && ticked < 10) {
       tickAccum -= TICK; G.tick++; ticked++;
       for (const d of G.dwarves) tickDwarf(d);
+      tickShips();
       tickSeason();
       if (G.tick % 30 === 0) updateHUD();
     }

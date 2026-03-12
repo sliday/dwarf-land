@@ -10,8 +10,10 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - 500x250 emoji tile world map with 28 real-world cities across all continents
 - 7 continents with biome-specific terrain (tundra, desert, jungle, mountains, ocean)
 - Terrain speed system with Dijkstra pathfinding (mountains = slow, roads = fast)
-- Auto-generated roads between cities using A* pathfinding
+- Auto-generated roads between cities using A* (land-only, no ocean crossing)
+- Railroads: dwarves upgrade roads for ultra-fast travel (3 iron + 2 wood per tile)
 - Per-city resources and culturally-named populations
+- Cities auto-expand when population and resources allow (beds, stockpiles, tables)
 
 ### Dwarves
 - 80-140 autonomous dwarves with D&D stats (STR/DEX/CON/INT/WIS/CHA)
@@ -34,11 +36,21 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - Dwarves from different cities trade when they meet on the same tile
 - INT advantage: smarter dwarves get 2:1 deals, equal INT = 1:1 swap
 - Enemy dwarves refuse to trade (relationship system)
+- Detailed trade logs show exactly what was exchanged
 - 30% trigger chance per meeting to prevent spam
 
+### Ships & Sea Travel
+- Ships built at coastal cities (10 wood + 3 cloth + 2 iron)
+- 1 captain per ship — sails across ocean to other coastal cities
+- Captain sleeps and eats aboard; ship auto-fishes from fish spots
+- Cargo system: resources transfer to destination city on arrival
+- Ambitious dwarves spontaneously embark on voyages
+- Click ships on map to inspect cargo, captain, destination
+
 ### UI
-- Click inspector for dwarves (stats, inventory, carry, events), cities (ideology), terrain
+- Click inspector for dwarves (stats, inventory, carry, events), cities (ideology), terrain, ships
 - Follow/lock camera on a specific dwarf with pulsing ring indicator
+- City switcher dropdown in top HUD — click city name to jump to any of 28 cities
 - City ideology labels computed from aggregate personality (Militant, Spiritual, Mercantile, etc.)
 - Contextual Mine/Build/Farm/Road actions in dwarf inspector
 - Splash screen for new visitors + in-game mechanics guide

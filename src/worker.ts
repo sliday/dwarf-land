@@ -306,4 +306,29 @@ app.get('/api/sponsor/status/:dwarfId', async (c) => {
   return c.json({ sponsorship: row || null });
 });
 
+// Success page for sponsorship checkout completion
+app.get('/success', (c) => {
+  const checkoutId = c.req.query('checkout_id') || '';
+  return c.html(`<!DOCTYPE html>
+<html lang="en" data-theme="grunge">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sponsorship Complete - Dwarf Land</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daub-ui@latest/daub.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧔</text></svg>">
+<style>body{min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:'Courier New',monospace}</style>
+</head>
+<body>
+<div class="db-card" style="max-width:480px;text-align:center;padding:32px">
+  <div style="font-size:64px;margin-bottom:16px">⭐</div>
+  <h1 class="db-h3" style="margin-bottom:8px">Brain Upgraded!</h1>
+  <p class="db-body" style="margin-bottom:24px">Your sponsored dwarf now has enhanced AI reasoning. They'll make smarter decisions for a limited number of turns.</p>
+  <p class="db-caption" style="margin-bottom:24px;opacity:0.6">Checkout: ${checkoutId.slice(0, 8)}...</p>
+  <a href="/" class="db-btn db-btn--primary">Return to Dwarf Land</a>
+</div>
+</body>
+</html>`);
+});
+
 export default app;
