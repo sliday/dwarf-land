@@ -12,6 +12,7 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - Terrain speed system with Dijkstra pathfinding (mountains = slow, roads = fast, spatial indexing for O(1) neighbor lookups)
 - Auto-generated roads between cities using A* (land-only, no ocean crossing)
 - Railroads: dwarves upgrade roads for ultra-fast travel (3 iron + 2 wood per tile)
+- **Persistent terrain**: all tile changes (builds, farms, roads, mines, designations) saved as deltas and restored on reload
 - Per-city resources and culturally-named populations
 - Cities auto-expand when population and resources allow (beds, stockpiles, tables)
 
@@ -131,8 +132,8 @@ npm run db:migrate:remote                 # apply to production
 | POST | `/api/decide/:tier` | AI decision (simple/medium/complex/premium) |
 | POST | `/api/backstory` | Generate dwarf backstory |
 | POST | `/api/craft` | Combine two items (cache-first, AI fallback) |
-| POST | `/api/state/save` | Save game state |
-| GET | `/api/state/load` | Load game state |
+| POST | `/api/state/save` | Save game state (includes map deltas) |
+| GET | `/api/state/load` | Load game state (restores terrain changes) |
 | POST | `/api/sponsor/checkout` | Create Polar checkout session |
 | POST | `/api/sponsor/webhook` | Polar webhook handler |
 | GET | `/api/sponsor/total` | Total sponsorship revenue |
