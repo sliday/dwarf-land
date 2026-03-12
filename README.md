@@ -9,7 +9,7 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 ### World
 - 2000x1000 emoji tile world map with 125 real-world cities across all continents
 - 7 continents with biome-specific terrain (tundra, desert, jungle, mountains, ocean)
-- Terrain speed system with Dijkstra pathfinding (mountains = slow, roads = fast)
+- Terrain speed system with Dijkstra pathfinding (mountains = slow, roads = fast, spatial indexing for O(1) neighbor lookups)
 - Auto-generated roads between cities using A* (land-only, no ocean crossing)
 - Railroads: dwarves upgrade roads for ultra-fast travel (3 iron + 2 wood per tile)
 - Per-city resources and culturally-named populations
@@ -23,6 +23,8 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - Age system with stat modifiers (young +DEX, elder +WIS, ancient death chance)
 - Carry system: dwarves haul resources back to stockpiles based on STR
 - Food sharing: generous dwarves share with hungry neighbors (based on morality + CHA)
+- Starvation mechanics: 30-day hunger → immobility → 10-day rescue window → death
+- Rescue AI: dwarves carrying food path toward starving city-mates
 
 ### Crafting (Infinite Craft)
 - Combine any two items to create new ones (Water + Fire = Steam)
@@ -79,14 +81,14 @@ Pay to upgrade a dwarf's AI reasoning tier via Polar.sh. Sponsored dwarves get a
 - **AI:** OpenRouter via Vercel AI SDK v6 + Zod v4 schemas
 - **Payments:** Polar.sh (@polar-sh/sdk)
 - **Frontend:** Vanilla JS canvas + DAUB UI (grunge theme)
-- **Tests:** Vitest (143 tests across 11 files)
+- **Tests:** Vitest (247 tests across 15 files)
 
 ## Development
 
 ```bash
 npm install
 npm run dev              # local dev server
-npm test                 # run 143 tests
+npm test                 # run 247 tests
 npm run test:watch       # vitest watch mode
 npm run db:migrate:local # apply D1 migrations locally
 npm run db:migrate:remote # apply D1 migrations to production
@@ -139,5 +141,5 @@ src/guardrails/        # Budget + rate limiting
 src/db/state.ts        # D1 state persistence
 migrations/            # D1 SQL migrations
 scripts/               # Import/seed scripts
-tests/                 # 11 test files, 143 tests
+tests/                 # 15 test files, 247 tests
 ```
