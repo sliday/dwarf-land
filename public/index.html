@@ -3336,11 +3336,12 @@ function ditherEdges(ctx, px, py, wx, wy) {
   for (const [dx, dy, horiz] of edges) {
     const nx = wrapX(wx + dx), ny = wrapY(wy + dy);
     const nt = G.map[ny][nx];
-    if (nt === T.OCEAN) continue;
+    if (nt === T.OCEAN && t !== T.BEACH) continue;
     const sameType = nt === t;
     // Same-type: only dither natural terrain to break grid lines
     if (sameType && !NATURAL_TERRAIN.has(t)) continue;
-    const depth = sameType ? 2 : 4;
+    // Shore dithering: 2x depth where beach meets ocean
+    const depth = nt === T.OCEAN ? 8 : sameType ? 2 : 4;
     const nBase = BG_COLORS[nt] || '#042040';
     ctx.fillStyle = varyColor(nBase, nx, ny);
     const h = tileHash(wx * 7 + dx, wy * 13 + dy);
@@ -3510,20 +3511,26 @@ function render() {
   const offsetY = startGY * TILE - G.cam.y;
   ctx.drawImage(tileBuffer, offsetX, offsetY);
 
-  // Road wave animation — subtle brightness pulse traveling along connected roads
-  const now = performance.now() * 0.001;
-  const ROAD_TILES = new Set([T.ROAD, T.ASPHALT, T.RAILROAD]);
+  // Ocean wave animation — shimmer on ocean tiles adjacent to shore
   for (let gy = Math.max(0, startGY); gy < Math.min(MAP_H, endGY); gy++) {
     for (let gx = startGX; gx < endGX; gx++) {
       const wx = wrapX(gx);
-      if (!ROAD_TILES.has(G.map[gy][wx])) continue;
-      const wave = Math.sin((wx + gy) * 1.2 + now * 3.0) * 0.5 + 0.5;
-      if (wave < 0.2) continue;
-      const alpha = (wave - 0.2) * 0.25;
+      if (G.map[gy][wx] !== T.OCEAN) continue;
+      // Check if adjacent to non-ocean (shore)
+      let nearShore = false;
+      for (const [ddx, ddy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+        const snx = wrapX(wx + ddx), sny = gy + ddy;
+        if (sny >= 0 && sny < MAP_H && G.map[sny][snx] !== T.OCEAN) { nearShore = true; break; }
+      }
+      if (!nearShore) continue;
+      // Wave moving toward shore (y-direction dominant)
+      const wave = Math.sin(wx * 0.8 + gy * 0.5 + now * 2.0) * 0.5 + 0.5;
+      const alpha = wave * 0.18;
+      if (alpha < 0.02) continue;
       const px = gx * TILE - G.cam.x;
       const py = gy * TILE - G.cam.y;
       if (px < -TILE || py < -TILE || px > w + TILE || py > h + TILE) continue;
-      ctx.fillStyle = `rgba(255,240,200,${alpha})`;
+      ctx.fillStyle = `rgba(180,220,255,${alpha})`;
       ctx.fillRect(px, py, TILE, TILE);
     }
   }
