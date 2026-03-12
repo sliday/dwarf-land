@@ -1452,40 +1452,37 @@ function spawnDwarf() {
 const backstoryQueue = [];
 let backstoryDraining = false;
 async function drainBackstoryQueue() {
-  if (backstoryDraining) return;
+  if (backstoryDraining || backstoryQueue.length === 0) return;
   backstoryDraining = true;
-  while (backstoryQueue.length > 0) {
-    const d = backstoryQueue.shift();
-    await requestBackstory(d);
-    await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+  const batch = backstoryQueue.splice(0, Math.min(10, backstoryQueue.length));
+  const items = batch.filter(d => !d.backstory).map(d => ({
+    id: d.id, name: d.name, stats: d.stats,
+    faith: d.faith, morality: d.morality, ambition: d.ambition,
+    cityName: cityOf(d)?.name || G.homeCity?.name,
+  }));
+  if (items.length > 0) {
+    try {
+      const resp = await fetch(`${AI.apiBase}/api/backstory/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dwarves: items }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        for (const result of (data.results || [])) {
+          const d = batch.find(b => b.id === result.id);
+          if (!d) continue;
+          if (result.backstory) d.backstory = result.backstory;
+          if (result.traits?.length) d.traits = result.traits;
+          if (result.name && result.name !== d.name) d.name = result.name;
+          addEvent(d, 'born', d.backstory || 'Arrived at the colony');
+        }
+      }
+    } catch (e) { /* silent - backstory is optional */ }
   }
   backstoryDraining = false;
 }
-setInterval(drainBackstoryQueue, 10000);
-
-async function requestBackstory(d) {
-  if (d.backstory) return;
-  try {
-    const resp = await fetch(`${AI.apiBase}/api/backstory`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: d.name,
-        stats: d.stats,
-        faith: d.faith,
-        morality: d.morality,
-        ambition: d.ambition,
-        cityName: cityOf(d)?.name || G.homeCity?.name,
-      }),
-    });
-    if (!resp.ok) return;
-    const data = await resp.json();
-    if (data.backstory) d.backstory = data.backstory;
-    if (data.traits?.length) d.traits = data.traits;
-    if (data.name && data.name !== d.name) d.name = data.name;
-    addEvent(d, 'born', d.backstory || 'Arrived at the colony');
-  } catch (e) { /* silent - backstory is optional */ }
-}
+setInterval(drainBackstoryQueue, 15000);
 
 // ---- Dwarf AI (same logic, wrapping-aware) ----
 function findNearbyLand(cx, cy) {

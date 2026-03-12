@@ -11,8 +11,8 @@ const minuteBuckets = new Map<Tier, RateBucket>();
 const hourBuckets = new Map<Tier, RateBucket>();
 
 const LIMITS: Record<Tier, { perSecond: number; secondWindow: number; perMinute: number; perHour: number }> = {
-  simple:  { perSecond: 2, secondWindow: 1_000,  perMinute: 10, perHour: 300 },
-  medium:  { perSecond: 1, secondWindow: 1_000,  perMinute: 4,  perHour: 100 },
+  simple:  { perSecond: 3, secondWindow: 1_000,  perMinute: 20, perHour: 500 },
+  medium:  { perSecond: 2, secondWindow: 1_000,  perMinute: 10, perHour: 200 },
   complex: { perSecond: 1, secondWindow: 5_000,  perMinute: 1,  perHour: 30 },
   premium: { perSecond: 1, secondWindow: 10_000, perMinute: 1,  perHour: 6 },
 };

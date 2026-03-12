@@ -7,13 +7,15 @@ describe('Rate Limiter', () => {
   });
 
   describe('per-second limits', () => {
-    it('allows SIMPLE tier up to 2 calls per second', () => {
+    it('allows SIMPLE tier up to 3 calls per second', () => {
+      expect(checkRateLimit('simple')).toBe(true);
       expect(checkRateLimit('simple')).toBe(true);
       expect(checkRateLimit('simple')).toBe(true);
       expect(checkRateLimit('simple')).toBe(false);
     });
 
-    it('allows MEDIUM tier 1 call per second', () => {
+    it('allows MEDIUM tier 2 calls per second', () => {
+      expect(checkRateLimit('medium')).toBe(true);
       expect(checkRateLimit('medium')).toBe(true);
       expect(checkRateLimit('medium')).toBe(false);
     });
@@ -68,6 +70,7 @@ describe('Rate Limiter', () => {
       // Exhaust second limit for simple
       checkRateLimit('simple');
       checkRateLimit('simple');
+      checkRateLimit('simple');
       expect(checkRateLimit('simple')).toBe(false);
 
       // Advance 1.1 seconds
@@ -79,7 +82,7 @@ describe('Rate Limiter', () => {
   });
 
   describe('per-minute limits', () => {
-    it('allows SIMPLE tier up to 10 calls per minute', () => {
+    it('allows SIMPLE tier up to 20 calls per minute', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(2026, 0, 1, 12, 0, 0));
 
@@ -88,23 +91,25 @@ describe('Rate Limiter', () => {
         vi.advanceTimersByTime(1100); // advance past second window
         if (checkRateLimit('simple')) allowed++;
         if (checkRateLimit('simple')) allowed++;
+        if (checkRateLimit('simple')) allowed++;
       }
-      // per-minute cap = 10 should cap before 60 calls
-      expect(allowed).toBe(10);
+      // per-minute cap = 20 should cap before 90 calls
+      expect(allowed).toBe(20);
 
       vi.useRealTimers();
     });
 
-    it('allows MEDIUM tier up to 4 calls per minute', () => {
+    it('allows MEDIUM tier up to 10 calls per minute', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(2026, 0, 1, 12, 0, 0));
 
       let allowed = 0;
-      for (let sec = 0; sec < 10; sec++) {
+      for (let sec = 0; sec < 20; sec++) {
         vi.advanceTimersByTime(1100);
         if (checkRateLimit('medium')) allowed++;
+        if (checkRateLimit('medium')) allowed++;
       }
-      expect(allowed).toBe(4);
+      expect(allowed).toBe(10);
 
       vi.useRealTimers();
     });
@@ -139,25 +144,25 @@ describe('Rate Limiter', () => {
   });
 
   describe('per-hour limits', () => {
-    it('allows SIMPLE tier up to 300 calls per hour', () => {
+    it('allows SIMPLE tier up to 500 calls per hour', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(2026, 0, 1, 12, 0, 0));
 
       let allowed = 0;
-      // Need to respect per-second (2/s) and per-minute (10/min) limits
-      // 10 per minute * 30 minutes = 300 to exhaust hour bucket
-      for (let minute = 0; minute < 35; minute++) {
+      // Need to respect per-second (3/s) and per-minute (20/min) limits
+      // 20 per minute * 25 minutes = 500 to exhaust hour bucket
+      for (let minute = 0; minute < 30; minute++) {
         vi.advanceTimersByTime(61000); // advance past minute window
         for (let sec = 0; sec < 30; sec++) {
           vi.advanceTimersByTime(1100); // advance past second window
-          for (let i = 0; i < 2; i++) {
+          for (let i = 0; i < 3; i++) {
             if (checkRateLimit('simple')) allowed++;
           }
         }
       }
-      // Should have been capped at 300 by hour bucket
-      expect(allowed).toBeLessThanOrEqual(300);
-      expect(allowed).toBe(300);
+      // Should have been capped at 500 by hour bucket
+      expect(allowed).toBeLessThanOrEqual(500);
+      expect(allowed).toBe(500);
 
       vi.useRealTimers();
     });
@@ -183,7 +188,7 @@ describe('Rate Limiter', () => {
       vi.setSystemTime(new Date(2026, 0, 1, 12, 0, 0));
 
       // Exhaust minute limit
-      for (let i = 0; i < 10; i++) checkRateLimit('simple');
+      for (let i = 0; i < 20; i++) checkRateLimit('simple');
       expect(checkRateLimit('simple')).toBe(false);
 
       // Advance 61 seconds
@@ -217,7 +222,7 @@ describe('Rate Limiter', () => {
   describe('tier isolation', () => {
     it('exhausting one tier does not affect others', () => {
       // Exhaust simple
-      for (let i = 0; i < 10; i++) checkRateLimit('simple');
+      for (let i = 0; i < 20; i++) checkRateLimit('simple');
       expect(checkRateLimit('simple')).toBe(false);
 
       // Other tiers still work

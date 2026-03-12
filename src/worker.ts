@@ -157,6 +157,34 @@ app.post('/api/backstory', async (c) => {
   }
 });
 
+// Batch backstory generation (up to 10 at once, single rate limit check)
+app.post('/api/backstory/batch', async (c) => {
+  const rateLimitOk = checkRateLimit('medium');
+  if (!rateLimitOk) return c.json({ error: 'Rate limited' }, 429);
+
+  const budgetOk = await checkBudget(c.env.DB, 'medium');
+  if (!budgetOk) return c.json({ error: 'Budget exceeded' }, 429);
+
+  try {
+    const { dwarves } = await c.req.json<{ dwarves: any[] }>();
+    const batch = (dwarves || []).slice(0, 10);
+    const results: any[] = [];
+    for (const dwarf of batch) {
+      try {
+        const result = await generateBackstory(dwarf, c.env.OPENROUTER_API_KEY);
+        await logUsage(c.env.DB, 'medium', result.model, result.tokensIn, result.tokensOut, result.costCents);
+        results.push({ id: dwarf.id, ...result.backstory });
+      } catch (e) {
+        results.push({ id: dwarf.id, error: true });
+      }
+    }
+    return c.json({ ok: true, results });
+  } catch (err: any) {
+    console.error('Batch backstory error:', err?.message || err);
+    return c.json({ error: 'Batch backstory failed' }, 500);
+  }
+});
+
 // --- Crafting endpoint ---
 app.post('/api/craft', async (c) => {
   const rateLimitOk = checkRateLimit('simple');
