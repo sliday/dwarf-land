@@ -203,7 +203,7 @@
       <h2 class="db-h3">Dwarf Land</h2>
     </div>
     <div class="db-modal__body db-prose db-prose--sm">
-      <p>A living world of AI-powered dwarves. 28 cities across the globe, each with unique cultures and autonomous citizens making decisions in real time.</p>
+      <p>A living world of AI-powered dwarves. 29 cities across the globe, each with unique cultures and autonomous citizens making decisions in real time.</p>
       <p><strong>Click any dwarf</strong> to inspect their stats, backstory, and personality. <strong>Sponsor their brain</strong> to upgrade their AI reasoning &mdash; they'll make smarter decisions (for a while).</p>
       <p>The world lives while you watch. Pan with WASD, scroll to move, click to inspect.</p>
       <div style="display:flex;gap:8px;margin-top:12px">
@@ -222,7 +222,7 @@
     </div>
     <div class="db-modal__body db-prose db-prose--sm db-scroll-area" style="max-height:65vh">
       <h4>The World</h4>
-      <p>A 500&times;250 tile planet with continents, oceans, mountains, forests, and deserts. 28 real-world cities with culturally named dwarves. The map wraps horizontally &mdash; it's a globe.</p>
+      <p>A 500&times;250 tile planet with continents, oceans, mountains, forests, and deserts. 29 real-world cities with culturally named dwarves. The map wraps horizontally &mdash; it's a globe.</p>
 
       <h4>AI-Powered Decisions</h4>
       <p>Dwarves use a 4-tier AI system for decision-making:</p>
@@ -449,6 +449,7 @@ const CITIES = [
   { id: 'cape-town', name: 'Cape Town', lon: 18, lat: -34, emoji: '🐧', culture: 'south_african' },
   { id: 'honolulu', name: 'Honolulu', lon: -158, lat: 21, emoji: '🌺', culture: 'hawaiian' },
   { id: 'anchorage', name: 'Anchorage', lon: -150, lat: 61, emoji: '🐻', culture: 'alaskan' },
+  { id: 'krakow', name: 'Krakow', lon: 20, lat: 50, emoji: '🐉', culture: 'polish' },
 ];
 
 const CULTURES = {
@@ -478,6 +479,7 @@ const CULTURES = {
   south_african: { country: 'South Africa', continent: 'Africa',     firstNames: ['Thabo','Naledi','Sipho','Lerato','Bongani','Nomvula','Mandla','Ayanda'], lastNames: ['Nkosi','Dlamini','Mthembu','Zulu','Ndlovu','Molefe'], traits: ['resilient','communal'] },
   hawaiian:    { country: 'USA',          continent: 'North America', firstNames: ['Kai','Leilani','Makoa','Mahina','Keanu','Nalani','Koa','Alani'], lastNames: ['Kamaka','Nakamura','Kalani','Kealoha','Palakiko','Akana'], traits: ['harmonious','spiritual'] },
   alaskan:     { country: 'USA',          continent: 'North America', firstNames: ['Denali','Siku','Kodiak','Nuna','Sitka','Tundra','Kenai','Aurora'], lastNames: ['Blackwood','Whitebear','Ironhand','Frostborn','Stonecreek','Ashford'], traits: ['hardy','resourceful'] },
+  polish:      { country: 'Poland',      continent: 'Europe',        firstNames: ['Jan','Zofia','Krzysztof','Anna','Stanislaw','Katarzyna','Wojciech','Magda'], lastNames: ['Kowalski','Nowak','Wisniewski','Kaminski','Lewandowski','Zielinski'], traits: ['resilient','ingenious'] },
 };
 
 const DWARF_NAMES = [

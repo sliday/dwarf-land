@@ -7,7 +7,7 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 ## Features
 
 ### World
-- 500x250 emoji tile world map with 28 real-world cities across all continents
+- 500x250 emoji tile world map with 29 real-world cities across all continents
 - 7 continents with biome-specific terrain (tundra, desert, jungle, mountains, ocean)
 - Terrain speed system with Dijkstra pathfinding (mountains = slow, roads = fast)
 - Auto-generated roads between cities using A* (land-only, no ocean crossing)
