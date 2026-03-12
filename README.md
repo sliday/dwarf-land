@@ -64,7 +64,8 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - Throttled food search with wander cooldown to prevent BFS spam
 - Frame tick cap of 3 prevents lag death spiral
 - Cached measureText for city labels, hoisted Set constants
-- Backstory request queue (2-5s spacing) prevents API rate limit floods
+- Batch backstory endpoint: 10 dwarves per request, single rate limit check
+- Backstory request queue drains every 15s in batches (not individual calls)
 
 ### AI
 - 4-tier model routing (simple/medium/complex/premium) via OpenRouter
