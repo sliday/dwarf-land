@@ -7,7 +7,7 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 ## Features
 
 ### World
-- 500x250 emoji tile world map with 48 real-world cities across all continents
+- 2000x1000 emoji tile world map with 125 real-world cities across all continents
 - 7 continents with biome-specific terrain (tundra, desert, jungle, mountains, ocean)
 - Terrain speed system with Dijkstra pathfinding (mountains = slow, roads = fast)
 - Auto-generated roads between cities using A* (land-only, no ocean crossing)
@@ -16,8 +16,8 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - Cities auto-expand when population and resources allow (beds, stockpiles, tables)
 
 ### Dwarves
-- 80-140 autonomous dwarves with D&D stats (STR/DEX/CON/INT/WIS/CHA)
-- Cultural names from 47 real civilizations
+- Up to 300 autonomous dwarves with D&D stats (STR/DEX/CON/INT/WIS/CHA)
+- Cultural names from 83 real civilizations
 - AI-generated backstories and personality traits
 - Soul attributes: faith, morality, ambition
 - Age system with stat modifiers (young +DEX, elder +WIS, ancient death chance)
@@ -50,7 +50,7 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 ### UI
 - Click inspector for dwarves (stats, inventory, carry, events), cities (ideology), terrain, ships
 - Follow/lock camera on a specific dwarf with pulsing ring indicator
-- City switcher dropdown in top HUD — click city name to jump to any of 48 cities
+- City switcher dropdown in top HUD — click city name to jump to any of 125 cities
 - City ideology labels computed from aggregate personality (Militant, Spiritual, Mercantile, etc.)
 - Contextual Mine/Build/Farm/Road actions in dwarf inspector
 - Splash screen for new visitors + in-game mechanics guide

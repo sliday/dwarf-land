@@ -156,7 +156,7 @@
   </div>
   <div class="hud-stat"><div class="label">Resources</div><div class="value" id="h-res" style="font-size:14px">-</div></div>
   <div class="hud-stat"><div class="label">Year</div><div class="value" id="h-year">1</div></div>
-  <div class="hud-stat"><div class="label">Sponsored</div><div class="value" id="h-sponsored" style="font-size:16px;color:#fabd2f">$0</div></div>
+  <div class="hud-stat" id="hud-sponsored-wrap" style="cursor:pointer" title="Click to see sponsored dwarves"><div class="label">Sponsored</div><div class="value" id="h-sponsored" style="font-size:16px;color:#fabd2f">$0</div></div>
 </div>
 
 <canvas class="minimap" id="minimap" width="250" height="125"></canvas>
@@ -272,8 +272,8 @@
 // ============================================================
 
 const TILE = 20;
-const MAP_W = 1000;
-const MAP_H = 500;
+const MAP_W = 2000;
+const MAP_H = 1000;
 
 // Tile types
 const T = {
@@ -394,19 +394,24 @@ const LAND = [
   [16,52,12,10], [25,55,14,8], [7,46,8,5], [-5,40,8,5], [15,42,5,6],
   [25,40,8,5], [10,64,6,6], [22,66,10,5], [32,62,12,6], [-20,65,5,3],
   [35,55,8,6], [8,50,4,3], [8,56,4,4],
-  // BRITISH ISLES (separate islands with ocean gap)
-  [-2,55,3,5], [-7,54,3,4],
+  // BRITISH ISLES (separate islands — Britain and Ireland with Irish Sea gap)
+  [-1,55,2.5,5], [-8,54,2.5,3.5],
   // AFRICA
   [22,10,20,16], [38,0,14,14], [27,-12,16,14], [28,-27,10,12],
   [15,30,12,7], [32,28,10,6], [48,8,6,10], [10,5,8,8],
   [20,-5,10,10], [35,-20,8,8],
   // ASIA
   [60,55,32,16], [90,60,28,14], [120,55,18,12], [80,32,18,12],
-  [78,20,10,10], [100,18,12,12], [108,35,14,12], [122,35,10,10],
-  [136,38,5,8], [55,24,10,6], [68,36,12,10], [115,3,10,12],
-  [132,45,10,7], [145,65,18,10], [72,46,18,10], [92,46,14,10],
-  [105,50,12,8], [128,0,8,8], [70,60,10,6], [50,35,6,5],
-  [85,10,6,6], [100,5,6,6],
+  [78,20,10,10], [100,18,12,12], [108,35,14,12], [119,35,8,10],
+  [55,24,10,6], [68,36,12,10],
+  [126,41,4,5], [145,65,18,10], [72,46,18,10], [92,46,14,10],
+  // JAPAN (separate island chain)
+  [137,36,4,6], [141,43,2,3],
+  [105,50,12,8], [70,60,10,6], [50,35,6,5],
+  [85,10,6,6], [100,5,4,4],
+  // SE ASIA ISLANDS (broken up for archipelago feel)
+  [110,2,5,6], [118,-2,4,5], [125,0,3,4], [130,-3,4,5],
+  [104,1,2,2], [115,-5,3,3], [120,-7,4,3], [140,-5,3,3],
   // AUSTRALIA
   [133,-26,18,12], [145,-22,10,8], [125,-22,8,6], [140,-35,6,5],
   // NEW ZEALAND
@@ -416,9 +421,8 @@ const LAND = [
   // ANTARCTICA
   [0,-82,70,10], [90,-82,60,8], [-90,-82,40,8],
   // ISLANDS
-  [140,8,4,4], [-155,20,3,2], [-160,60,6,3], [105,-7,10,4],
+  [140,8,3,3], [-155,20,3,2], [-160,60,6,3],
   [25,38,3,3], [-72,18,3,3], [-60,18,2,2],
-  [100,-5,5,3], [120,-5,6,4], [127,2,4,3],
 ];
 
 // ---- Cities with real coordinates ----
@@ -472,6 +476,88 @@ const CITIES = [
   { id: 'wellington', name: 'Wellington', lon: 175, lat: -41, emoji: '🥝', culture: 'kiwi' },
   { id: 'rabat', name: 'Rabat', lon: -7, lat: 34, emoji: '🫖', culture: 'moroccan' },
   { id: 'dublin', name: 'Dublin', lon: -6, lat: 53, emoji: '☘️', culture: 'irish' },
+  // US STATE CAPITALS (spread across states)
+  { id: 'washington-dc', name: 'Washington DC', lon: -77, lat: 39, emoji: '🏛️', culture: 'american' },
+  { id: 'atlanta', name: 'Atlanta', lon: -84, lat: 34, emoji: '🍑', culture: 'american' },
+  { id: 'chicago', name: 'Chicago', lon: -88, lat: 42, emoji: '🌬️', culture: 'american' },
+  { id: 'houston', name: 'Houston', lon: -95, lat: 30, emoji: '🚀', culture: 'american' },
+  { id: 'denver', name: 'Denver', lon: -105, lat: 40, emoji: '⛰️', culture: 'american' },
+  { id: 'phoenix', name: 'Phoenix', lon: -112, lat: 33, emoji: '🌵', culture: 'american' },
+  { id: 'seattle', name: 'Seattle', lon: -122, lat: 48, emoji: '☕', culture: 'american' },
+  { id: 'miami', name: 'Miami', lon: -80, lat: 26, emoji: '🌴', culture: 'american' },
+  { id: 'boston', name: 'Boston', lon: -71, lat: 42, emoji: '🦞', culture: 'american' },
+  { id: 'nashville', name: 'Nashville', lon: -87, lat: 36, emoji: '🎸', culture: 'american' },
+  { id: 'minneapolis', name: 'Minneapolis', lon: -93, lat: 45, emoji: '❄️', culture: 'american' },
+  { id: 'salt-lake-city', name: 'Salt Lake City', lon: -112, lat: 41, emoji: '🏔️', culture: 'american' },
+  { id: 'san-francisco', name: 'San Francisco', lon: -122, lat: 38, emoji: '🌉', culture: 'american' },
+  { id: 'portland', name: 'Portland', lon: -123, lat: 46, emoji: '🌲', culture: 'american' },
+  { id: 'detroit', name: 'Detroit', lon: -83, lat: 42, emoji: '🏭', culture: 'american' },
+  { id: 'dallas', name: 'Dallas', lon: -97, lat: 33, emoji: '🤠', culture: 'american' },
+  { id: 'kansas-city', name: 'Kansas City', lon: -95, lat: 39, emoji: '🥩', culture: 'american' },
+  { id: 'new-orleans', name: 'New Orleans', lon: -90, lat: 30, emoji: '🎺', culture: 'american' },
+  { id: 'charleston', name: 'Charleston', lon: -80, lat: 33, emoji: '🏰', culture: 'american' },
+  { id: 'pittsburgh', name: 'Pittsburgh', lon: -80, lat: 40, emoji: '🔩', culture: 'american' },
+  { id: 'st-louis', name: 'St. Louis', lon: -90, lat: 39, emoji: '⛩️', culture: 'american' },
+  { id: 'las-vegas', name: 'Las Vegas', lon: -115, lat: 36, emoji: '🎰', culture: 'american' },
+  { id: 'albuquerque', name: 'Albuquerque', lon: -107, lat: 35, emoji: '🎈', culture: 'american' },
+  { id: 'omaha', name: 'Omaha', lon: -96, lat: 41, emoji: '🌽', culture: 'american' },
+  { id: 'boise', name: 'Boise', lon: -116, lat: 44, emoji: '🥔', culture: 'american' },
+  // CENTRAL AMERICA
+  { id: 'havana', name: 'Havana', lon: -82, lat: 23, emoji: '🚬', culture: 'cuban' },
+  { id: 'guatemala-city', name: 'Guatemala City', lon: -91, lat: 15, emoji: '🌋', culture: 'guatemalan' },
+  { id: 'san-jose-cr', name: 'San Jose', lon: -84, lat: 10, emoji: '🦜', culture: 'costa_rican' },
+  { id: 'panama-city', name: 'Panama City', lon: -80, lat: 9, emoji: '🚢', culture: 'panamanian' },
+  { id: 'kingston', name: 'Kingston', lon: -77, lat: 18, emoji: '🎶', culture: 'jamaican' },
+  { id: 'santo-domingo', name: 'Santo Domingo', lon: -70, lat: 19, emoji: '🏝️', culture: 'dominican' },
+  { id: 'tegucigalpa', name: 'Tegucigalpa', lon: -87, lat: 14, emoji: '🏔️', culture: 'honduran' },
+  { id: 'managua', name: 'Managua', lon: -86, lat: 12, emoji: '🌊', culture: 'nicaraguan' },
+  { id: 'san-salvador', name: 'San Salvador', lon: -89, lat: 14, emoji: '🌺', culture: 'salvadoran' },
+  // SOUTH AMERICA (additional)
+  { id: 'caracas', name: 'Caracas', lon: -67, lat: 10, emoji: '🦅', culture: 'venezuelan' },
+  { id: 'quito', name: 'Quito', lon: -79, lat: 0, emoji: '🌋', culture: 'ecuadorian' },
+  { id: 'montevideo', name: 'Montevideo', lon: -56, lat: -35, emoji: '🧉', culture: 'uruguayan' },
+  { id: 'asuncion', name: 'Asuncion', lon: -58, lat: -25, emoji: '🌿', culture: 'paraguayan' },
+  { id: 'la-paz', name: 'La Paz', lon: -68, lat: -16, emoji: '🏔️', culture: 'bolivian' },
+  { id: 'brasilia', name: 'Brasilia', lon: -48, lat: -16, emoji: '🏛️', culture: 'brazilian' },
+  { id: 'sao-paulo', name: 'Sao Paulo', lon: -47, lat: -24, emoji: '🏙️', culture: 'brazilian' },
+  { id: 'georgetown', name: 'Georgetown', lon: -58, lat: 7, emoji: '🌴', culture: 'guyanese' },
+  { id: 'paramaribo', name: 'Paramaribo', lon: -55, lat: 6, emoji: '🌺', culture: 'surinamese' },
+  // ARAB WORLD & MIDDLE EAST
+  { id: 'riyadh', name: 'Riyadh', lon: 47, lat: 25, emoji: '🕌', culture: 'saudi' },
+  { id: 'baghdad', name: 'Baghdad', lon: 44, lat: 33, emoji: '🏛️', culture: 'iraqi' },
+  { id: 'damascus', name: 'Damascus', lon: 36, lat: 34, emoji: '🕌', culture: 'syrian' },
+  { id: 'amman', name: 'Amman', lon: 36, lat: 32, emoji: '🏛️', culture: 'jordanian' },
+  { id: 'beirut', name: 'Beirut', lon: 36, lat: 34, emoji: '🌲', culture: 'lebanese' },
+  { id: 'doha', name: 'Doha', lon: 51, lat: 25, emoji: '🏙️', culture: 'qatari' },
+  { id: 'muscat', name: 'Muscat', lon: 59, lat: 24, emoji: '⛵', culture: 'omani' },
+  { id: 'sanaa', name: "Sana'a", lon: 44, lat: 15, emoji: '🏰', culture: 'yemeni' },
+  { id: 'tunis', name: 'Tunis', lon: 10, lat: 37, emoji: '🏛️', culture: 'tunisian' },
+  { id: 'algiers', name: 'Algiers', lon: 3, lat: 37, emoji: '🏛️', culture: 'algerian' },
+  { id: 'tripoli', name: 'Tripoli', lon: 13, lat: 33, emoji: '🏛️', culture: 'libyan' },
+  { id: 'khartoum', name: 'Khartoum', lon: 33, lat: 16, emoji: '🏜️', culture: 'sudanese' },
+  // AFRICA (additional)
+  { id: 'accra', name: 'Accra', lon: 0, lat: 6, emoji: '🥁', culture: 'ghanaian' },
+  { id: 'dakar', name: 'Dakar', lon: -17, lat: 15, emoji: '🌊', culture: 'senegalese' },
+  { id: 'kinshasa', name: 'Kinshasa', lon: 15, lat: -4, emoji: '🌴', culture: 'congolese' },
+  { id: 'dar-es-salaam', name: 'Dar es Salaam', lon: 39, lat: -7, emoji: '🌴', culture: 'tanzanian' },
+  { id: 'kampala', name: 'Kampala', lon: 33, lat: 0, emoji: '🏔️', culture: 'ugandan' },
+  { id: 'luanda', name: 'Luanda', lon: 13, lat: -9, emoji: '🌊', culture: 'angolan' },
+  { id: 'maputo', name: 'Maputo', lon: 33, lat: -26, emoji: '🌊', culture: 'mozambican' },
+  { id: 'abuja', name: 'Abuja', lon: 7, lat: 9, emoji: '🏛️', culture: 'nigerian' },
+  { id: 'casablanca', name: 'Casablanca', lon: -8, lat: 34, emoji: '🕌', culture: 'moroccan' },
+  { id: 'johannesburg', name: 'Johannesburg', lon: 28, lat: -26, emoji: '💎', culture: 'south_african' },
+  { id: 'antananarivo', name: 'Antananarivo', lon: 48, lat: -19, emoji: '🦎', culture: 'malagasy' },
+  // CANADA (additional)
+  { id: 'toronto', name: 'Toronto', lon: -79, lat: 44, emoji: '🏙️', culture: 'canadian' },
+  { id: 'vancouver', name: 'Vancouver', lon: -123, lat: 49, emoji: '🌲', culture: 'canadian' },
+  { id: 'montreal', name: 'Montreal', lon: -74, lat: 46, emoji: '⚜️', culture: 'canadian' },
+  { id: 'calgary', name: 'Calgary', lon: -114, lat: 51, emoji: '🤠', culture: 'canadian' },
+  { id: 'edmonton', name: 'Edmonton', lon: -113, lat: 54, emoji: '🛢️', culture: 'canadian' },
+  { id: 'winnipeg', name: 'Winnipeg', lon: -97, lat: 50, emoji: '❄️', culture: 'canadian' },
+  { id: 'halifax', name: 'Halifax', lon: -64, lat: 45, emoji: '⚓', culture: 'canadian' },
+  { id: 'whitehorse', name: 'Whitehorse', lon: -135, lat: 61, emoji: '🐺', culture: 'canadian' },
+  { id: 'yellowknife', name: 'Yellowknife', lon: -114, lat: 62, emoji: '💎', culture: 'canadian' },
+  { id: 'iqaluit', name: 'Iqaluit', lon: -69, lat: 64, emoji: '🏔️', culture: 'canadian' },
 ];
 
 const CULTURES = {
@@ -522,6 +608,42 @@ const CULTURES = {
   kiwi:        { country: 'New Zealand', continent: 'Oceania',       firstNames: ['Jack','Isla','Oliver','Amelia','Leo','Willow','Finn','Maia'], lastNames: ['Smith','Williams','Brown','Wilson','Taylor','Anderson'], traits: ['adventurous','easygoing'] },
   moroccan:    { country: 'Morocco',     continent: 'Africa',        firstNames: ['Youssef','Fatima','Omar','Amina','Amine','Khadija','Adam','Maryam'], lastNames: ['El-Idrissi','Benali','Alaoui','Mansouri','Berrada','Fassi'], traits: ['hospitable','resilient'] },
   irish:       { country: 'Ireland',    continent: 'Europe',        firstNames: ['Sean','Aoife','Cian','Siobhan','Oisin','Niamh','Conor','Saoirse'], lastNames: ["O'Brien","Murphy","Kelly","O'Sullivan","Walsh","Byrne"], traits: ['spirited','eloquent'] },
+  cuban:       { country: 'Cuba',       continent: 'North America', firstNames: ['Carlos','Maria','Jose','Ana','Luis','Rosa','Miguel','Yolanda'], lastNames: ['Rodriguez','Gonzalez','Hernandez','Martinez','Lopez','Perez'], traits: ['passionate','resilient'] },
+  guatemalan:  { country: 'Guatemala',  continent: 'North America', firstNames: ['Diego','Sofia','Juan','Maria','Pedro','Elena','Manuel','Isabel'], lastNames: ['Lopez','Garcia','Morales','Ramirez','Hernandez','Castillo'], traits: ['communal','enduring'] },
+  costa_rican: { country: 'Costa Rica', continent: 'North America', firstNames: ['Andres','Valeria','Pablo','Daniela','Jose','Gabriela','Carlos','Maria'], lastNames: ['Jimenez','Mora','Vargas','Solis','Rojas','Hernandez'], traits: ['peaceful','joyful'] },
+  panamanian:  { country: 'Panama',     continent: 'North America', firstNames: ['Gabriel','Valentina','Sebastian','Isabella','David','Sofia','Jose','Maria'], lastNames: ['Gonzalez','Rodriguez','Martinez','Castillo','Sanchez','Moreno'], traits: ['enterprising','vibrant'] },
+  jamaican:    { country: 'Jamaica',    continent: 'North America', firstNames: ['Andre','Shanique','Devon','Keisha','Marcus','Tamara','Damian','Nicole'], lastNames: ['Brown','Williams','Campbell','Stewart','Morgan','Johnson'], traits: ['spirited','creative'] },
+  dominican:   { country: 'Dominican Republic', continent: 'North America', firstNames: ['Juan','Maria','Pedro','Rosa','Angel','Luz','Luis','Carmen'], lastNames: ['Rodriguez','Martinez','Perez','Sanchez','Ramirez','De la Cruz'], traits: ['joyful','passionate'] },
+  honduran:    { country: 'Honduras',   continent: 'North America', firstNames: ['Jose','Maria','Carlos','Ana','Luis','Rosa','David','Sandra'], lastNames: ['Lopez','Garcia','Martinez','Hernandez','Rodriguez','Flores'], traits: ['resilient','communal'] },
+  nicaraguan:  { country: 'Nicaragua',  continent: 'North America', firstNames: ['Fernando','Karla','Roberto','Claudia','Sergio','Maria','Oscar','Diana'], lastNames: ['Lopez','Garcia','Martinez','Hernandez','Morales','Flores'], traits: ['resilient','enduring'] },
+  salvadoran:  { country: 'El Salvador', continent: 'North America', firstNames: ['Oscar','Tatiana','Jose','Fatima','Carlos','Gabriela','Edwin','Karla'], lastNames: ['Martinez','Hernandez','Lopez','Gonzalez','Rivera','Ramos'], traits: ['industrious','resilient'] },
+  venezuelan:  { country: 'Venezuela',  continent: 'South America', firstNames: ['Andres','Valentina','Daniel','Maria','Jose','Gabriela','Luis','Isabella'], lastNames: ['Rodriguez','Martinez','Garcia','Hernandez','Lopez','Gonzalez'], traits: ['passionate','resourceful'] },
+  ecuadorian:  { country: 'Ecuador',    continent: 'South America', firstNames: ['Sebastian','Camila','Mateo','Valentina','Santiago','Isabella','Nicolas','Gabriela'], lastNames: ['Garcia','Rodriguez','Martinez','Lopez','Gonzalez','Flores'], traits: ['communal','resourceful'] },
+  uruguayan:   { country: 'Uruguay',    continent: 'South America', firstNames: ['Mateo','Valentina','Santiago','Martina','Agustin','Catalina','Juan','Emilia'], lastNames: ['Rodriguez','Martinez','Garcia','Fernandez','Lopez','Gonzalez'], traits: ['easygoing','cultured'] },
+  paraguayan:  { country: 'Paraguay',   continent: 'South America', firstNames: ['Diego','Maria','Carlos','Leticia','Juan','Rosa','Fernando','Claudia'], lastNames: ['Gonzalez','Rodriguez','Martinez','Benitez','Romero','Acosta'], traits: ['resilient','communal'] },
+  bolivian:    { country: 'Bolivia',    continent: 'South America', firstNames: ['Diego','Maria','Carlos','Rosa','Juan','Ana','Luis','Elena'], lastNames: ['Quispe','Mamani','Gutierrez','Morales','Garcia','Flores'], traits: ['enduring','communal'] },
+  guyanese:    { country: 'Guyana',     continent: 'South America', firstNames: ['David','Priya','Michael','Kamala','Ryan','Alicia','Mark','Shanti'], lastNames: ['Singh','Mohamed','Williams','Persaud','Khan','Ramjattan'], traits: ['resourceful','communal'] },
+  surinamese:  { country: 'Suriname',   continent: 'South America', firstNames: ['Radjesh','Shanti','Henk','Mariam','Johan','Fatima','Ryan','Kamala'], lastNames: ['Redan','Mangal','Poetisi','Ramlal','Kasanwidjojo','Bouterse'], traits: ['harmonious','resourceful'] },
+  saudi:       { country: 'Saudi Arabia', continent: 'Asia',       firstNames: ['Mohammed','Fatima','Abdullah','Noura','Khalid','Aisha','Sultan','Maha'], lastNames: ['Al-Saud','Al-Rashid','Al-Qahtani','Al-Ghamdi','Al-Otaibi','Al-Harbi'], traits: ['proud','generous'] },
+  iraqi:       { country: 'Iraq',       continent: 'Asia',          firstNames: ['Ali','Zahra','Hussein','Noor','Ahmed','Mariam','Omar','Huda'], lastNames: ['Al-Hashimi','Al-Sadr','Al-Bayati','Al-Jabbari','Al-Rawi','Al-Khafaji'], traits: ['resilient','scholarly'] },
+  syrian:      { country: 'Syria',      continent: 'Asia',          firstNames: ['Youssef','Lina','Omar','Dania','Sami','Rania','Khaled','Maya'], lastNames: ['Al-Assad','Haddad','Ibrahim','Khalil','Nasser','Abboud'], traits: ['resilient','cultured'] },
+  jordanian:   { country: 'Jordan',     continent: 'Asia',          firstNames: ['Omar','Rania','Zaid','Dana','Tariq','Lana','Nabil','Hala'], lastNames: ['Al-Majali','Al-Fayez','Batayneh','Tarawneh','Obeidat','Zoubi'], traits: ['hospitable','proud'] },
+  lebanese:    { country: 'Lebanon',    continent: 'Asia',          firstNames: ['Georges','Nadia','Pierre','Layla','Antoine','Maya','Elie','Nour'], lastNames: ['Hariri','Gemayel','Nasrallah','Khoury','Haddad','Saad'], traits: ['enterprising','cultured'] },
+  qatari:      { country: 'Qatar',      continent: 'Asia',          firstNames: ['Hamad','Sheikha','Khalifa','Moza','Tamim','Noora','Jassim','Aisha'], lastNames: ['Al-Thani','Al-Misnad','Al-Attiyah','Al-Kuwari','Al-Muhannadi','Al-Sulaiti'], traits: ['ambitious','generous'] },
+  omani:       { country: 'Oman',       continent: 'Asia',          firstNames: ['Qaboos','Fatima','Said','Aisha','Harib','Maryam','Khalid','Zahra'], lastNames: ['Al-Said','Al-Busaidi','Al-Rawahi','Al-Balushi','Al-Harthi','Al-Kindi'], traits: ['hospitable','serene'] },
+  yemeni:      { country: 'Yemen',      continent: 'Asia',          firstNames: ['Ali','Fatima','Mohammed','Amina','Ahmed','Zahra','Hassan','Nadia'], lastNames: ['Al-Houthi','Al-Ahmar','Al-Zubairi','Saleh','Noman','Anisi'], traits: ['resilient','enduring'] },
+  tunisian:    { country: 'Tunisia',    continent: 'Africa',        firstNames: ['Amine','Ines','Youssef','Meriem','Mehdi','Amira','Aziz','Lina'], lastNames: ['Ben Ali','Trabelsi','Bouazizi','Essebsi','Chahed','Jebali'], traits: ['cultured','enterprising'] },
+  algerian:    { country: 'Algeria',    continent: 'Africa',        firstNames: ['Mohamed','Fatima','Amine','Meriem','Youcef','Amina','Riad','Nour'], lastNames: ['Bouteflika','Bensalah','Tebboune','Ouyahia','Belmadi','Belaili'], traits: ['resilient','proud'] },
+  libyan:      { country: 'Libya',      continent: 'Africa',        firstNames: ['Omar','Aisha','Ali','Fatima','Ahmed','Zahra','Khalid','Nour'], lastNames: ['Gaddafi','Haftar','Sarraj','Al-Senussi','Jibril','Al-Keib'], traits: ['enduring','proud'] },
+  sudanese:    { country: 'Sudan',      continent: 'Africa',        firstNames: ['Ahmed','Amira','Omar','Hawa','Hassan','Fatima','Ibrahim','Zahra'], lastNames: ['Al-Bashir','Mahdi','Nimeiry','Abdallah','Ibrahim','Hassan'], traits: ['enduring','communal'] },
+  ghanaian:    { country: 'Ghana',      continent: 'Africa',        firstNames: ['Kwame','Ama','Kofi','Akua','Yaw','Efua','Kweku','Abena'], lastNames: ['Asante','Mensah','Boateng','Adjei','Owusu','Osei'], traits: ['joyful','enterprising'] },
+  senegalese:  { country: 'Senegal',    continent: 'Africa',        firstNames: ['Moussa','Fatou','Ibrahima','Awa','Mamadou','Mariama','Ousmane','Aminata'], lastNames: ['Diop','Ndiaye','Fall','Sow','Ba','Diallo'], traits: ['hospitable','communal'] },
+  congolese:   { country: 'DR Congo',   continent: 'Africa',        firstNames: ['Patrick','Grace','Jean','Marie','Pierre','Esperance','Joseph','Bernadette'], lastNames: ['Kabila','Tshisekedi','Lumumba','Mobutu','Katumbi','Bemba'], traits: ['resilient','vibrant'] },
+  tanzanian:   { country: 'Tanzania',   continent: 'Africa',        firstNames: ['Juma','Amina','Hassan','Fatima','Rashid','Zainab','Baraka','Rehema'], lastNames: ['Nyerere','Magufuli','Mkapa','Kikwete','Mwinyi','Hassan'], traits: ['communal','peaceful'] },
+  ugandan:     { country: 'Uganda',     continent: 'Africa',        firstNames: ['David','Grace','Moses','Sarah','Joseph','Esther','Samuel','Mercy'], lastNames: ['Museveni','Obote','Amin','Byanyima','Besigye','Kadaga'], traits: ['resourceful','communal'] },
+  angolan:     { country: 'Angola',     continent: 'Africa',        firstNames: ['Jose','Maria','Antonio','Ana','Manuel','Rosa','Paulo','Luisa'], lastNames: ['Dos Santos','Lourenco','Savimbi','Neto','Da Silva','Vicente'], traits: ['resilient','resourceful'] },
+  mozambican:  { country: 'Mozambique', continent: 'Africa',        firstNames: ['Carlos','Maria','Joao','Ana','Manuel','Rosa','Alberto','Fatima'], lastNames: ['Chissano','Guebuza','Nyusi','Machel','Dhlakama','Mondlane'], traits: ['resilient','communal'] },
+  malagasy:    { country: 'Madagascar', continent: 'Africa',        firstNames: ['Andry','Mialy','Hery','Voahangy','Rivo','Noro','Faly','Bako'], lastNames: ['Rajoelina','Ravalomanana','Ratsiraka','Rajaonarivelo','Ravony','Zafy'], traits: ['harmonious','resourceful'] },
 };
 
 const DWARF_NAMES = [
@@ -549,13 +671,17 @@ function defaultRes() {
 
 function biomeStartRes(city) {
   const absLat = Math.abs(city.lat);
-  // Desert — lots of stone, some gold from sand
-  if (city.culture === 'egyptian' || city.culture === 'emirati' || city.culture === 'iranian' || city.culture === 'moroccan') return { stone: 120, wood: 10, food: 40, iron: 5, gold: 3, cloth: 5, ale: 0, herbs: 0, beds: 0, tables: 0 };
-  // Tropical — abundant food and wood
-  if (city.culture === 'kenyan' || city.culture === 'thai' || city.culture === 'singaporean' || city.culture === 'nigerian' || city.culture === 'brazilian' || city.culture === 'vietnamese' || city.culture === 'filipino' || city.culture === 'indonesian' || city.culture === 'ethiopian' || city.culture === 'colombian')
-    return { stone: 20, wood: 80, food: 100, iron: 0, gold: 0, cloth: 5, ale: 0, herbs: 15, beds: 0, tables: 0 };
-  // Arctic — sparse but mineral-rich
-  if (city.culture === 'icelandic' || city.culture === 'alaskan' || city.culture === 'norwegian' || city.culture === 'finnish') return { stone: 60, wood: 15, food: 30, iron: 15, gold: 2, cloth: 5, ale: 5, herbs: 0, beds: 0, tables: 0 };
+  // Arctic (>58°) — sparse but mineral-rich
+  if (absLat > 58) return { stone: 60, wood: 15, food: 30, iron: 15, gold: 2, cloth: 5, ale: 5, herbs: 0, beds: 0, tables: 0 };
+  // Desert belt (lat 15-35, arid longitudes: Middle East, North Africa, SW US)
+  const isDesert = absLat > 15 && absLat < 35 && (
+    (city.lon > 20 && city.lon < 60) || // Middle East / North Africa
+    (city.lon > -10 && city.lon < 35 && absLat < 32) || // Sahara
+    (city.lon < -100 && city.lat > 25 && city.lat < 40) // SW USA
+  );
+  if (isDesert) return { stone: 120, wood: 10, food: 40, iron: 5, gold: 3, cloth: 5, ale: 0, herbs: 0, beds: 0, tables: 0 };
+  // Tropical (within 20° of equator) — abundant food and wood
+  if (absLat < 20) return { stone: 20, wood: 80, food: 100, iron: 0, gold: 0, cloth: 5, ale: 0, herbs: 15, beds: 0, tables: 0 };
   // Temperate (default) — balanced
   return { stone: 40, wood: 50, food: 70, iron: 5, gold: 0, cloth: 5, ale: 5, herbs: 5, beds: 0, tables: 0 };
 }
@@ -684,8 +810,68 @@ function getBiome(lon, lat) {
   const n2 = noise(lon * 0.08 + 100, lat * 0.08 + 100);
   const alt = noise(lon * 0.03 + 50, lat * 0.03 + 50);
 
+  // Global altitude features
   if (alt > 0.55) return T.MOUNTAIN;
   if (alt > 0.35) return T.HILL;
+
+  // REGIONAL OVERRIDES — realistic terrain for specific areas
+
+  // North America: Rocky Mountains (extra mountain/hill bias)
+  if (lon > -120 && lon < -105 && lat > 32 && lat < 52) {
+    if (alt > 0.1) return T.MOUNTAIN;
+    if (alt > -0.1) return T.HILL;
+    return T.FOREST;
+  }
+  // North America: SW Desert (Arizona, Nevada, New Mexico)
+  if (lon > -118 && lon < -100 && lat > 25 && lat < 38) {
+    if (n1 > 0.3) return T.HILL;
+    return T.DESERT;
+  }
+  // North America: Great Plains (flat grasslands)
+  if (lon > -105 && lon < -90 && lat > 30 && lat < 50) {
+    if (n2 > 0.4) return T.FOREST;
+    return T.PLAINS;
+  }
+  // North America: Southeast (forests, some jungle in Florida)
+  if (lon > -90 && lon < -75 && lat > 25 && lat < 38) {
+    if (lat < 28 && n1 > -0.2) return T.JUNGLE;
+    return n2 > -0.2 ? T.FOREST : T.PLAINS;
+  }
+  // North America: Appalachians
+  if (lon > -86 && lon < -75 && lat > 35 && lat < 45) {
+    if (alt > -0.1) return T.HILL;
+    return T.FOREST;
+  }
+  // North America: Pacific NW (dense forests)
+  if (lon > -128 && lon < -118 && lat > 40 && lat < 52) {
+    if (alt > 0.2) return T.MOUNTAIN;
+    return T.FOREST;
+  }
+  // Sahara Desert
+  if (lon > -15 && lon < 35 && lat > 18 && lat < 32) {
+    if (n1 > 0.4) return T.HILL;
+    return T.DESERT;
+  }
+  // Arabian Peninsula
+  if (lon > 35 && lon < 60 && lat > 15 && lat < 30) {
+    if (alt > 0.2) return T.HILL;
+    return T.DESERT;
+  }
+  // Siberia (taiga belt)
+  if (lon > 60 && lon < 180 && lat > 55 && lat < 70) {
+    return n1 > -0.3 ? T.TAIGA : T.TUNDRA;
+  }
+  // Amazon rainforest
+  if (lon > -75 && lon < -45 && lat > -15 && lat < 5) {
+    if (n1 > -0.3) return T.JUNGLE;
+    return T.FOREST;
+  }
+  // Central African rainforest
+  if (lon > 10 && lon < 35 && lat > -5 && lat < 8) {
+    return n1 > -0.2 ? T.JUNGLE : T.FOREST;
+  }
+
+  // GENERIC latitude-based biome
   if (absLat > 72) return T.TUNDRA;
   if (absLat > 55) return n1 > -0.1 ? T.TAIGA : T.TUNDRA;
   if (absLat > 35) return n2 > 0.1 ? T.FOREST : T.PLAINS;
@@ -1188,9 +1374,9 @@ function spawnDwarfAtCity(city) {
   if (!city || city.mx === undefined) return;
   // Per-city hard cap
   const cityPop = G.dwarves.filter(d => d.cityId === city.id).length;
-  if (cityPop >= 15) return;
+  if (cityPop >= 10) return;
   // Global hard cap
-  if (G.dwarves.length >= 200) return;
+  if (G.dwarves.length >= 300) return;
 
   const hx = city.mx, hy = city.my;
   let x, y, tries = 0;
@@ -3349,6 +3535,55 @@ async function loadSponsorships() {
     }
   } catch (e) { /* silent */ }
 }
+
+// Sponsored dwarves panel
+document.getElementById('hud-sponsored-wrap').onclick = async () => {
+  const sponsored = G.dwarves.filter(d => d.sponsored);
+  const panel = document.getElementById('inspector');
+  panel.textContent = '';
+  const title = document.createElement('h3');
+  title.style.cssText = 'margin:0 0 8px;color:#fabd2f';
+  title.textContent = '⭐ Sponsored Dwarves';
+  panel.appendChild(title);
+  if (sponsored.length === 0) {
+    const msg = document.createElement('p');
+    msg.style.cssText = 'color:#a89984;font-size:12px';
+    msg.textContent = 'No sponsored dwarves yet. Click a dwarf and use "Sponsor Brain" to upgrade their AI!';
+    panel.appendChild(msg);
+  } else {
+    for (const d of sponsored) {
+      const city = cityOf(d);
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:4px 0;border-bottom:1px solid #3c3836;cursor:pointer';
+      const star = document.createElement('span');
+      star.style.color = '#fabd2f';
+      star.textContent = '⭐ ';
+      const name = document.createElement('strong');
+      name.textContent = d.name;
+      const citySpan = document.createElement('span');
+      citySpan.style.cssText = 'color:#928374;font-size:11px;margin-left:4px';
+      citySpan.textContent = city.name;
+      const info = document.createElement('span');
+      info.style.cssText = 'color:#8ec07c;font-size:11px;margin-left:4px';
+      info.textContent = d.sponsorTier + ' · ' + d.sponsorCallsRemaining + ' calls left';
+      row.append(star, name, citySpan, info);
+      row.onclick = () => { G.followDwarf = d; G.cam.x = d.x * TILE - canvas.width / 2; G.cam.y = d.y * TILE - canvas.height / 2; };
+      panel.appendChild(row);
+    }
+  }
+  try {
+    const res = await fetch(`${AI.apiBase}/api/sponsor/list`);
+    if (res.ok) {
+      const { sponsorships } = await res.json();
+      const total = sponsorships.reduce((s, r) => s + r.amount_cents, 0);
+      const footer = document.createElement('div');
+      footer.style.cssText = 'margin-top:8px;color:#928374;font-size:11px';
+      footer.textContent = 'Total sponsored: $' + (total / 100).toFixed(2) + ' · ' + sponsorships.length + ' sponsorship(s)';
+      panel.appendChild(footer);
+    }
+  } catch (_) {}
+  panel.style.display = 'block';
+};
 
 async function restoreState() {
   const saved = await loadGameState();

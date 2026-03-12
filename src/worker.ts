@@ -294,7 +294,7 @@ app.post('/api/sponsor/webhook', async (c) => {
 
 app.get('/api/sponsor/total', async (c) => {
   const row = await c.env.DB.prepare(
-    "SELECT COALESCE(SUM(amount_cents), 0) as total FROM dwarf_sponsorships WHERE status IN ('pending','active','expired')"
+    "SELECT COALESCE(SUM(amount_cents), 0) as total FROM dwarf_sponsorships WHERE status IN ('active','expired')"
   ).first<{ total: number }>();
   return c.json({ totalCents: row?.total ?? 0 });
 });
@@ -304,6 +304,13 @@ app.get('/api/sponsor/status/:dwarfId', async (c) => {
     "SELECT * FROM dwarf_sponsorships WHERE dwarf_id=? AND status='active' AND calls_remaining > 0 ORDER BY created_at DESC LIMIT 1"
   ).bind(c.req.param('dwarfId')).first();
   return c.json({ sponsorship: row || null });
+});
+
+app.get('/api/sponsor/list', async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT dwarf_id, tier, ai_tier, calls_remaining, calls_total, amount_cents, status, created_at FROM dwarf_sponsorships WHERE status IN ('active','expired') ORDER BY created_at DESC"
+  ).all();
+  return c.json({ sponsorships: rows.results || [] });
 });
 
 // Success page for sponsorship checkout completion
