@@ -1,0 +1,14 @@
+{
+  "name": "dwarf-planet",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-01-01",
+  "assets": { "directory": "./public" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dwarf-planet-db",
+      "database_id": "0748d384-895b-4e64-b48e-cbb589bd1e39"
+    }
+  ],
+  "vars": {}
+}

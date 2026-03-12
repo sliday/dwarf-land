@@ -1,0 +1,2920 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="grunge">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧔</text></svg>">
+<title>Dwarf Planet</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daub-ui@latest/daub.css">
+<script src="https://cdn.jsdelivr.net/npm/daub-ui@latest/daub.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #1d2021; color: #ebdbb2; }
+  body { font-family: 'Courier New', monospace; font-weight: 500; }
+
+  #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+  .hud-top {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; justify-content: center; gap: 48px;
+    padding: 8px 20px;
+    background: linear-gradient(to bottom, rgba(29,32,33,0.95), rgba(29,32,33,0));
+    pointer-events: none; z-index: 10;
+  }
+  .hud-stat { text-align: center; }
+  .hud-stat .label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #a89984; font-weight: 700; }
+  .hud-stat .value { font-size: 28px; font-weight: bold; color: #ebdbb2; font-variant-numeric: tabular-nums; }
+
+  .minimap {
+    position: absolute; top: 8px; right: 8px;
+    border: 1px solid #504945; background: rgba(29,32,33,0.9);
+    z-index: 10; cursor: crosshair;
+  }
+
+  .event-log {
+    position: absolute; bottom: 24px; left: 0;
+    width: 55%; max-width: 700px;
+    background: rgba(29,32,33,0.92);
+    border-top: 1px solid #504945; border-right: 1px solid #504945;
+    z-index: 10; display: flex; flex-direction: column;
+    max-height: 180px;
+  }
+  .log-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 12px; font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: #a89984; border-bottom: 1px solid #3c3836;
+  }
+  .log-header button { background: none; border: none; color: #a89984; cursor: pointer; font-size: 14px; }
+  .log-body {
+    overflow-y: auto; padding: 4px 12px; font-size: 12px; font-weight: 600;
+    scrollbar-width: thin; scrollbar-color: #504945 transparent;
+  }
+  .log-entry { padding: 2px 0; display: flex; gap: 8px; }
+  .log-entry .ts { color: #665c54; min-width: 70px; flex-shrink: 0; }
+  .log-entry.t-mine .msg { color: #fabd2f; }
+  .log-entry.t-build .msg { color: #83a598; }
+  .log-entry.t-eat .msg { color: #fe8019; }
+  .log-entry.t-sleep .msg { color: #d3869b; }
+  .log-entry.t-haul .msg { color: #8ec07c; }
+  .log-entry.t-system .msg { color: #b8bb26; }
+  .log-entry.t-farm .msg { color: #8ec07c; }
+  .log-entry.t-city .msg { color: #d3869b; }
+
+  .controls {
+    position: absolute; bottom: 24px; right: 0;
+    background: rgba(29,32,33,0.92);
+    border-top: 1px solid #504945; border-left: 1px solid #504945;
+    padding: 12px 16px; z-index: 10;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .controls .section-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #a89984; }
+  .speed-row { display: flex; gap: 4px; }
+  .speed-btn {
+    padding: 4px 14px; font-size: 13px; border: 1px solid #504945; background: #3c3836;
+    color: #ebdbb2; cursor: pointer; border-radius: 4px; font-family: inherit;
+  }
+  .speed-btn.active { background: #98971a; color: #1d2021; border-color: #98971a; }
+  .speed-btn:hover { background: #504945; }
+  .speed-btn.active:hover { background: #79740e; }
+  .action-row { display: flex; gap: 4px; }
+  .action-btn {
+    padding: 6px 16px; font-size: 13px; border: 1px solid #504945; background: #3c3836;
+    color: #ebdbb2; cursor: pointer; border-radius: 4px; font-family: inherit;
+  }
+  .action-btn:hover { background: #504945; }
+  .action-btn.active { background: #458588; color: #1d2021; border-color: #458588; }
+
+  .status-bar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 12px; font-size: 11px; color: #a89984; font-weight: 600;
+    background: rgba(29,32,33,0.95); border-top: 1px solid #3c3836;
+    z-index: 10;
+  }
+
+  .inspector-panel {
+    position: absolute; top: 116px; left: 8px;
+    width: 300px; max-height: calc(100vh - 160px);
+    overflow-y: auto; background: rgba(29,32,33,0.95);
+    border: 1px solid #504945; border-radius: 6px;
+    z-index: 25; display: none; font-size: 12px;
+    scrollbar-width: thin; scrollbar-color: #504945 transparent;
+  }
+  .insp-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; border-bottom: 1px solid #3c3836;
+    position: sticky; top: 0; background: rgba(29,32,33,0.98);
+    cursor: grab;
+  }
+  .insp-header:active { cursor: grabbing; }
+  .insp-title { font-weight: bold; font-size: 13px; }
+  .insp-close { background: none; border: none; color: #a89984; cursor: pointer; font-size: 16px; padding: 0 4px; }
+  .insp-close:hover { color: #ebdbb2; }
+  .insp-body { padding: 8px 12px; }
+  .insp-body .iname { font-weight: bold; margin-bottom: 4px; }
+  .insp-body .ibar { height: 4px; border-radius: 2px; background: #3c3836; margin: 2px 0; }
+  .insp-body .ibar-fill { height: 100%; border-radius: 2px; }
+  .insp-body .irow { display: flex; justify-content: space-between; font-size: 10px; color: #a89984; }
+  .insp-body .istats { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+  .insp-body .istat { font-size: 9px; color: #bdae93; background: #3c3836; padding: 1px 4px; border-radius: 2px; }
+  .insp-body .istat .sv { color: #fabd2f; font-weight: bold; }
+  .insp-body .isoul { display: flex; gap: 6px; margin: 2px 0; font-size: 9px; color: #a89984; }
+  .insp-body .itraits { font-size: 9px; color: #b8bb26; margin: 2px 0; }
+  .insp-body .ibackstory { font-size: 9px; color: #83a598; margin: 2px 0; font-style: italic; }
+  .insp-body .ievents { margin-top: 4px; border-top: 1px solid #3c3836; padding-top: 3px; }
+  .insp-body .ievent { font-size: 9px; color: #a89984; }
+  .insp-body .ires { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+  .insp-body .ires-item { font-size: 10px; color: #bdae93; }
+  .insp-body .ires-item .rv { color: #fabd2f; font-weight: bold; }
+  .insp-body .idwarf-link { cursor: pointer; color: #83a598; font-size: 10px; padding: 2px 0; }
+  .insp-body .idwarf-link:hover { color: #ebdbb2; text-decoration: underline; }
+
+  .city-label {
+    position: absolute; font-size: 10px; color: #fbf1c7; text-shadow: 0 0 4px #1d2021, 0 0 2px #1d2021;
+    pointer-events: none; white-space: nowrap; z-index: 5;
+  }
+
+  .insp-sponsor { margin-top: 6px; border-top: 1px solid #3c3836; padding-top: 6px; }
+  .insp-sponsor .sponsor-title { font-size: 10px; color: #d5c4a1; margin-bottom: 4px; }
+  .insp-sponsor .sponsor-active { font-size: 10px; color: #fabd2f; }
+  .insp-sponsor .sponsor-btn { background: #504945; color: #fbf1c7; border: 1px solid #7c6f64; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-weight: 600; }
+  .insp-sponsor .sponsor-btn:hover { background: #665c54; border-color: #a89984; }
+</style>
+</head>
+<body>
+
+<canvas id="game-canvas"></canvas>
+
+<div class="hud-top">
+  <div class="hud-stat"><div class="label">Dwarves</div><div class="value" id="h-pop">0</div></div>
+  <div class="hud-stat"><div class="label">City</div><div class="value" id="h-city" style="font-size:16px">-</div></div>
+  <div class="hud-stat"><div class="label">Resources</div><div class="value" id="h-res" style="font-size:14px">-</div></div>
+  <div class="hud-stat"><div class="label">Year</div><div class="value" id="h-year">1</div></div>
+  <div class="hud-stat"><div class="label">Sponsored</div><div class="value" id="h-sponsored" style="font-size:16px;color:#fabd2f">$0</div></div>
+</div>
+
+<canvas class="minimap" id="minimap" width="250" height="125"></canvas>
+<div class="event-log">
+  <div class="log-header"><span>Event Log</span><button id="btn-clear-log" title="Clear">&#x1f5d1;</button></div>
+  <div class="log-body" id="log-body"></div>
+</div>
+
+<div class="controls">
+  <div class="section-label">Controls</div>
+  <div class="speed-row">
+    <button class="speed-btn active" data-speed="1">1x</button>
+    <button class="speed-btn" data-speed="2">2x</button>
+    <button class="speed-btn" data-speed="5">5x</button>
+    <button class="speed-btn" data-speed="0" id="btn-pause">&#x23f8;</button>
+  </div>
+  <div class="action-row">
+    <button class="action-btn" id="btn-mine" title="Designate tiles for mining (mountains, hills)">&#x26cf; Mine</button>
+    <button class="action-btn" id="btn-room" title="Designate tiles for building walls">&#x1f9f1; Build</button>
+    <button class="action-btn" id="btn-farm" title="Designate tiles for farming">&#x1f33e; Farm</button>
+    <button class="action-btn" id="btn-road" title="Designate tiles for road construction (1 stone/tile)">&#x1f6e4;&#xfe0f; Road</button>
+    <button class="action-btn" id="btn-about" onclick="DAUB.openModal('about-modal')">?</button>
+  </div>
+</div>
+
+<div class="status-bar">
+  <span id="sb-left">Hover over map</span>
+  <span id="sb-season">Spring</span>
+  <span id="sb-fps">0 fps</span>
+</div>
+
+<div class="inspector-panel" id="inspector-panel">
+  <div class="insp-header">
+    <span class="insp-title" id="insp-title">Inspector</span>
+    <button class="insp-close" id="btn-close-insp">&times;</button>
+  </div>
+  <div class="insp-body" id="insp-body"></div>
+</div>
+
+<!-- Splash Modal -->
+<div class="db-modal-overlay" id="splash-modal" aria-hidden="true">
+  <div class="db-modal" style="max-width:480px">
+    <div class="db-modal__header">
+      <h2 class="db-h3">Dwarf Planet</h2>
+    </div>
+    <div class="db-modal__body db-prose db-prose--sm">
+      <p>A living world of AI-powered dwarves. 28 cities across the globe, each with unique cultures and autonomous citizens making decisions in real time.</p>
+      <p><strong>Click any dwarf</strong> to inspect their stats, backstory, and personality. <strong>Sponsor their brain</strong> to upgrade their AI reasoning &mdash; they'll make smarter decisions (for a while).</p>
+      <p>The world lives while you watch. Pan with WASD, scroll to move, click to inspect.</p>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="db-btn db-btn--primary" onclick="DAUB.closeModal('splash-modal')">Enter World</button>
+        <button class="db-btn db-btn--ghost" onclick="DAUB.closeModal('splash-modal');DAUB.openModal('about-modal')">How it works</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- About / Mechanics Modal -->
+<div class="db-modal-overlay" id="about-modal" aria-hidden="true">
+  <div class="db-modal" style="max-width:560px;max-height:80vh;display:flex;flex-direction:column">
+    <div class="db-modal__header" style="flex-shrink:0">
+      <h2 class="db-h3">How Dwarf Planet Works</h2>
+      <button class="db-btn db-btn--ghost db-btn--sm" onclick="DAUB.closeModal('about-modal')">&times;</button>
+    </div>
+    <div class="db-modal__body db-prose db-prose--sm" style="overflow-y:auto;flex:1;min-height:0">
+      <h4>The World</h4>
+      <p>A 500&times;250 tile planet with continents, oceans, mountains, forests, and deserts. 28 real-world cities with culturally named dwarves. The map wraps horizontally &mdash; it's a globe.</p>
+
+      <h4>AI-Powered Decisions</h4>
+      <p>Dwarves use a 4-tier AI system for decision-making:</p>
+      <ul>
+        <li><strong>Simple</strong> &mdash; basic needs (eat, sleep, mine)</li>
+        <li><strong>Medium</strong> &mdash; social + planning</li>
+        <li><strong>Complex</strong> &mdash; strategy + relationships</li>
+        <li><strong>Premium</strong> &mdash; deep reasoning + personality</li>
+      </ul>
+      <p>By default, dwarves use Simple tier. Sponsoring upgrades their brain.</p>
+
+      <h4>Sponsorship</h4>
+      <p>Click a dwarf and sponsor their brain. They get a star badge and upgraded AI reasoning for a limited number of decisions:</p>
+      <table class="db-table" style="font-size:12px;width:100%;overflow:visible">
+        <tr><th>Tier</th><th>Price</th><th>AI Level</th><th>Decisions</th></tr>
+        <tr><td>Bronze</td><td>$1</td><td>Medium</td><td>100</td></tr>
+        <tr><td>Silver</td><td>$3</td><td>Complex</td><td>75</td></tr>
+        <tr><td>Gold</td><td>$10</td><td>Premium</td><td>100</td></tr>
+      </table>
+
+      <h4>Resources &amp; Building</h4>
+      <p>Each city has its own resource pool (food, wood, stone, iron, gold, cloth, ale, herbs). Dwarves mine, farm, build, eat, sleep, and socialize autonomously. Use the Mine/Build/Farm buttons to designate areas on the map.</p>
+
+      <h4>Continuous World</h4>
+      <p>The world is alive while you watch. State saves automatically every 60 seconds. Come back anytime &mdash; your dwarves remember everything.</p>
+
+      <div style="margin-top:12px">
+        <button class="db-btn db-btn--primary" onclick="DAUB.closeModal('about-modal')">Got it</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// DWARF PLANET - Autonomous Fortress on Planet Earth
+// ============================================================
+
+const TILE = 20;
+const MAP_W = 1000;
+const MAP_H = 500;
+
+// Tile types
+const T = {
+  OCEAN: 0, TUNDRA: 1, TAIGA: 2, FOREST: 3, PLAINS: 4,
+  DESERT: 5, JUNGLE: 6, MOUNTAIN: 7, HILL: 8, BEACH: 9,
+  FLOOR: 10, WALL: 11, STOCKPILE: 12, BED: 13, TABLE: 14,
+  DOOR: 15, MUSHROOM: 16, FARM: 17, CITY: 18,
+  D_MINE: 19, D_BUILD: 20, D_FARM: 21,
+  // Resource overlay tiles
+  IRON_ORE: 22, GOLD_VEIN: 23, GEMS: 24,
+  BERRY_BUSH: 25, HERB_PATCH: 26, CLAY: 27,
+  FISH_SPOT: 28, DEER: 29, CORAL: 30, CRAB: 31,
+  ROAD: 32, D_ROAD: 33
+};
+
+const WALKABLE = new Set([
+  T.TUNDRA, T.TAIGA, T.FOREST, T.PLAINS, T.DESERT, T.JUNGLE, T.HILL, T.BEACH,
+  T.MOUNTAIN,
+  T.FLOOR, T.STOCKPILE, T.BED, T.TABLE, T.DOOR, T.MUSHROOM, T.FARM, T.CITY,
+  T.D_MINE, T.D_FARM, T.D_ROAD, T.ROAD,
+  T.BERRY_BUSH, T.HERB_PATCH, T.CLAY, T.DEER, T.CRAB
+]);
+
+const TERRAIN_PROPS = {
+  [T.OCEAN]:     { speed: 0, desc: 'Deep water, impassable' },
+  [T.TUNDRA]:    { speed: 2, desc: 'Frozen wasteland, slow travel' },
+  [T.TAIGA]:     { speed: 2, desc: 'Snowy forest, slow travel' },
+  [T.FOREST]:    { speed: 2, desc: 'Dense trees, slow travel' },
+  [T.PLAINS]:    { speed: 1, desc: 'Open grassland, easy terrain' },
+  [T.DESERT]:    { speed: 1.5, desc: 'Hot sand, tiring to cross' },
+  [T.JUNGLE]:    { speed: 3, desc: 'Thick undergrowth, very slow' },
+  [T.MOUNTAIN]:  { speed: 5, desc: 'Treacherous peaks, extremely slow' },
+  [T.HILL]:      { speed: 2, desc: 'Rough terrain, moderate pace' },
+  [T.BEACH]:     { speed: 1, desc: 'Sandy shore, easy terrain' },
+  [T.FLOOR]:     { speed: 1, desc: 'Constructed floor' },
+  [T.WALL]:      { speed: 0, desc: 'Solid wall, impassable' },
+  [T.STOCKPILE]: { speed: 1, desc: 'Storage area' },
+  [T.BED]:       { speed: 1, desc: 'Sleeping quarters' },
+  [T.TABLE]:     { speed: 1, desc: 'Dining area' },
+  [T.DOOR]:      { speed: 1, desc: 'Doorway' },
+  [T.MUSHROOM]:  { speed: 1, desc: 'Edible fungi' },
+  [T.FARM]:      { speed: 1, desc: 'Cultivated plot' },
+  [T.CITY]:      { speed: 1, desc: 'City center' },
+  [T.D_MINE]:    { speed: 1, desc: 'Designated for mining' },
+  [T.D_BUILD]:   { speed: 0, desc: 'Designated for building' },
+  [T.D_FARM]:    { speed: 1, desc: 'Designated for farming' },
+  [T.D_ROAD]:    { speed: 1, desc: 'Designated for road building' },
+  [T.ROAD]:      { speed: 0.5, desc: 'Paved road, fast travel' },
+  [T.IRON_ORE]:  { speed: 4, desc: 'Iron ore deposit' },
+  [T.GOLD_VEIN]: { speed: 4, desc: 'Gold vein' },
+  [T.GEMS]:      { speed: 4, desc: 'Gem deposit' },
+  [T.BERRY_BUSH]:{ speed: 1, desc: 'Wild berries' },
+  [T.HERB_PATCH]:{ speed: 1, desc: 'Medicinal herbs' },
+  [T.CLAY]:      { speed: 1, desc: 'Clay deposit' },
+  [T.FISH_SPOT]: { speed: 0, desc: 'Fishing spot (walk adjacent)' },
+  [T.DEER]:      { speed: 1, desc: 'Wild game roaming' },
+  [T.CORAL]:     { speed: 0, desc: 'Coral reef (walk adjacent)' },
+  [T.CRAB]:      { speed: 1, desc: 'Crabs on the shore' },
+};
+
+const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
+
+const EMOJI = {
+  [T.OCEAN]: '🌊', [T.TUNDRA]: '❄️', [T.TAIGA]: '🌲', [T.FOREST]: '🌳',
+  [T.PLAINS]: '🌿', [T.DESERT]: '🏜️', [T.JUNGLE]: '🌴', [T.MOUNTAIN]: '🏔️',
+  [T.HILL]: '⛰️', [T.BEACH]: '🏖️', [T.FLOOR]: '🟫', [T.WALL]: '🧱',
+  [T.STOCKPILE]: '📦', [T.BED]: '🛏️', [T.TABLE]: '🪑', [T.DOOR]: '🚪',
+  [T.MUSHROOM]: '🍄', [T.FARM]: '🌾', [T.CITY]: '🏘️',
+  [T.D_MINE]: '⛏️', [T.D_BUILD]: '🏗️', [T.D_FARM]: '🌱',
+  [T.IRON_ORE]: '⚙️', [T.GOLD_VEIN]: '✨', [T.GEMS]: '💎',
+  [T.BERRY_BUSH]: '🫐', [T.HERB_PATCH]: '🌿', [T.CLAY]: '🏺',
+  [T.FISH_SPOT]: '🐟', [T.DEER]: '🦌', [T.CORAL]: '🪸', [T.CRAB]: '🦀',
+  [T.ROAD]: '🛤️', [T.D_ROAD]: '🚧'
+};
+
+const BG_COLORS = {
+  [T.OCEAN]: '#064273', [T.TUNDRA]: '#c8d6e5', [T.TAIGA]: '#2d5016',
+  [T.FOREST]: '#1a4a1a', [T.PLAINS]: '#4a6c2f', [T.DESERT]: '#c2a645',
+  [T.JUNGLE]: '#0d3b0d', [T.MOUNTAIN]: '#6b6b6b', [T.HILL]: '#7a7a5a',
+  [T.BEACH]: '#d4b96a', [T.FLOOR]: '#3a2a1a', [T.WALL]: '#8a7a6a',
+  [T.STOCKPILE]: '#1d462a', [T.BED]: '#6d2020', [T.TABLE]: '#6d4a14',
+  [T.DOOR]: '#6d3a03', [T.MUSHROOM]: '#4a2a4a', [T.FARM]: '#3a6a3a',
+  [T.CITY]: '#4a4a3a', [T.D_MINE]: '#6a5a10', [T.D_BUILD]: '#3a5a6a',
+  [T.D_FARM]: '#3a5a3a',
+  [T.IRON_ORE]: '#8a6a4a', [T.GOLD_VEIN]: '#8a7a20', [T.GEMS]: '#5a3a7a',
+  [T.BERRY_BUSH]: '#2a4a2a', [T.HERB_PATCH]: '#3a5a2a', [T.CLAY]: '#9a7a5a',
+  [T.FISH_SPOT]: '#1a5a8a', [T.DEER]: '#4a6a3a', [T.CORAL]: '#6a3a5a', [T.CRAB]: '#c4965a',
+  [T.ROAD]: '#8a7a5a', [T.D_ROAD]: '#7a6a4a'
+};
+
+const TILE_NAMES = {
+  [T.OCEAN]: '🌊 Ocean', [T.TUNDRA]: '❄️ Tundra', [T.TAIGA]: '🌲 Taiga',
+  [T.FOREST]: '🌳 Forest', [T.PLAINS]: '🌿 Plains', [T.DESERT]: '🏜️ Desert',
+  [T.JUNGLE]: '🌴 Jungle', [T.MOUNTAIN]: '🏔️ Mountain', [T.HILL]: '⛰️ Hills',
+  [T.BEACH]: '🏖️ Beach', [T.FLOOR]: '🟫 Floor', [T.WALL]: '🧱 Wall',
+  [T.STOCKPILE]: '📦 Stockpile', [T.BED]: '🛏️ Bed', [T.TABLE]: '🪑 Table',
+  [T.DOOR]: '🚪 Door', [T.MUSHROOM]: '🍄 Mushroom', [T.FARM]: '🌾 Farm',
+  [T.CITY]: '🏘️ Settlement', [T.D_MINE]: '⛏️ Mining', [T.D_BUILD]: '🏗️ Building',
+  [T.D_FARM]: '🌱 Planting',
+  [T.IRON_ORE]: '⚙️ Iron Ore', [T.GOLD_VEIN]: '✨ Gold Vein', [T.GEMS]: '💎 Gems',
+  [T.BERRY_BUSH]: '🫐 Berry Bush', [T.HERB_PATCH]: '🌿 Herb Patch', [T.CLAY]: '🏺 Clay',
+  [T.FISH_SPOT]: '🐟 Fish', [T.DEER]: '🦌 Wild Game', [T.CORAL]: '🪸 Coral', [T.CRAB]: '🦀 Crabs',
+  [T.ROAD]: '🛤️ Road', [T.D_ROAD]: '🚧 Road (planned)'
+};
+
+// ---- Continent shapes: [lon, lat, radiusX, radiusY] ellipses ----
+const LAND = [
+  // NORTH AMERICA
+  [-100,55,28,18], [-85,45,18,14], [-110,42,14,10], [-100,30,14,10],
+  [-88,23,6,5], [-150,64,18,6], [-65,50,10,7], [-80,58,12,8],
+  [-95,67,22,8], [-75,68,12,6], [-60,55,8,6], [-85,15,7,6], [-80,10,5,4],
+  // SOUTH AMERICA
+  [-62,-5,16,14], [-50,-15,14,16], [-65,-28,10,12], [-68,-40,6,14],
+  [-72,-15,6,12], [-72,-32,5,10], [-55,-5,10,8], [-45,-23,8,6],
+  // EUROPE
+  [10,52,18,10], [25,55,14,8], [5,45,10,6], [-5,40,8,5], [15,42,5,6],
+  [25,40,8,5], [10,64,6,6], [22,66,10,5], [32,62,12,6], [-20,65,5,3],
+  [0,54,5,4], [35,55,8,6], [-8,54,4,4],
+  // AFRICA
+  [22,10,20,16], [38,0,14,14], [27,-12,16,14], [28,-27,10,12],
+  [15,30,12,7], [32,28,10,6], [48,8,6,10], [10,5,8,8],
+  [20,-5,10,10], [35,-20,8,8],
+  // ASIA
+  [60,55,32,16], [90,60,28,14], [120,55,18,12], [80,32,18,12],
+  [78,20,10,10], [100,18,12,12], [108,35,14,12], [122,35,10,10],
+  [136,38,5,8], [55,24,10,6], [68,36,12,10], [115,3,10,12],
+  [132,45,10,7], [145,65,18,10], [72,46,18,10], [92,46,14,10],
+  [105,50,12,8], [128,0,8,8], [70,60,10,6], [50,35,6,5],
+  [85,10,6,6], [100,5,6,6],
+  // AUSTRALIA
+  [133,-26,18,12], [145,-22,10,8], [125,-22,8,6], [140,-35,6,5],
+  // NEW ZEALAND
+  [173,-42,3,6],
+  // GREENLAND
+  [-42,72,10,7], [-38,78,6,4],
+  // ANTARCTICA
+  [0,-82,70,10], [90,-82,60,8], [-90,-82,40,8],
+  // ISLANDS
+  [140,8,4,4], [-155,20,3,2], [-160,60,6,3], [105,-7,10,4],
+  [25,38,3,3], [-72,18,3,3], [-60,18,2,2],
+  [100,-5,5,3], [120,-5,6,4], [127,2,4,3],
+];
+
+// ---- Cities with real coordinates ----
+const CITIES = [
+  { id: 'new-york', name: 'New York', lon: -74, lat: 41, emoji: '🗽', culture: 'american' },
+  { id: 'london', name: 'London', lon: 0, lat: 52, emoji: '🎡', culture: 'british' },
+  { id: 'paris', name: 'Paris', lon: 2, lat: 49, emoji: '🗼', culture: 'french' },
+  { id: 'tokyo', name: 'Tokyo', lon: 140, lat: 36, emoji: '🗾', culture: 'japanese' },
+  { id: 'cairo', name: 'Cairo', lon: 31, lat: 30, emoji: '🏛️', culture: 'egyptian' },
+  { id: 'sydney', name: 'Sydney', lon: 151, lat: -34, emoji: '🦘', culture: 'australian' },
+  { id: 'rio', name: 'Rio', lon: -43, lat: -23, emoji: '🎭', culture: 'brazilian' },
+  { id: 'moscow', name: 'Moscow', lon: 38, lat: 56, emoji: '⛪', culture: 'russian' },
+  { id: 'beijing', name: 'Beijing', lon: 116, lat: 40, emoji: '🏯', culture: 'chinese' },
+  { id: 'delhi', name: 'Delhi', lon: 77, lat: 29, emoji: '🕌', culture: 'indian' },
+  { id: 'nairobi', name: 'Nairobi', lon: 37, lat: -1, emoji: '🦁', culture: 'kenyan' },
+  { id: 'mexico-city', name: 'Mexico City', lon: -99, lat: 19, emoji: '🌮', culture: 'mexican' },
+  { id: 'buenos-aires', name: 'Buenos Aires', lon: -58, lat: -35, emoji: '💃', culture: 'argentinian' },
+  { id: 'istanbul', name: 'Istanbul', lon: 29, lat: 41, emoji: '🕌', culture: 'turkish' },
+  { id: 'lagos', name: 'Lagos', lon: 3, lat: 6, emoji: '🥁', culture: 'nigerian' },
+  { id: 'dubai', name: 'Dubai', lon: 55, lat: 25, emoji: '🏙️', culture: 'emirati' },
+  { id: 'singapore', name: 'Singapore', lon: 104, lat: 1, emoji: '🦁', culture: 'singaporean' },
+  { id: 'seoul', name: 'Seoul', lon: 127, lat: 37, emoji: '🎎', culture: 'korean' },
+  { id: 'los-angeles', name: 'Los Angeles', lon: -118, lat: 34, emoji: '🎬', culture: 'american' },
+  { id: 'mumbai', name: 'Mumbai', lon: 73, lat: 19, emoji: '🎬', culture: 'indian' },
+  { id: 'bangkok', name: 'Bangkok', lon: 101, lat: 14, emoji: '🛕', culture: 'thai' },
+  { id: 'lima', name: 'Lima', lon: -77, lat: -12, emoji: '🏔️', culture: 'peruvian' },
+  { id: 'rome', name: 'Rome', lon: 12, lat: 42, emoji: '🏛️', culture: 'italian' },
+  { id: 'berlin', name: 'Berlin', lon: 13, lat: 52, emoji: '🏰', culture: 'german' },
+  { id: 'reykjavik', name: 'Reykjavik', lon: -22, lat: 64, emoji: '🧊', culture: 'icelandic' },
+  { id: 'cape-town', name: 'Cape Town', lon: 18, lat: -34, emoji: '🐧', culture: 'south_african' },
+  { id: 'honolulu', name: 'Honolulu', lon: -158, lat: 21, emoji: '🌺', culture: 'hawaiian' },
+  { id: 'anchorage', name: 'Anchorage', lon: -150, lat: 61, emoji: '🐻', culture: 'alaskan' },
+];
+
+const CULTURES = {
+  american:    { country: 'USA',          continent: 'North America', firstNames: ['James','Emily','Mason','Olivia','Ethan','Sophia','Liam','Ava'], lastNames: ['Smith','Johnson','Williams','Brown','Davis','Miller'], traits: ['ambitious','industrious'] },
+  british:     { country: 'UK',           continent: 'Europe',        firstNames: ['Oliver','Charlotte','George','Amelia','Harry','Isla','Arthur','Poppy'], lastNames: ['Taylor','Brown','Wilson','Evans','Thomas','Roberts'], traits: ['stoic','proper'] },
+  french:      { country: 'France',       continent: 'Europe',        firstNames: ['Louis','Camille','Hugo','Manon','Jules','Lea','Gabriel','Chloe'], lastNames: ['Martin','Bernard','Dubois','Moreau','Laurent','Simon'], traits: ['refined','passionate'] },
+  japanese:    { country: 'Japan',        continent: 'Asia',          firstNames: ['Haruto','Sakura','Ren','Hina','Sota','Yui','Kaito','Aoi'], lastNames: ['Sato','Suzuki','Takahashi','Tanaka','Watanabe','Yamamoto'], traits: ['disciplined','honorable'] },
+  egyptian:    { country: 'Egypt',        continent: 'Africa',        firstNames: ['Ahmed','Fatima','Omar','Nour','Youssef','Mariam','Ali','Salma'], lastNames: ['Hassan','Ibrahim','Mohamed','Mahmoud','Khalil','Mostafa'], traits: ['spiritual','resilient'] },
+  australian:  { country: 'Australia',    continent: 'Oceania',       firstNames: ['Jack','Mia','Noah','Chloe','Cooper','Ruby','Lachlan','Grace'], lastNames: ['Campbell','Kelly','Murray','Mitchell','Robinson','Thompson'], traits: ['adventurous','easygoing'] },
+  brazilian:   { country: 'Brazil',       continent: 'South America', firstNames: ['Lucas','Maria','Pedro','Ana','Gabriel','Julia','Mateus','Beatriz'], lastNames: ['Silva','Santos','Oliveira','Souza','Lima','Costa'], traits: ['joyful','creative'] },
+  russian:     { country: 'Russia',       continent: 'Europe',        firstNames: ['Ivan','Anya','Dmitri','Olga','Alexei','Natasha','Nikolai','Katya'], lastNames: ['Ivanov','Petrov','Volkov','Sokolov','Kuznetsov','Popov'], traits: ['enduring','cunning'] },
+  chinese:     { country: 'China',        continent: 'Asia',          firstNames: ['Wei','Mei','Jun','Xia','Hao','Ling','Chen','Yan'], lastNames: ['Wang','Li','Zhang','Liu','Chen','Yang'], traits: ['scholarly','persistent'] },
+  indian:      { country: 'India',        continent: 'Asia',          firstNames: ['Arjun','Priya','Rohan','Ananya','Vikram','Diya','Aditya','Ishaan'], lastNames: ['Sharma','Patel','Singh','Kumar','Gupta','Reddy'], traits: ['spiritual','resourceful'] },
+  kenyan:      { country: 'Kenya',        continent: 'Africa',        firstNames: ['Jabari','Amara','Kiano','Zuri','Otieno','Wanjiku','Mwangi','Akinyi'], lastNames: ['Ochieng','Kamau','Muthoni','Njoroge','Wambui','Kimani'], traits: ['communal','enduring'] },
+  mexican:     { country: 'Mexico',       continent: 'North America', firstNames: ['Santiago','Valentina','Mateo','Camila','Diego','Renata','Sebastian','Ximena'], lastNames: ['Garcia','Rodriguez','Martinez','Lopez','Hernandez','Gonzalez'], traits: ['festive','loyal'] },
+  argentinian: { country: 'Argentina',    continent: 'South America', firstNames: ['Thiago','Martina','Bautista','Catalina','Matias','Delfina','Lautaro','Alma'], lastNames: ['Fernandez','Alvarez','Romero','Diaz','Torres','Sosa'], traits: ['passionate','proud'] },
+  turkish:     { country: 'Turkey',       continent: 'Europe',        firstNames: ['Yusuf','Elif','Kerem','Zeynep','Berat','Defne','Emir','Azra'], lastNames: ['Yilmaz','Kaya','Demir','Celik','Sahin','Ozturk'], traits: ['hospitable','tenacious'] },
+  nigerian:    { country: 'Nigeria',      continent: 'Africa',        firstNames: ['Chidi','Adaeze','Emeka','Ngozi','Obiora','Amina','Tunde','Yemi'], lastNames: ['Okafor','Adeyemi','Balogun','Eze','Obi','Nwosu'], traits: ['enterprising','vibrant'] },
+  emirati:     { country: 'UAE',          continent: 'Asia',          firstNames: ['Rashid','Fatima','Khalid','Maryam','Saeed','Aisha','Hamdan','Noura'], lastNames: ['Al-Maktoum','Al-Nahyan','Al-Rashid','Al-Falasi','Al-Mansouri','Al-Hashmi'], traits: ['ambitious','generous'] },
+  singaporean: { country: 'Singapore',    continent: 'Asia',          firstNames: ['Wei Jie','Hui Ling','Jia Hao','Xin Yi','Zhi Wei','Jia Ying','Yi Xuan','Shu Ting'], lastNames: ['Tan','Lim','Lee','Ng','Wong','Goh'], traits: ['efficient','orderly'] },
+  korean:      { country: 'South Korea',  continent: 'Asia',          firstNames: ['Minjun','Seo-yeon','Jiwon','Ha-eun','Dohyun','Soo-ah','Junwoo','Yuna'], lastNames: ['Kim','Lee','Park','Choi','Jung','Kang'], traits: ['diligent','loyal'] },
+  thai:        { country: 'Thailand',     continent: 'Asia',          firstNames: ['Somchai','Ploy','Kittisak','Nong','Sakchai','Mali','Arthit','Lek'], lastNames: ['Srisai','Charoen','Phanit','Wongsa','Bunma','Suksai'], traits: ['gentle','serene'] },
+  peruvian:    { country: 'Peru',         continent: 'South America', firstNames: ['Rodrigo','Luciana','Alejandro','Valeria','Franco','Mariana','Joaquin','Daniela'], lastNames: ['Quispe','Huaman','Flores','Rojas','Torres','Mendoza'], traits: ['resilient','communal'] },
+  italian:     { country: 'Italy',        continent: 'Europe',        firstNames: ['Leonardo','Giulia','Francesco','Aurora','Alessandro','Sofia','Lorenzo','Ginevra'], lastNames: ['Rossi','Russo','Ferrari','Esposito','Bianchi','Romano'], traits: ['artistic','passionate'] },
+  german:      { country: 'Germany',      continent: 'Europe',        firstNames: ['Felix','Emma','Leon','Mia','Lukas','Hannah','Paul','Lena'], lastNames: ['Mueller','Schmidt','Schneider','Fischer','Weber','Wagner'], traits: ['methodical','precise'] },
+  icelandic:   { country: 'Iceland',      continent: 'Europe',        firstNames: ['Ragnar','Sigrid','Bjorn','Freya','Gunnar','Hildur','Leif','Asta'], lastNames: ['Sigurdsson','Jonsdottir','Magnusson','Eriksdottir','Thorsson','Olafsdottir'], traits: ['hardy','independent'] },
+  south_african: { country: 'South Africa', continent: 'Africa',     firstNames: ['Thabo','Naledi','Sipho','Lerato','Bongani','Nomvula','Mandla','Ayanda'], lastNames: ['Nkosi','Dlamini','Mthembu','Zulu','Ndlovu','Molefe'], traits: ['resilient','communal'] },
+  hawaiian:    { country: 'USA',          continent: 'North America', firstNames: ['Kai','Leilani','Makoa','Mahina','Keanu','Nalani','Koa','Alani'], lastNames: ['Kamaka','Nakamura','Kalani','Kealoha','Palakiko','Akana'], traits: ['harmonious','spiritual'] },
+  alaskan:     { country: 'USA',          continent: 'North America', firstNames: ['Denali','Siku','Kodiak','Nuna','Sitka','Tundra','Kenai','Aurora'], lastNames: ['Blackwood','Whitebear','Ironhand','Frostborn','Stonecreek','Ashford'], traits: ['hardy','resourceful'] },
+};
+
+const DWARF_NAMES = [
+  'Urist','Doren','Kogan','Bomrek','Morul','Litast','Eral','Zefon',
+  'Aban','Kadol','Olon','Tirist','Vucar','Mosus','Sakzul','Etur',
+  'Sibrek','Dastot','Ingiz','Thikut','Logem','Udil','Asmel','Rigoth',
+  'Tobul','Endok','Rimtar','Fikod','Zasit','Stinthad','Lokum','Onget',
+  'Dumat','Zulgar','Athel','Mebzuth','Rovod','Ilral','Shorast','Kumil',
+  'Ustuth','Nish','Tekkud','Catten','Sodel','Adil','Reg','Iden',
+  'Lolor','Meng','Cerol','Dodok','Kogsak','Bembul','Ast','Nil'
+];
+const SURNAMES = [
+  'Hammerfall','Ironpick','Stonebrow','Deepdelve','Goldvein',
+  'Coalbeard','Oreblast','Axegrind','Boulderfist','Coppervein',
+  'Shalebreaker','Tunnelborn','Granitehelm','Forgeheart','Mithrilhand',
+  'Earthsong','Peakclimber','Cragwalker','Orewhisper','Gemcutter',
+  'Anvilstrike','Lavaborn','Duskhollow','Ironroot','Flintlock',
+  'Obsidianfist','Thunderpeak','Ashmantle','Quartzblood','Slagarm'
+];
+
+// ---- Per-city resource template ----
+function defaultRes() {
+  return { stone: 0, wood: 0, food: 50, iron: 0, gold: 0, cloth: 0, ale: 0, herbs: 0, beds: 0, tables: 0 };
+}
+
+function biomeStartRes(city) {
+  const absLat = Math.abs(city.lat);
+  // Desert — lots of stone, some gold from sand
+  if (city.culture === 'egyptian' || city.culture === 'emirati') return { stone: 120, wood: 10, food: 40, iron: 5, gold: 3, cloth: 5, ale: 0, herbs: 0, beds: 0, tables: 0 };
+  // Tropical — abundant food and wood
+  if (city.culture === 'kenyan' || city.culture === 'thai' || city.culture === 'singaporean' || city.culture === 'nigerian' || city.culture === 'brazilian')
+    return { stone: 20, wood: 80, food: 100, iron: 0, gold: 0, cloth: 5, ale: 0, herbs: 15, beds: 0, tables: 0 };
+  // Arctic — sparse but mineral-rich
+  if (city.culture === 'icelandic' || city.culture === 'alaskan') return { stone: 60, wood: 15, food: 30, iron: 15, gold: 2, cloth: 5, ale: 5, herbs: 0, beds: 0, tables: 0 };
+  // Temperate (default) — balanced
+  return { stone: 40, wood: 50, food: 70, iron: 5, gold: 0, cloth: 5, ale: 5, herbs: 5, beds: 0, tables: 0 };
+}
+
+// ---- State ----
+const G = {
+  map: [], tick: 0, speed: 1, paused: false,
+  year: 1, season: 0,
+  dwarves: [], usedNames: new Set(),
+  stats: { mined: 0, built: 0, farmed: 0 },
+  cam: { x: 0, y: 0 },
+  mode: 'normal', drag: null, sel: null,
+  hovTile: null, mapDirty: true,
+  homeCity: null, aiCityIndex: 0,
+  followDwarf: null,
+};
+
+// Helper: find city by id
+function cityById(id) { return CITIES.find(c => c.id === id); }
+function cityOf(d) { return cityById(d.cityId) || CITIES[0]; }
+function nearestCity(x, y) {
+  let best = null, bestDist = Infinity;
+  for (const c of CITIES) {
+    if (c.mx === undefined) continue;
+    const dx = Math.min(Math.abs(c.mx - x), MAP_W - Math.abs(c.mx - x));
+    const dy = c.my - y;
+    const dist = dx * dx + dy * dy;
+    if (dist < bestDist) { bestDist = dist; best = c; }
+  }
+  return best;
+}
+
+// ---- Canvas ----
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+const mmCanvas = document.getElementById('minimap');
+const mmCtx = mmCanvas.getContext('2d');
+
+// Emoji cache for performance
+const emojiCache = {};
+function getEmojiImg(emoji) {
+  if (emojiCache[emoji]) return emojiCache[emoji];
+  const c = document.createElement('canvas');
+  c.width = TILE; c.height = TILE;
+  const cx = c.getContext('2d');
+  cx.font = `${TILE - 6}px serif`;
+  cx.textAlign = 'center';
+  cx.textBaseline = 'middle';
+  cx.fillText(emoji, TILE / 2, TILE / 2 + 1);
+  emojiCache[emoji] = c;
+  return c;
+}
+
+// Minimap buffer
+let mmBuffer = null;
+let mmBufferCtx = null;
+
+function createMmBuffer() {
+  mmBuffer = document.createElement('canvas');
+  mmBuffer.width = mmCanvas.width;
+  mmBuffer.height = mmCanvas.height;
+  mmBufferCtx = mmBuffer.getContext('2d');
+}
+
+function renderMmBuffer() {
+  const mw = mmBuffer.width, mh = mmBuffer.height;
+  const sx = mw / MAP_W, sy = mh / MAP_H;
+  mmBufferCtx.fillStyle = '#064273';
+  mmBufferCtx.fillRect(0, 0, mw, mh);
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      const t = G.map[y][x];
+      if (t === T.OCEAN) continue;
+      mmBufferCtx.fillStyle = BG_COLORS[t] || '#4a6c2f';
+      mmBufferCtx.fillRect(Math.floor(x * sx), Math.floor(y * sy), Math.ceil(sx), Math.ceil(sy));
+    }
+  }
+  // City dots
+  mmBufferCtx.fillStyle = '#fabd2f';
+  for (const c of CITIES) {
+    if (c.mx !== undefined) {
+      mmBufferCtx.fillRect(Math.floor(c.mx * sx) - 1, Math.floor(c.my * sy) - 1, 3, 3);
+    }
+  }
+}
+
+// ---- Coordinate conversion ----
+function toLonLat(mx, my) {
+  return [(mx / MAP_W) * 360 - 180, 90 - (my / MAP_H) * 180];
+}
+function toMap(lon, lat) {
+  let mx = Math.round((lon + 180) / 360 * MAP_W) % MAP_W;
+  if (mx < 0) mx += MAP_W;
+  const my = Math.round((90 - lat) / 180 * MAP_H);
+  return [mx, Math.max(0, Math.min(MAP_H - 1, my))];
+}
+function wrapX(x) { return ((x % MAP_W) + MAP_W) % MAP_W; }
+
+// ---- Noise ----
+function noise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const a = prand(ix, iy), b = prand(ix + 1, iy), c = prand(ix, iy + 1), d = prand(ix + 1, iy + 1);
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  return (a + (b - a) * ux) + ((c + (d - c) * ux) - (a + (b - a) * ux)) * uy;
+}
+function prand(x, y) { let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return (n - Math.floor(n)) * 2 - 1; }
+
+// ---- Land check ----
+function isLandAt(lon, lat) {
+  for (const [cx, cy, rx, ry] of LAND) {
+    let dx = lon - cx;
+    if (dx > 180) dx -= 360;
+    if (dx < -180) dx += 360;
+    const dy = lat - cy;
+    if ((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1) return true;
+  }
+  return false;
+}
+
+// ---- Biome ----
+function getBiome(lon, lat) {
+  const absLat = Math.abs(lat);
+  const n1 = noise(lon * 0.05, lat * 0.05);
+  const n2 = noise(lon * 0.08 + 100, lat * 0.08 + 100);
+  const alt = noise(lon * 0.03 + 50, lat * 0.03 + 50);
+
+  if (alt > 0.55) return T.MOUNTAIN;
+  if (alt > 0.35) return T.HILL;
+  if (absLat > 72) return T.TUNDRA;
+  if (absLat > 55) return n1 > -0.1 ? T.TAIGA : T.TUNDRA;
+  if (absLat > 35) return n2 > 0.1 ? T.FOREST : T.PLAINS;
+  if (absLat > 20) {
+    if (n1 < -0.15 && n2 < 0.1) return T.DESERT;
+    return n2 > 0.2 ? T.FOREST : T.PLAINS;
+  }
+  // Tropical
+  if (n1 > -0.1) return T.JUNGLE;
+  return T.PLAINS;
+}
+
+// ---- Map Generation ----
+function generateMap() {
+  G.map = [];
+  for (let y = 0; y < MAP_H; y++) {
+    const row = new Uint8Array(MAP_W);
+    for (let x = 0; x < MAP_W; x++) {
+      const [lon, lat] = toLonLat(x, y);
+      const cn = noise(lon * 0.06, lat * 0.06) * 4;
+      const land = isLandAt(lon + cn, lat + cn * 0.4);
+      if (!land) { row[x] = T.OCEAN; continue; }
+      // Beach near ocean
+      const nearOcean = !isLandAt(lon + cn + 2, lat + cn * 0.4) ||
+                        !isLandAt(lon + cn - 2, lat + cn * 0.4) ||
+                        !isLandAt(lon + cn, lat + cn * 0.4 + 2) ||
+                        !isLandAt(lon + cn, lat + cn * 0.4 - 2);
+      if (nearOcean && Math.abs(lat) < 60 && noise(x * 0.2, y * 0.2) > -0.2) {
+        row[x] = T.BEACH; continue;
+      }
+      const biome = getBiome(lon, lat);
+      // Scatter mushrooms in forests/jungles
+      if ((biome === T.FOREST || biome === T.JUNGLE || biome === T.TAIGA) && Math.random() < 0.02) {
+        row[x] = T.MUSHROOM;
+      } else {
+        row[x] = biome;
+      }
+    }
+    G.map.push(row);
+  }
+
+  // Stage 2: Resource overlay — scatter valuable, renewable, and edible resources
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      const t = G.map[y][x];
+      const rn = noise(x * 0.12 + 200, y * 0.12 + 200);
+      const rn2 = noise(x * 0.07 + 500, y * 0.07 + 500);
+
+      // Mountains/hills: iron ore, gold veins, gems
+      if (t === T.MOUNTAIN) {
+        if (rn > 0.3 && Math.random() < 0.12) G.map[y][x] = T.IRON_ORE;
+        else if (rn > 0.4 && Math.random() < 0.04) G.map[y][x] = T.GOLD_VEIN;
+        else if (rn > 0.5 && Math.random() < 0.015) G.map[y][x] = T.GEMS;
+      }
+      if (t === T.HILL) {
+        if (rn > 0.2 && Math.random() < 0.06) G.map[y][x] = T.IRON_ORE;
+        if (rn2 > 0.3 && Math.random() < 0.03) G.map[y][x] = T.CLAY;
+      }
+      // Forests: berry bushes, deer
+      if (t === T.FOREST || t === T.TAIGA) {
+        if (rn2 > 0.1 && Math.random() < 0.03) G.map[y][x] = T.BERRY_BUSH;
+        else if (rn > -0.1 && Math.random() < 0.008) G.map[y][x] = T.DEER;
+      }
+      // Jungle: herbs, berries
+      if (t === T.JUNGLE) {
+        if (rn > 0 && Math.random() < 0.04) G.map[y][x] = T.HERB_PATCH;
+        else if (rn2 > 0.2 && Math.random() < 0.025) G.map[y][x] = T.BERRY_BUSH;
+      }
+      // Plains: herbs, deer
+      if (t === T.PLAINS) {
+        if (rn > 0.2 && Math.random() < 0.02) G.map[y][x] = T.HERB_PATCH;
+        else if (rn2 > 0.3 && Math.random() < 0.006) G.map[y][x] = T.DEER;
+      }
+      // Beach: crabs, clay, fish spots
+      if (t === T.BEACH) {
+        if (rn > 0 && Math.random() < 0.05) G.map[y][x] = T.CRAB;
+        else if (rn > 0.1 && Math.random() < 0.04) G.map[y][x] = T.CLAY;
+        else if (rn2 > 0 && Math.random() < 0.03) G.map[y][x] = T.FISH_SPOT;
+      }
+      // Ocean near land: fish spots, coral
+      if (t === T.OCEAN) {
+        let nearLand = false;
+        for (let dy = -2; dy <= 2 && !nearLand; dy++) {
+          for (let dx = -2; dx <= 2 && !nearLand; dx++) {
+            const nx = wrapX(x + dx), ny = y + dy;
+            if (ny >= 0 && ny < MAP_H && G.map[ny][nx] !== T.OCEAN) nearLand = true;
+          }
+        }
+        if (nearLand) {
+          if (rn > 0 && Math.random() < 0.08) G.map[y][x] = T.FISH_SPOT;
+          else if (rn2 > 0.2 && Math.random() < 0.03 && Math.abs(y - MAP_H / 2) < MAP_H * 0.3) G.map[y][x] = T.CORAL;
+        }
+      }
+      // Tundra: rare iron
+      if (t === T.TUNDRA && rn > 0.4 && Math.random() < 0.02) G.map[y][x] = T.IRON_ORE;
+      // Desert: gold, gems
+      if (t === T.DESERT) {
+        if (rn > 0.3 && Math.random() < 0.02) G.map[y][x] = T.GOLD_VEIN;
+        else if (rn > 0.45 && Math.random() < 0.01) G.map[y][x] = T.GEMS;
+      }
+    }
+  }
+
+  // Place cities with per-city resources and small fortress
+  function countLandTiles(cx, cy) {
+    let land = 0;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = wrapX(cx + dx), y = cy + dy;
+        if (y >= 0 && y < MAP_H && G.map[y][x] !== T.OCEAN) land++;
+      }
+    return land;
+  }
+
+  for (const city of CITIES) {
+    const [mx, my] = toMap(city.lon, city.lat);
+    // Verify placement: center on land AND at least 6/9 fortress tiles on land
+    let placed = false;
+    if (my >= 0 && my < MAP_H && G.map[my][mx] !== T.OCEAN && countLandTiles(mx, my) >= 6) {
+      city.mx = mx; city.my = my; placed = true;
+    } else {
+      // Nudge search in expanding radius up to 10 tiles
+      for (let r = 1; r <= 10 && !placed; r++) {
+        for (let dy = -r; dy <= r && !placed; dy++) {
+          for (let dx = -r; dx <= r && !placed; dx++) {
+            const nx = wrapX(mx + dx), ny = my + dy;
+            if (ny >= 0 && ny < MAP_H && G.map[ny][nx] !== T.OCEAN && countLandTiles(nx, ny) >= 6) {
+              city.mx = nx; city.my = ny; placed = true;
+            }
+          }
+        }
+      }
+    }
+    if (!placed) continue;
+
+    // Initialize per-city resources
+    city.res = biomeStartRes(city);
+
+    // Build 3x3 fortress: center=CITY, beds on top, stockpile on bottom
+    const cx = city.mx, cy = city.my;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = wrapX(cx + dx), y = cy + dy;
+        if (y < 0 || y >= MAP_H) continue;
+        // Convert ocean tiles in fortress area to FLOOR
+        if (dx === 0 && dy === 0) G.map[y][x] = T.CITY;
+        else if (dy === -1) { G.map[y][x] = T.BED; city.res.beds++; }
+        else if (dy === 1) G.map[y][x] = T.STOCKPILE;
+        else G.map[y][x] = T.FLOOR;
+      }
+    }
+
+    // Ensure fortress has an exit path to walkable natural terrain
+    const naturalWalkable = new Set([T.TUNDRA, T.TAIGA, T.FOREST, T.PLAINS, T.DESERT, T.JUNGLE, T.HILL, T.BEACH, T.MUSHROOM, T.ROAD]);
+    let hasExit = false;
+    for (let dy = -2; dy <= 2 && !hasExit; dy++) {
+      for (let dx = -2; dx <= 2 && !hasExit; dx++) {
+        if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) continue; // skip fortress interior
+        const x = wrapX(cx + dx), y = cy + dy;
+        if (y >= 0 && y < MAP_H && naturalWalkable.has(G.map[y][x])) hasExit = true;
+      }
+    }
+    if (!hasExit) {
+      // Carve a path: pick direction with most land, clear tiles to nearest walkable
+      const cardinals = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+      for (const [ddx, ddy] of cardinals) {
+        let carved = false;
+        for (let step = 2; step <= 8; step++) {
+          const x = wrapX(cx + ddx * step), y = cy + ddy * step;
+          if (y < 0 || y >= MAP_H) break;
+          if (naturalWalkable.has(G.map[y][x])) { carved = true; break; }
+          G.map[y][x] = T.FLOOR;
+        }
+        if (carved) break;
+      }
+    }
+  }
+
+  // Pick starting city (random temperate one)
+  const tempCities = CITIES.filter(c => c.mx !== undefined && Math.abs(c.lat) > 20 && Math.abs(c.lat) < 60);
+  G.homeCity = tempCities[Math.floor(Math.random() * tempCities.length)] || CITIES.find(c => c.mx !== undefined);
+
+  // Build larger starting fortress around home city (convert ocean tiles too)
+  const hx = G.homeCity.mx, hy = G.homeCity.my;
+  for (let dy = -3; dy <= 3; dy++) {
+    for (let dx = -4; dx <= 4; dx++) {
+      const x = wrapX(hx + dx), y = hy + dy;
+      if (y >= 0 && y < MAP_H) {
+        G.map[y][x] = T.FLOOR;
+      }
+    }
+  }
+  G.map[hy][hx] = T.TABLE; G.homeCity.res.tables++;
+  for (let dx = -2; dx <= 2; dx++) G.map[hy + 2][wrapX(hx + dx)] = T.STOCKPILE;
+  for (let dx = -2; dx <= 2; dx++) { G.map[hy - 2][wrapX(hx + dx)] = T.BED; G.homeCity.res.beds++; }
+
+  // Ensure home fortress has exit path
+  {
+    const naturalWalkable = new Set([T.TUNDRA, T.TAIGA, T.FOREST, T.PLAINS, T.DESERT, T.JUNGLE, T.HILL, T.BEACH, T.MUSHROOM, T.ROAD]);
+    let hasExit = false;
+    for (let dy = -4; dy <= 4 && !hasExit; dy++) {
+      for (let dx = -5; dx <= 5 && !hasExit; dx++) {
+        if (Math.abs(dx) <= 4 && Math.abs(dy) <= 3) continue;
+        const x = wrapX(hx + dx), y = hy + dy;
+        if (y >= 0 && y < MAP_H && naturalWalkable.has(G.map[y][x])) hasExit = true;
+      }
+    }
+    if (!hasExit) {
+      const cardinals = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+      for (const [ddx, ddy] of cardinals) {
+        let carved = false;
+        for (let step = 4; step <= 12; step++) {
+          const x = wrapX(hx + ddx * step), y = hy + ddy * step;
+          if (y < 0 || y >= MAP_H) break;
+          if (naturalWalkable.has(G.map[y][x])) { carved = true; break; }
+          G.map[y][x] = T.FLOOR;
+        }
+        if (carved) break;
+      }
+    }
+  }
+
+  // Generate roads between nearby cities
+  function cityDist(a, b) {
+    const dx = Math.min(Math.abs(a.mx - b.mx), MAP_W - Math.abs(a.mx - b.mx));
+    const dy = a.my - b.my;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function buildRoad(ax, ay, bx, by) {
+    // Simple A* road through lowest-cost terrain
+    const key = (x, y) => wrapX(x) + y * MAP_W;
+    const pq = new MinHeap();
+    const heuristic = (x, y) => {
+      const dx = Math.min(Math.abs(wrapX(x) - bx), MAP_W - Math.abs(wrapX(x) - bx));
+      return dx + Math.abs(y - by);
+    };
+    pq.push([heuristic(ax, ay), 0, ax, ay]);
+    const gScore = new Map(); gScore.set(key(ax, ay), 0);
+    const par = new Map();
+    const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    let steps = 0;
+    while (pq.length > 0 && steps < 15000) {
+      const [, cost, cx, cy] = pq.pop(); steps++;
+      if (wrapX(cx) === bx && cy === by) {
+        // Trace path and lay road
+        let cur = [cx, cy]; let count = 0;
+        while (cur && !(wrapX(cur[0]) === ax && cur[1] === ay)) {
+          const x = wrapX(cur[0]), y = cur[1];
+          const t = G.map[y][x];
+          // Don't overwrite buildings or city tiles
+          if (t !== T.CITY && t !== T.BED && t !== T.STOCKPILE && t !== T.TABLE && t !== T.FLOOR && t !== T.WALL && t !== T.DOOR && t !== T.FARM && t !== T.ROAD) {
+            G.map[y][x] = T.ROAD; count++;
+          }
+          cur = par.get(key(cur[0], cur[1]));
+        }
+        return count;
+      }
+      const ck = key(cx, cy);
+      if (cost > (gScore.get(ck) ?? Infinity)) continue;
+      for (const [ddx, ddy] of dirs) {
+        const nx = cx + ddx, ny = cy + ddy;
+        if (ny < 0 || ny >= MAP_H) continue;
+        const nk = key(nx, ny);
+        const t = G.map[ny][wrapX(nx)];
+        // Road cost: prefer existing roads, plains; avoid ocean
+        let tc;
+        if (t === T.OCEAN) tc = 100;
+        else if (t === T.ROAD) tc = 0.3;
+        else { const p = TERRAIN_PROPS[t]; tc = p ? Math.max(p.speed, 0.5) : 5; }
+        const ng = cost + tc;
+        if (ng < (gScore.get(nk) ?? Infinity)) {
+          gScore.set(nk, ng); par.set(nk, [cx, cy]);
+          pq.push([ng + heuristic(nx, ny), ng, nx, ny]);
+        }
+      }
+    }
+    return 0;
+  }
+
+  const placedCities = CITIES.filter(c => c.mx !== undefined);
+  const connectedPairs = new Set();
+  for (const city of placedCities) {
+    // Find 2 nearest cities
+    const neighbors = placedCities
+      .filter(c => c.id !== city.id)
+      .map(c => ({ city: c, dist: cityDist(city, c) }))
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 2);
+    for (const { city: neighbor } of neighbors) {
+      const pairKey = [city.id, neighbor.id].sort().join('-');
+      if (connectedPairs.has(pairKey)) continue;
+      connectedPairs.add(pairKey);
+      buildRoad(city.mx, city.my, neighbor.mx, neighbor.my);
+    }
+  }
+
+  // Center camera on home
+  G.cam.x = hx * TILE - canvas.width / 2;
+  G.cam.y = hy * TILE - canvas.height / 2;
+}
+
+// ---- Pathfinding (Dijkstra with terrain costs and x-wrapping) ----
+function isWalkable(x, y) {
+  if (y < 0 || y >= MAP_H) return false;
+  const t = G.map[y][wrapX(x)];
+  if (WALKABLE.has(t)) return true;
+  const props = TERRAIN_PROPS[t];
+  return props && props.speed > 0;
+}
+
+function terrainCost(x, y) {
+  if (y < 0 || y >= MAP_H) return Infinity;
+  const t = G.map[y][wrapX(x)];
+  const props = TERRAIN_PROPS[t];
+  if (!props || props.speed <= 0) return Infinity;
+  return props.speed;
+}
+
+// Min-heap for Dijkstra
+class MinHeap {
+  constructor() { this.h = []; }
+  push(node) { this.h.push(node); this._up(this.h.length - 1); }
+  pop() {
+    const top = this.h[0], last = this.h.pop();
+    if (this.h.length > 0) { this.h[0] = last; this._down(0); }
+    return top;
+  }
+  get length() { return this.h.length; }
+  _up(i) {
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.h[p][0] <= this.h[i][0]) break;
+      [this.h[p], this.h[i]] = [this.h[i], this.h[p]]; i = p;
+    }
+  }
+  _down(i) {
+    const n = this.h.length;
+    while (true) {
+      let s = i, l = 2 * i + 1, r = 2 * i + 2;
+      if (l < n && this.h[l][0] < this.h[s][0]) s = l;
+      if (r < n && this.h[r][0] < this.h[s][0]) s = r;
+      if (s === i) break;
+      [this.h[s], this.h[i]] = [this.h[i], this.h[s]]; i = s;
+    }
+  }
+}
+
+function bfs(sx, sy, goalFn, walkToGoal) {
+  const key = (x, y) => wrapX(x) + y * MAP_W;
+  const pq = new MinHeap();
+  pq.push([0, sx, sy]);
+  const dist = new Map(); dist.set(key(sx, sy), 0);
+  const par = new Map();
+  const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+  let steps = 0;
+  while (pq.length > 0 && steps < 8000) {
+    const [cost, cx, cy] = pq.pop(); steps++;
+    const ck = key(cx, cy);
+    if (cost > (dist.get(ck) ?? Infinity)) continue;
+    if (goalFn(wrapX(cx), cy) && !(cx === sx && cy === sy)) {
+      const path = []; let cur = [cx, cy];
+      while (cur[0] !== sx || cur[1] !== sy) { path.unshift([wrapX(cur[0]), cur[1]]); cur = par.get(key(cur[0], cur[1])); }
+      return path;
+    }
+    for (const [dx, dy] of dirs) {
+      const nx = cx + dx, ny = cy + dy;
+      const nk = key(nx, ny);
+      const isGoal = walkToGoal && goalFn(wrapX(nx), ny);
+      const tc = isGoal ? 1 : terrainCost(nx, ny);
+      if (tc === Infinity) continue;
+      const nc = cost + tc;
+      if (nc < (dist.get(nk) ?? Infinity)) {
+        dist.set(nk, nc); par.set(nk, [cx, cy]); pq.push([nc, nx, ny]);
+      }
+    }
+  }
+  return null;
+}
+
+function adjWalkable(tx, ty) {
+  for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]])
+    if (isWalkable(tx + dx, ty + dy)) return [wrapX(tx + dx), ty + dy];
+  return null;
+}
+
+// ---- D&D Stats ----
+function roll3d6() {
+  return (Math.floor(Math.random() * 6) + 1) + (Math.floor(Math.random() * 6) + 1) + (Math.floor(Math.random() * 6) + 1);
+}
+function statMod(stat) { return 0.5 + ((stat - 3) / 15); } // 3→0.5, 10.5→1.0, 18→1.5
+
+function ageModifiers(age) {
+  if (age < 25)  return { STR: 0, DEX: 1, CON: 0, INT: 0, WIS: -1, CHA: 0 };
+  if (age <= 50) return { STR: 0, DEX: 0, CON: 0, INT: 0, WIS: 0, CHA: 0 };
+  if (age <= 70) return { STR: 0, DEX: -1, CON: 0, INT: 1, WIS: 1, CHA: 0 };
+  return { STR: -2, DEX: -1, CON: -1, INT: 0, WIS: 2, CHA: 0 }; // ancient
+}
+
+function effectiveStat(d, stat) {
+  const base = d.stats?.[stat] ?? 10;
+  const mod = ageModifiers(d.age || 30);
+  return Math.max(3, base + (mod[stat] || 0));
+}
+
+function carryCapacity(d) {
+  return 3 + Math.floor(effectiveStat(d, 'STR') / 4);
+}
+
+function addCarry(d, resource, amount) {
+  if (!d.carryItems) d.carryItems = {};
+  d.carryItems[resource] = (d.carryItems[resource] || 0) + amount;
+  d.carrying = (d.carrying || 0) + amount;
+}
+
+function depositCarry(d) {
+  if (!d.carryItems || d.carrying <= 0) return;
+  const res = cityOf(d).res;
+  for (const [k, v] of Object.entries(d.carryItems)) {
+    if (res[k] !== undefined) res[k] += v;
+  }
+  const total = d.carrying;
+  d.carryItems = {};
+  d.carrying = 0;
+  return total;
+}
+
+// ---- Craft Inventory ----
+const MAX_INVENTORY = 6;
+const TERRAIN_CRAFT_ITEMS = {
+  [T.OCEAN]: { emoji: '💧', name: 'Water' },
+  [T.FISH_SPOT]: { emoji: '💧', name: 'Water' },
+  [T.BEACH]: { emoji: '🌎', name: 'Earth' },
+  [T.CLAY]: { emoji: '🌎', name: 'Earth' },
+  [T.MOUNTAIN]: { emoji: '🌎', name: 'Earth' },
+  [T.HILL]: { emoji: '🌎', name: 'Earth' },
+  [T.IRON_ORE]: { emoji: '🪨', name: 'Stone' },
+  [T.FOREST]: { emoji: '🌲', name: 'Wood' },
+  [T.TAIGA]: { emoji: '🌲', name: 'Wood' },
+  [T.JUNGLE]: { emoji: '🌱', name: 'Plant' },
+  [T.BERRY_BUSH]: { emoji: '🌱', name: 'Plant' },
+  [T.HERB_PATCH]: { emoji: '🌱', name: 'Plant' },
+  [T.DESERT]: { emoji: '🏖️', name: 'Sand' },
+  [T.TUNDRA]: { emoji: '💨', name: 'Wind' },
+  [T.GOLD_VEIN]: { emoji: '🌎', name: 'Earth' },
+  [T.GEMS]: { emoji: '🔥', name: 'Fire' },
+  [T.CORAL]: { emoji: '💧', name: 'Water' },
+  [T.CRAB]: { emoji: '💧', name: 'Water' },
+  [T.DEER]: { emoji: '🌱', name: 'Plant' },
+};
+
+function addInventoryItem(d, item) {
+  if (!d.inventory) d.inventory = [];
+  if (d.inventory.length >= MAX_INVENTORY) return false;
+  d.inventory.push({ emoji: item.emoji, name: item.name });
+  return true;
+}
+
+function tryCraftInventoryGain(d, tileType) {
+  const item = TERRAIN_CRAFT_ITEMS[tileType];
+  if (item && Math.random() < 0.5) addInventoryItem(d, item);
+}
+
+// ---- Dwarf ----
+function createDwarf(x, y, cityId) {
+  const city = cityById(cityId);
+  const culture = city ? CULTURES[city.culture] : null;
+  let first, last;
+  if (culture) {
+    first = culture.firstNames[Math.floor(Math.random() * culture.firstNames.length)];
+    last = culture.lastNames[Math.floor(Math.random() * culture.lastNames.length)];
+  } else {
+    first = DWARF_NAMES[Math.floor(Math.random() * DWARF_NAMES.length)];
+    last = SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
+  }
+  const culturalTrait = culture ? culture.traits[Math.floor(Math.random() * culture.traits.length)] : null;
+  return {
+    id: 'd_' + Math.random().toString(36).slice(2, 8),
+    name: first + ' ' + last, x, y, cityId: cityId || '',
+    hunger: 80 + Math.random() * 20, energy: 80 + Math.random() * 20,
+    happiness: 70 + Math.random() * 20,
+    state: 'idle', target: null, path: [], timer: 0,
+    color: `hsl(${Math.floor(Math.random() * 360)}, 55%, 55%)`,
+    stats: { STR: roll3d6(), DEX: roll3d6(), CON: roll3d6(), INT: roll3d6(), WIS: roll3d6(), CHA: roll3d6() },
+    faith: Math.floor(Math.random() * 101),
+    morality: Math.floor(Math.random() * 101),
+    ambition: Math.floor(Math.random() * 101),
+    traits: culturalTrait ? [culturalTrait] : [],
+    backstory: '',
+    eventLog: [],
+    age: 20 + Math.floor(Math.random() * 30),
+    carrying: 0, // resource units being carried (max based on STR)
+    carryItems: {}, // { stone: 2, iron: 1, ... } breakdown of carried resources
+    inventory: [], // craft items [{emoji, name}], max 6
+  };
+}
+
+function spawnDwarfAtCity(city) {
+  if (!city || city.mx === undefined) return;
+  // Per-city hard cap
+  const cityPop = G.dwarves.filter(d => d.cityId === city.id).length;
+  if (cityPop >= 15) return;
+  // Global hard cap
+  if (G.dwarves.length >= 200) return;
+
+  const hx = city.mx, hy = city.my;
+  let x, y, tries = 0;
+  do { x = wrapX(hx + Math.floor(Math.random() * 6 - 3)); y = hy + Math.floor(Math.random() * 4 - 2); tries++; }
+  while (!isWalkable(x, y) && tries < 80);
+  if (!isWalkable(x, y)) return;
+  const d = createDwarf(x, y, city.id);
+  G.dwarves.push(d);
+  log(`${d.name} has arrived at ${city.name}!`, 'system');
+  requestBackstory(d);
+}
+
+function spawnDwarf() {
+  if (!G.homeCity) return;
+  spawnDwarfAtCity(G.homeCity);
+}
+
+async function requestBackstory(d) {
+  if (d.backstory) return;
+  try {
+    const resp = await fetch(`${AI.apiBase}/api/backstory`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: d.name,
+        stats: d.stats,
+        faith: d.faith,
+        morality: d.morality,
+        ambition: d.ambition,
+        cityName: cityOf(d)?.name || G.homeCity?.name,
+      }),
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.backstory) d.backstory = data.backstory;
+    if (data.traits?.length) d.traits = data.traits;
+    if (data.name && data.name !== d.name) d.name = data.name;
+    addEvent(d, 'born', d.backstory || 'Arrived at the colony');
+  } catch (e) { /* silent - backstory is optional */ }
+}
+
+// ---- Dwarf AI (same logic, wrapping-aware) ----
+function tickDwarf(d) {
+  d.hunger = Math.max(0, d.hunger - 0.03);
+  d.energy = Math.max(0, d.energy - 0.02);
+  d.happiness = Math.max(0, Math.min(100, d.happiness - 0.005));
+
+  if (d.hunger < 20 && d.state !== 'eating' && d.state !== 'going_eat') {
+    d.state = 'seek_food'; d.target = null; d.path = [];
+  } else if (d.energy < 15 && d.state !== 'sleeping' && d.state !== 'going_sleep') {
+    d.state = 'seek_sleep'; d.target = null; d.path = [];
+  }
+
+  switch (d.state) {
+    case 'idle': aiIdle(d); break;
+    case 'walk': aiWalk(d); break;
+    case 'mining': aiMine(d); break;
+    case 'building': aiBuild(d); break;
+    case 'farming': aiFarm(d); break;
+    case 'gathering': aiGather(d); break;
+    case 'seek_food': aiSeekFood(d); break;
+    case 'going_eat': aiWalk(d); break;
+    case 'eating': aiEat(d); break;
+    case 'seek_sleep': aiSeekSleep(d); break;
+    case 'going_sleep': aiWalk(d); break;
+    case 'sleeping': aiSleep(d); break;
+    case 'wander': aiWander(d); break;
+    case 'hauling': aiWalk(d); break;
+    case 'seek_craft': aiSeekCraft(d); break;
+    case 'crafting': aiCraft(d); break;
+  }
+}
+
+function seekDeposit(d) {
+  if ((d.carrying || 0) <= 0) return false;
+  const sp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.STOCKPILE || G.map[y][x] === T.CITY, false);
+  if (sp) {
+    d.target = { type: 'deposit' }; d.path = sp; d.state = 'hauling';
+    return true;
+  }
+  // Fallback: just dump here
+  depositCarry(d);
+  return false;
+}
+
+// Food sharing: friendly dwarves share with very hungry neighbors
+function tryShareFood(d) {
+  if (d.hunger >= 30) return; // only share when very hungry
+  // Find adjacent dwarves from same city
+  for (const other of G.dwarves) {
+    if (other.id === d.id || other.cityId !== d.cityId) continue;
+    const dx = Math.abs(other.x - d.x), dy = Math.abs(other.y - d.y);
+    if (dx > 1 || dy > 1) continue; // must be adjacent
+    // Check if other has food in carry
+    if (!other.carryItems?.food || other.carryItems.food < 1) continue;
+    // Attractiveness check: morality + CHA + relationship
+    const attractiveness = (d.morality ?? 50) + (d.stats?.CHA ?? 10) * 2;
+    const otherGenerosity = (other.morality ?? 50) + (other.stats?.CHA ?? 10);
+    // Check for enemy relationship
+    const rel = (other.relationships || []).find(r => r.targetId === d.id);
+    if (rel && (rel.type === 'enemy' || rel.strength < -50)) continue; // enemies don't share
+    // Threshold: evil/hated dwarves need high attractiveness
+    const threshold = 80 - otherGenerosity * 0.3;
+    if (attractiveness < threshold) continue;
+    // Share!
+    const shareAmt = Math.min(other.carryItems.food, 2);
+    other.carryItems.food -= shareAmt;
+    other.carrying -= shareAmt;
+    d.hunger = Math.min(100, d.hunger + shareAmt * 12);
+    log(`${other.name} \uD83E\uDD1D shared food with ${d.name}`, 'eat');
+    addEvent(d, 'social', `${other.name} shared food`);
+    addEvent(other, 'social', `Shared food with ${d.name}`);
+    d.happiness = Math.min(100, d.happiness + 3);
+    other.happiness = Math.min(100, other.happiness + 2);
+    return true;
+  }
+  return false;
+}
+
+function tryTrade(d) {
+  if (!d.inventory?.length) return false;
+  // Find adjacent dwarf from different city with inventory
+  for (const other of G.dwarves) {
+    if (other.id === d.id || other.cityId === d.cityId) continue;
+    if (other.x !== d.x || other.y !== d.y) continue;
+    if (other.state !== 'idle' && other.state !== 'wander') continue;
+    if (!other.inventory?.length) continue;
+    // Check for enemy/hostile relationship
+    const isHostile = (d.relationships || []).some(
+      r => r.targetId === other.id && (r.type === 'enemy' || r.strength < -50)
+    ) || (other.relationships || []).some(
+      r => r.targetId === d.id && (r.type === 'enemy' || r.strength < -50)
+    );
+    if (isHostile) continue;
+    // 30% chance per meeting
+    if (Math.random() > 0.3) continue;
+    // INT advantage determines trade terms
+    const intD = effectiveStat(d, 'INT');
+    const intO = effectiveStat(other, 'INT');
+    const intDiff = intD - intO;
+    if (intDiff >= 5) {
+      // Smart dwarf gives 1, gets up to 2
+      const give = d.inventory.shift();
+      const get1 = other.inventory.shift();
+      const get2 = other.inventory.length > 0 ? other.inventory.shift() : null;
+      if (give) other.inventory.push(give);
+      if (get1) d.inventory.push(get1);
+      if (get2) d.inventory.push(get2);
+      log(`${d.name} \uD83E\uDD1D outsmarted ${other.name} in a trade!`, 'trade');
+      addEvent(d, 'trade', `Traded with ${other.name} (favorable)`);
+      addEvent(other, 'trade', `Traded with ${d.name} (unfavorable)`);
+    } else if (intDiff <= -5) {
+      // Other is smarter
+      const give1 = d.inventory.shift();
+      const give2 = d.inventory.length > 0 ? d.inventory.shift() : null;
+      const get = other.inventory.shift();
+      if (give1) other.inventory.push(give1);
+      if (give2) other.inventory.push(give2);
+      if (get) d.inventory.push(get);
+      log(`${other.name} \uD83E\uDD1D outsmarted ${d.name} in a trade!`, 'trade');
+      addEvent(d, 'trade', `Traded with ${other.name} (unfavorable)`);
+      addEvent(other, 'trade', `Traded with ${d.name} (favorable)`);
+    } else {
+      // Equal 1:1 swap
+      const give = d.inventory.shift();
+      const get = other.inventory.shift();
+      if (give) other.inventory.push(give);
+      if (get) d.inventory.push(get);
+      log(`${d.name} \uD83E\uDD1D traded with ${other.name}`, 'trade');
+      addEvent(d, 'trade', `Traded with ${other.name}`);
+      addEvent(other, 'trade', `Traded with ${d.name}`);
+    }
+    d.happiness = Math.min(100, d.happiness + 3);
+    other.happiness = Math.min(100, other.happiness + 3);
+    return true;
+  }
+  return false;
+}
+
+function aiIdle(d) {
+  if (executeIntent(d)) return;
+  // If carrying resources, go deposit first
+  if ((d.carrying || 0) >= carryCapacity(d)) {
+    if (seekDeposit(d)) return;
+  }
+  // Try to get food shared if very hungry
+  if (d.hunger < 20) tryShareFood(d);
+  // Try trading with dwarves from other cities
+  if (d.inventory?.length > 0 && tryTrade(d)) return;
+  // Try crafting if idle with 2+ inventory items and not too hungry/tired
+  if ((d.inventory?.length || 0) >= 2 && d.hunger > 40 && d.energy > 30 && Math.random() < 0.03) {
+    d.state = 'seek_craft'; return;
+  }
+  const res = cityOf(d).res || {};
+
+  if (d.hunger < 40 && res.food > 0) { d.state = 'seek_food'; return; }
+  if (d.energy < 30) { d.state = 'seek_sleep'; return; }
+
+  const minePath = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.D_MINE, false);
+  if (minePath) {
+    const last = minePath[minePath.length - 1];
+    if (G.map[last[1]][last[0]] === T.D_MINE) {
+      const adj = adjWalkable(last[0], last[1]);
+      if (adj) {
+        const p = bfs(d.x, d.y, (x, y) => x === adj[0] && y === adj[1], false);
+        if (p) { d.target = { type: 'mine', x: last[0], y: last[1] }; d.path = p; d.state = 'walk'; return; }
+      }
+    }
+  }
+
+  if (res.stone >= 2) {
+    const bp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.D_BUILD, false);
+    if (bp) {
+      const last = bp[bp.length - 1];
+      if (G.map[last[1]][last[0]] === T.D_BUILD) {
+        const adj = adjWalkable(last[0], last[1]);
+        if (adj) {
+          const p = bfs(d.x, d.y, (x, y) => x === adj[0] && y === adj[1], false);
+          if (p) { d.target = { type: 'build', x: last[0], y: last[1] }; d.path = p; d.state = 'walk'; return; }
+        }
+      }
+    }
+  }
+
+  // Road building (costs 1 stone)
+  if (res.stone >= 1) {
+    const rp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.D_ROAD, false);
+    if (rp) {
+      const last = rp[rp.length - 1];
+      if (G.map[last[1]][last[0]] === T.D_ROAD) {
+        d.target = { type: 'road', x: last[0], y: last[1] }; d.path = rp; d.state = 'walk'; return;
+      }
+    }
+  }
+
+  const fp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.D_FARM, false);
+  if (fp) {
+    const last = fp[fp.length - 1];
+    if (G.map[last[1]][last[0]] === T.D_FARM) {
+      d.target = { type: 'farm', x: last[0], y: last[1] }; d.path = fp; d.state = 'walk'; return;
+    }
+  }
+
+  if (res.wood < 10) {
+    const tp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.TAIGA || G.map[y][x] === T.FOREST, false);
+    if (tp) {
+      const last = tp[tp.length - 1];
+      const adj = adjWalkable(last[0], last[1]);
+      if (adj) {
+        const p = bfs(d.x, d.y, (x, y) => x === adj[0] && y === adj[1], false);
+        if (p) { d.target = { type: 'chop', x: last[0], y: last[1] }; d.path = p; d.state = 'walk'; return; }
+      }
+    }
+  }
+
+  // Gather from nearby resource tiles
+  const GATHERABLE = new Set([T.BERRY_BUSH, T.HERB_PATCH, T.IRON_ORE, T.GOLD_VEIN, T.GEMS, T.FISH_SPOT, T.CRAB, T.DEER, T.CLAY, T.CORAL]);
+  const gp = bfs(d.x, d.y, (x, y) => GATHERABLE.has(G.map[y][x]), false);
+  if (gp && gp.length < 30) {
+    const last = gp[gp.length - 1];
+    const tile = G.map[last[1]][last[0]];
+    // For non-walkable resource tiles (fish in ocean, iron ore on mountains), move adjacent
+    if (!isWalkable(last[0], last[1])) {
+      const adj = adjWalkable(last[0], last[1]);
+      if (adj) {
+        const p = bfs(d.x, d.y, (x, y) => x === adj[0] && y === adj[1], false);
+        if (p) { d.target = { type: 'gather', x: last[0], y: last[1], tile }; d.path = p; d.state = 'walk'; return; }
+      }
+    } else {
+      d.target = { type: 'gather', x: last[0], y: last[1], tile }; d.path = gp; d.state = 'walk'; return;
+    }
+  }
+
+  d.state = 'wander'; d.timer = 20 + Math.floor(Math.random() * 40);
+}
+
+function aiWalk(d) {
+  if (d.path.length === 0) {
+    if (!d.target) { d.state = 'idle'; return; }
+    const tt = d.target.type;
+    if (tt === 'mine' || tt === 'chop') d.state = 'mining';
+    else if (tt === 'build' || tt === 'road') d.state = 'building';
+    else if (tt === 'farm') d.state = 'farming';
+    else if (tt === 'gather') d.state = 'gathering';
+    else if (tt === 'eat') d.state = 'eating';
+    else if (tt === 'sleep') d.state = 'sleeping';
+    else if (tt === 'craft') d.state = 'crafting';
+    else if (tt === 'deposit') {
+      const total = depositCarry(d);
+      if (total) {
+        log(`${d.name} \uD83D\uDCE6 deposited ${total} items at stockpile`, 'haul');
+        addEvent(d, 'haul', `Deposited ${total} items`);
+      }
+      d.target = null; d.timer = 0; d.state = 'idle';
+      return;
+    }
+    else d.state = 'idle';
+    d.timer = 0; return;
+  }
+  const [nx, ny] = d.path.shift();
+  if (isWalkable(nx, ny)) { d.x = nx; d.y = ny; }
+  else { d.path = []; d.target = null; d.state = 'idle'; }
+}
+
+function addEvent(d, type, desc) {
+  if (!d.eventLog) d.eventLog = [];
+  d.eventLog.push({ tick: G.tick, type, description: desc });
+  if (d.eventLog.length > 50) d.eventLog.shift();
+}
+
+function aiMine(d) {
+  if (!d.target) { d.state = 'idle'; return; }
+  d.timer++;
+  const dur = Math.round(8 / statMod(effectiveStat(d, 'STR')));
+  if (d.timer >= dur) {
+    const { x, y } = d.target;
+    const tile = G.map[y][x];
+    if (tile === T.D_MINE || tile === T.MOUNTAIN || tile === T.HILL) {
+      G.map[y][x] = T.FLOOR;
+      const stoneAmt = 2 + Math.floor(Math.random() * 3);
+      addCarry(d, 'stone', stoneAmt);
+      G.stats.mined++;
+      let extra = '';
+      if (tile === T.MOUNTAIN && Math.random() < 0.4) { addCarry(d, 'iron', 1); extra += ' +1 iron!'; }
+      if (tile === T.MOUNTAIN && Math.random() < 0.05) { addCarry(d, 'gold', 1); extra += ' +1 gold!'; }
+      log(`${d.name} \u26cf\uFE0F mined ${stoneAmt} stone${extra}`, 'mine');
+      addEvent(d, 'mine', `Mined ${stoneAmt} stone${extra}`);
+      d.happiness = Math.min(100, d.happiness + 2);
+      tryCraftInventoryGain(d, tile);
+      G.mapDirty = true;
+    } else if (d.target.type === 'chop' && (tile === T.FOREST || tile === T.TAIGA || tile === T.JUNGLE)) {
+      G.map[y][x] = T.PLAINS;
+      addCarry(d, 'wood', 3);
+      log(`${d.name} \uD83EA93 chopped wood`, 'haul');
+      addEvent(d, 'chop', 'Chopped wood');
+      tryCraftInventoryGain(d, tile);
+      G.mapDirty = true;
+    }
+    d.target = null; d.timer = 0;
+    // If full, go deposit; otherwise idle
+    if ((d.carrying || 0) >= carryCapacity(d)) seekDeposit(d) || (d.state = 'idle');
+    else d.state = 'idle';
+  }
+}
+
+function aiBuild(d) {
+  if (!d.target) { d.state = 'idle'; return; }
+  d.timer++;
+  const dur = Math.round(10 / statMod(effectiveStat(d, 'STR')));
+  if (d.timer >= dur) {
+    const { x, y } = d.target;
+    const res = cityOf(d).res;
+    if (G.map[y][x] === T.D_BUILD && res.stone >= 2) {
+      res.stone -= 2; G.map[y][x] = T.WALL; G.stats.built++;
+      log(`${d.name} 🧱 built a wall`, 'build');
+      addEvent(d, 'build', 'Built a wall');
+      d.happiness = Math.min(100, d.happiness + 3);
+      G.mapDirty = true;
+    } else if (G.map[y][x] === T.D_ROAD && res.stone >= 1) {
+      res.stone -= 1; G.map[y][x] = T.ROAD; G.stats.built++;
+      log(`${d.name} 🛤️ built a road`, 'build');
+      addEvent(d, 'build', 'Built a road');
+      d.happiness = Math.min(100, d.happiness + 2);
+      G.mapDirty = true;
+    }
+    d.target = null; d.timer = 0; d.state = 'idle';
+  }
+}
+
+function aiFarm(d) {
+  if (!d.target) { d.state = 'idle'; return; }
+  d.timer++;
+  const dur = Math.round(12 / statMod(effectiveStat(d, 'WIS')));
+  if (d.timer >= dur) {
+    const { x, y } = d.target;
+    if (G.map[y][x] === T.D_FARM) {
+      G.map[y][x] = T.FARM; G.stats.farmed++;
+      log(`${d.name} 🌱 planted a farm`, 'farm');
+      addEvent(d, 'farm', 'Planted a farm');
+      d.happiness = Math.min(100, d.happiness + 2);
+      G.mapDirty = true;
+    }
+    d.target = null; d.timer = 0; d.state = 'idle';
+  }
+}
+
+function aiGather(d) {
+  if (!d.target) { d.state = 'idle'; return; }
+  d.timer++;
+  const dur = Math.round(6 / statMod(effectiveStat(d, 'DEX')));
+  if (d.timer >= dur) {
+    const { x, y, tile } = d.target;
+    const currentTile = G.map[y][x];
+    if (currentTile === tile) {
+      switch (tile) {
+        case T.BERRY_BUSH:
+          addCarry(d, 'food', 3); G.map[y][x] = T.PLAINS; G.mapDirty = true;
+          log(`${d.name} \uD83E\uDED0 gathered berries (+3 food)`, 'farm');
+          addEvent(d, 'gather', 'Gathered berries');
+          d.hunger = Math.min(100, d.hunger + 15);
+          break;
+        case T.HERB_PATCH:
+          addCarry(d, 'herbs', 2); G.map[y][x] = T.PLAINS; G.mapDirty = true;
+          log(`${d.name} \uD83C\uDF3F gathered herbs (+2 herbs)`, 'farm');
+          addEvent(d, 'gather', 'Gathered herbs');
+          break;
+        case T.IRON_ORE:
+          addCarry(d, 'iron', 2); addCarry(d, 'stone', 1); G.map[y][x] = T.HILL; G.mapDirty = true;
+          log(`${d.name} \u2699\uFE0F mined iron ore (+2 iron)`, 'mine');
+          addEvent(d, 'gather', 'Mined iron ore');
+          break;
+        case T.GOLD_VEIN:
+          addCarry(d, 'gold', 2); G.map[y][x] = T.MOUNTAIN; G.mapDirty = true;
+          log(`${d.name} \u2728 found gold (+2 gold)`, 'mine');
+          addEvent(d, 'gather', 'Mined gold vein');
+          break;
+        case T.GEMS:
+          addCarry(d, 'gold', 5); G.map[y][x] = T.MOUNTAIN; G.mapDirty = true;
+          log(`${d.name} \uD83D\uDC8E discovered gems! (+5 gold)`, 'mine');
+          addEvent(d, 'gather', 'Discovered gems!');
+          d.happiness = Math.min(100, d.happiness + 10);
+          break;
+        case T.FISH_SPOT:
+          addCarry(d, 'food', 4); G.map[y][x] = T.OCEAN; G.mapDirty = true;
+          log(`${d.name} \uD83D\uDC1F caught fish (+4 food)`, 'farm');
+          addEvent(d, 'gather', 'Caught fish');
+          d.hunger = Math.min(100, d.hunger + 10);
+          break;
+        case T.CRAB:
+          addCarry(d, 'food', 2); G.map[y][x] = T.BEACH; G.mapDirty = true;
+          log(`${d.name} \uD83E\uDD80 caught crabs (+2 food)`, 'farm');
+          addEvent(d, 'gather', 'Caught crabs');
+          d.hunger = Math.min(100, d.hunger + 8);
+          break;
+        case T.DEER:
+          addCarry(d, 'food', 6); addCarry(d, 'cloth', 1); G.map[y][x] = T.PLAINS; G.mapDirty = true;
+          log(`${d.name} \uD83E\uDD8C hunted game (+6 food, +1 cloth)`, 'mine');
+          addEvent(d, 'gather', 'Hunted wild game');
+          break;
+        case T.CLAY:
+          addCarry(d, 'stone', 2); G.map[y][x] = T.BEACH; G.mapDirty = true;
+          log(`${d.name} \uD83C\uDFFA gathered clay (+2 stone)`, 'haul');
+          addEvent(d, 'gather', 'Gathered clay');
+          break;
+        case T.CORAL:
+          addCarry(d, 'gold', 1); G.map[y][x] = T.OCEAN; G.mapDirty = true;
+          log(`${d.name} \uD83E\uDEB8 harvested coral (+1 gold)`, 'farm');
+          addEvent(d, 'gather', 'Harvested coral');
+          break;
+      }
+    }
+    tryCraftInventoryGain(d, tile);
+    d.happiness = Math.min(100, d.happiness + 2);
+    d.target = null; d.timer = 0;
+    if ((d.carrying || 0) >= carryCapacity(d)) seekDeposit(d) || (d.state = 'idle');
+    else d.state = 'idle';
+  }
+}
+
+function aiSeekCraft(d) {
+  if (!d.inventory || d.inventory.length < 2) { d.state = 'idle'; return; }
+  // Walk to nearest city/table tile for crafting
+  const cp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.CITY || G.map[y][x] === T.TABLE, true);
+  if (cp && cp.length < 40) {
+    d.target = { type: 'craft' }; d.path = cp; d.state = 'walk';
+  } else {
+    d.state = 'idle';
+  }
+}
+
+function aiCraft(d) {
+  if (!d.inventory || d.inventory.length < 2) { d.state = 'idle'; return; }
+  d.timer++;
+  const dur = Math.round(15 / statMod(effectiveStat(d, 'INT')));
+  if (d.timer >= dur) {
+    const item1 = d.inventory[0];
+    const item2 = d.inventory[1];
+    // Fire off async craft API call
+    fetch(`${AI.apiBase}/api/craft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item1, item2 }),
+    }).then(r => r.json()).then(res => {
+      if (res.ok && res.result) {
+        // Remove the two input items
+        d.inventory.splice(0, 2);
+        // Add result to inventory
+        addInventoryItem(d, res.result);
+        log(`${d.name} ✨ combined ${item1.emoji}${item1.name} + ${item2.emoji}${item2.name} = ${res.result.emoji}${res.result.name}!`, 'craft');
+        addEvent(d, 'craft', `Combined ${item1.name} + ${item2.name} = ${res.result.name}`);
+        d.happiness = Math.min(100, d.happiness + 5);
+        // Track city discoveries
+        const city = cityOf(d);
+        if (city) {
+          if (!city.discoveries) city.discoveries = new Set();
+          city.discoveries.add(res.result.name);
+        }
+      }
+    }).catch(() => {
+      // Local fallback: combine names
+      d.inventory.splice(0, 2);
+      const emojis = ['✨', '🔮', '⚡', '🌀', '💫'];
+      const name = (item1.name.slice(0, 3) + item2.name.slice(-3)).slice(0, 20);
+      const fallback = { emoji: emojis[Math.floor(Math.random() * emojis.length)], name };
+      addInventoryItem(d, fallback);
+      log(`${d.name} ✨ crafted ${fallback.emoji}${fallback.name}`, 'craft');
+      addEvent(d, 'craft', `Crafted ${fallback.name}`);
+    });
+    d.target = null; d.timer = 0; d.state = 'idle';
+  }
+}
+
+function aiSeekFood(d) {
+  const res = cityOf(d).res;
+  // Try wild food sources first: mushrooms, berries, crabs, fish
+  const WILD_FOOD = new Set([T.MUSHROOM, T.BERRY_BUSH, T.CRAB]);
+  const mp = bfs(d.x, d.y, (x, y) => WILD_FOOD.has(G.map[y][x]), true);
+  if (mp && mp.length < 25) {
+    const last = mp[mp.length - 1];
+    const ft = G.map[last[1]][last[0]];
+    d.target = { type: 'eat', x: last[0], y: last[1], src: ft === T.MUSHROOM ? 'mushroom' : ft === T.BERRY_BUSH ? 'berry' : 'crab' };
+    d.path = mp.slice(0, -1);
+    d.state = d.path.length > 0 ? 'going_eat' : 'eating';
+    d.timer = 0; return;
+  }
+  if (res.food > 0) {
+    d.target = { type: 'eat', src: 'stockpile' };
+    d.state = 'eating'; d.timer = 0; return;
+  }
+  log(`${d.name} 😫 is starving!`, 'system');
+  addEvent(d, 'starve', 'Starving - no food available');
+  d.state = 'wander'; d.timer = 15;
+}
+
+function aiEat(d) {
+  d.timer++;
+  if (d.timer >= 5) {
+    const res = cityOf(d).res;
+    const src = d.target?.src;
+    if (src === 'mushroom' || src === 'berry' || src === 'crab') {
+      const { x, y } = d.target;
+      const expected = src === 'mushroom' ? T.MUSHROOM : src === 'berry' ? T.BERRY_BUSH : T.CRAB;
+      const revert = src === 'crab' ? T.BEACH : T.PLAINS;
+      if (G.map[y] && G.map[y][x] === expected) {
+        G.map[y][x] = revert; G.mapDirty = true;
+        const amt = src === 'mushroom' ? 40 : src === 'berry' ? 35 : 25;
+        d.hunger = Math.min(100, d.hunger + Math.round(amt * statMod(effectiveStat(d, 'WIS'))));
+        const emoji = src === 'mushroom' ? '🍄' : src === 'berry' ? '🫐' : '🦀';
+        log(`${d.name} ${emoji} ate ${src === 'mushroom' ? 'a mushroom' : src === 'berry' ? 'berries' : 'crabs'}`, 'eat');
+        addEvent(d, 'eat', `Ate ${src}`);
+      }
+    } else if (res.food > 0) {
+      res.food--;
+      d.hunger = Math.min(100, d.hunger + Math.round(35 * statMod(effectiveStat(d, 'WIS'))));
+      log(`${d.name} 🍖 ate from stockpile`, 'eat');
+      addEvent(d, 'eat', 'Ate from stockpile');
+    }
+    d.happiness = Math.min(100, d.happiness + 5);
+    d.target = null; d.timer = 0; d.state = 'idle';
+  }
+}
+
+function aiSeekSleep(d) {
+  const bp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.BED, true);
+  if (bp) {
+    const last = bp[bp.length - 1];
+    d.target = { type: 'sleep', x: last[0], y: last[1] }; d.path = bp;
+    d.state = 'going_sleep'; d.timer = 0; return;
+  }
+  d.target = { type: 'sleep' }; d.state = 'sleeping'; d.timer = 0;
+}
+
+function aiSleep(d) {
+  d.timer++;
+  const recoveryRate = 1.5 * statMod(effectiveStat(d, 'CON'));
+  d.energy = Math.min(100, d.energy + recoveryRate);
+  if (d.energy >= 90 || d.timer >= 40) {
+    log(`${d.name} 😴 woke up`, 'sleep');
+    addEvent(d, 'sleep', 'Slept and recovered energy');
+    d.happiness = Math.min(100, d.happiness + 5);
+    d.target = null; d.timer = 0; d.state = 'idle';
+  }
+}
+
+function aiWander(d) {
+  d.timer--;
+  if (d.timer <= 0) { d.state = 'idle'; return; }
+  if (Math.random() < 0.3) {
+    const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    const [dx, dy] = dirs[Math.floor(Math.random() * 4)];
+    const nx = wrapX(d.x + dx), ny = d.y + dy;
+    if (isWalkable(nx, ny)) { d.x = nx; d.y = ny; }
+  }
+}
+
+// ---- Seasons ----
+function tickSeason() {
+  if (G.tick % 2000 === 0 && G.tick > 0) {
+    G.season = (G.season + 1) % 4;
+    if (G.season === 0) {
+      G.year++;
+      // Age all dwarves
+      for (const d of G.dwarves) {
+        d.age = (d.age || 20) + 1;
+        // Ancient dwarves have a small death chance
+        if (d.age >= 70 && Math.random() < 0.03 * (d.age - 69)) {
+          log(`${d.name} \u2620\uFE0F passed away at age ${d.age}`, 'system');
+          addEvent(d, 'death', `Died of old age at ${d.age}`);
+          G.dwarves = G.dwarves.filter(dw => dw.id !== d.id);
+        }
+      }
+    }
+    const name = SEASONS[G.season];
+    log(`🌍 ${name} of Year ${G.year}`, 'system');
+    if (typeof DAUB !== 'undefined') DAUB.toast({ type: 'info', title: name + ', Year ' + G.year, message: 'The seasons turn across Dwarf Planet...' });
+
+    if (G.season === 0 || G.season === 1) {
+      // Per-city harvest based on nearby farms and resource tiles
+      for (const city of CITIES) {
+        if (!city.res || city.mx === undefined) continue;
+        let farmCount = 0, fishCount = 0, berryCount = 0, herbCount = 0;
+        const r = 15;
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            const fx = wrapX(city.mx + dx), fy = city.my + dy;
+            if (fy < 0 || fy >= MAP_H) continue;
+            const t = G.map[fy][fx];
+            if (t === T.FARM) farmCount++;
+            else if (t === T.FISH_SPOT || t === T.CRAB) fishCount++;
+            else if (t === T.BERRY_BUSH) berryCount++;
+            else if (t === T.HERB_PATCH) herbCount++;
+          }
+        }
+        const cityPop = G.dwarves.filter(d => d.cityId === city.id).length;
+        const harvest = 10 + farmCount * 3 + fishCount * 2 + berryCount + cityPop * 2;
+        city.res.food += harvest;
+        if (herbCount > 0) city.res.herbs += Math.ceil(herbCount / 2);
+        if (farmCount >= 3) city.res.cloth += Math.floor(farmCount / 3);
+        // Passive ale from excess food
+        if (city.res.food > 50 + cityPop * 5) city.res.ale += Math.min(5, Math.floor((city.res.food - 50) / 20));
+      }
+      log(`🌾 Harvest season! Cities gather from farms, fisheries, and foraging.`, 'farm');
+      // Regrow renewable resources globally
+      for (let i = 0; i < 80; i++) {
+        const rx = Math.floor(Math.random() * MAP_W);
+        const ry = 10 + Math.floor(Math.random() * (MAP_H - 20));
+        const t = G.map[ry][rx];
+        // Mushrooms in forests
+        if ((t === T.FOREST || t === T.JUNGLE || t === T.TAIGA) && Math.random() < 0.3) {
+          G.map[ry][rx] = T.MUSHROOM; G.mapDirty = true;
+        }
+        // Berry bushes in forests/plains
+        if ((t === T.FOREST || t === T.TAIGA || t === T.PLAINS) && Math.random() < 0.15) {
+          G.map[ry][rx] = T.BERRY_BUSH; G.mapDirty = true;
+        }
+        // Herbs in plains/jungle
+        if ((t === T.PLAINS || t === T.JUNGLE) && Math.random() < 0.12) {
+          G.map[ry][rx] = T.HERB_PATCH; G.mapDirty = true;
+        }
+        // Fish in ocean near coast
+        if (t === T.OCEAN && Math.random() < 0.2) {
+          let nearLand = false;
+          for (let dy = -2; dy <= 2 && !nearLand; dy++)
+            for (let dx = -2; dx <= 2 && !nearLand; dx++) {
+              const nx = wrapX(rx + dx), ny = ry + dy;
+              if (ny >= 0 && ny < MAP_H && G.map[ny][nx] !== T.OCEAN && G.map[ny][nx] !== T.FISH_SPOT) nearLand = true;
+            }
+          if (nearLand) { G.map[ry][rx] = T.FISH_SPOT; G.mapDirty = true; }
+        }
+        // Crabs on beaches
+        if (t === T.BEACH && Math.random() < 0.15) {
+          G.map[ry][rx] = T.CRAB; G.mapDirty = true;
+        }
+        // Deer in forests/plains
+        if ((t === T.FOREST || t === T.PLAINS || t === T.TAIGA) && Math.random() < 0.04) {
+          G.map[ry][rx] = T.DEER; G.mapDirty = true;
+        }
+      }
+    }
+  }
+}
+
+// ---- Event Log ----
+const logEntries = [];
+function log(msg, type) {
+  logEntries.push({ ts: `Y${G.year} ${SEASONS[G.season]}`, msg, type });
+  if (logEntries.length > 200) logEntries.shift();
+  renderLog();
+}
+
+function linkifyDwarfNames(msg) {
+  for (const d of G.dwarves) {
+    if (msg.includes(d.name)) {
+      const safe = d.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      msg = msg.replace(new RegExp(safe, 'g'),
+        `<span class="log-dwarf" data-did="${d.id}" style="cursor:pointer;text-decoration:underline;color:#83a598">${d.name}</span>`);
+    }
+  }
+  return msg;
+}
+
+function renderLog() {
+  const el = document.getElementById('log-body');
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+  const recent = logEntries.slice(-60);
+  // Note: innerHTML used with internal game state only (dwarf names), not user input
+  el.innerHTML = recent.map(e =>
+    `<div class="log-entry t-${e.type}"><span class="ts">${e.ts}</span><span class="msg">${linkifyDwarfNames(e.msg)}</span></div>`
+  ).join('');
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+document.getElementById('log-body').addEventListener('click', (e) => {
+  const target = e.target.closest('.log-dwarf');
+  if (!target) return;
+  const d = G.dwarves.find(dw => dw.id === target.dataset.did);
+  if (!d) return;
+  G.cam.x = d.x * TILE - canvas.width / 2;
+  G.cam.y = d.y * TILE - canvas.height / 2;
+  showDwarfInspector(d);
+  inspPanel.style.display = 'block';
+});
+document.getElementById('btn-clear-log').onclick = () => { logEntries.length = 0; renderLog(); };
+
+// ---- Rendering ----
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+
+function render() {
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = '#042040';
+  ctx.fillRect(0, 0, w, h);
+
+  // Calculate visible tile range
+  const startGX = Math.floor(G.cam.x / TILE);
+  const startGY = Math.max(0, Math.floor(G.cam.y / TILE));
+  const endGX = startGX + Math.ceil(w / TILE) + 1;
+  const endGY = Math.min(MAP_H, Math.floor((G.cam.y + h) / TILE) + 1);
+
+  // Draw visible tiles
+  const emojiSize = TILE - 4;
+  for (let gy = startGY; gy < endGY; gy++) {
+    for (let gx = startGX; gx <= endGX; gx++) {
+      const mx = wrapX(gx);
+      const t = G.map[gy][mx];
+      const px = gx * TILE - G.cam.x;
+      const py = gy * TILE - G.cam.y;
+
+      // Background color
+      ctx.fillStyle = BG_COLORS[t] || '#042040';
+      ctx.fillRect(px, py, TILE, TILE);
+
+      // Emoji overlay (cached)
+      const em = EMOJI[t];
+      if (em && t !== T.OCEAN) {
+        try { ctx.drawImage(getEmojiImg(em), px, py); } catch (e) {}
+      }
+    }
+  }
+
+  // Selection highlight
+  if (G.sel) {
+    const s = G.sel;
+    ctx.strokeStyle = G.mode === 'mine' ? '#fabd2f' : G.mode === 'build' ? '#83a598' : G.mode === 'road' ? '#d5c4a1' : '#8ec07c';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(
+      s.x1 * TILE - G.cam.x, s.y1 * TILE - G.cam.y,
+      (s.x2 - s.x1 + 1) * TILE, (s.y2 - s.y1 + 1) * TILE
+    );
+    ctx.setLineDash([]);
+  }
+
+  // Draw city labels
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  for (const city of CITIES) {
+    if (city.mx === undefined) continue;
+    const px = city.mx * TILE - G.cam.x + TILE / 2;
+    const py = city.my * TILE - G.cam.y - 4;
+    // Also check wrapped position
+    const px2 = (city.mx + MAP_W) * TILE - G.cam.x + TILE / 2;
+    const px3 = (city.mx - MAP_W) * TILE - G.cam.x + TILE / 2;
+    for (const cpx of [px, px2, px3]) {
+      if (cpx > -100 && cpx < w + 100 && py > -20 && py < h + 20) {
+        ctx.fillStyle = 'rgba(29,32,33,0.7)';
+        const tw = ctx.measureText(city.emoji + ' ' + city.name).width;
+        ctx.fillRect(cpx - tw / 2 - 3, py - 13, tw + 6, 15);
+        ctx.fillStyle = '#fbf1c7';
+        ctx.fillText(city.emoji + ' ' + city.name, cpx, py);
+        break;
+      }
+    }
+  }
+
+  // Draw dwarves
+  ctx.font = `${TILE - 4}px serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const d of G.dwarves) {
+    // Check both regular and wrapped positions
+    for (const offset of [0, MAP_W, -MAP_W]) {
+      const px = (d.x + offset) * TILE - G.cam.x;
+      const py = d.y * TILE - G.cam.y;
+      if (px < -TILE || py < -TILE || px > w + TILE || py > h + TILE) continue;
+
+      ctx.fillStyle = d.color;
+      ctx.fillRect(px + 3, py + 3, TILE - 6, TILE - 6);
+      ctx.strokeStyle = '#1d2021';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px + 3, py + 3, TILE - 6, TILE - 6);
+
+      // Dwarf emoji
+      const dEmoji = d.state === 'sleeping' ? '💤' : d.state === 'mining' ? '⛏️' :
+                     d.state === 'eating' || d.state === 'going_eat' ? '🍖' :
+                     d.state === 'building' ? '🔨' : d.state === 'farming' ? '🌱' :
+                     d.state === 'hauling' ? '📦' : d.state === 'gathering' ? '🧺' : '🧔';
+      ctx.fillText(dEmoji, px + TILE / 2, py + TILE / 2 + 1);
+      if (d.sponsored) {
+        ctx.font = '8px sans-serif';
+        ctx.fillText('\u2B50', px + TILE - 4, py + 6);
+        ctx.font = TILE * 0.7 + 'px sans-serif';
+      }
+      // Pulsing ring for followed dwarf
+      if (G.followDwarf === d.id) {
+        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 300);
+        ctx.strokeStyle = `rgba(251,241,199,${0.3 + pulse * 0.5})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(px + TILE / 2, py + TILE / 2, TILE * 0.7 + pulse * 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      break;
+    }
+  }
+
+  // Hover tile
+  if (G.hovTile) {
+    ctx.strokeStyle = 'rgba(251,241,199,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(G.hovTile.gx * TILE - G.cam.x, G.hovTile.y * TILE - G.cam.y, TILE, TILE);
+  }
+
+  // Minimap
+  renderMinimap();
+}
+
+function renderMinimap() {
+  if (G.mapDirty) renderMmBuffer();
+  mmCtx.drawImage(mmBuffer, 0, 0);
+
+  // Viewport rect
+  const mw = mmCanvas.width, mh = mmCanvas.height;
+  const sx = mw / MAP_W, sy = mh / MAP_H;
+  const camTX = G.cam.x / TILE;
+  const camTY = G.cam.y / TILE;
+  const vw = canvas.width / TILE * sx;
+  const vh = canvas.height / TILE * sy;
+
+  mmCtx.strokeStyle = '#fbf1c7';
+  mmCtx.lineWidth = 1;
+  mmCtx.strokeRect(wrapX(Math.floor(camTX)) * sx, Math.max(0, camTY * sy), vw, vh);
+
+  // Dwarf dots
+  mmCtx.fillStyle = '#fb4934';
+  for (const d of G.dwarves) {
+    mmCtx.fillRect(d.x * sx, d.y * sy, 2, 2);
+  }
+}
+
+// ---- HUD ----
+function updateHUD() {
+  document.getElementById('h-pop').textContent = G.dwarves.length;
+  document.getElementById('h-year').textContent = G.year;
+  document.getElementById('sb-season').textContent = SEASONS[G.season];
+
+  // Show nearest city to camera center
+  const camCX = Math.floor((G.cam.x + canvas.width / 2) / TILE);
+  const camCY = Math.floor((G.cam.y + canvas.height / 2) / TILE);
+  const nc = nearestCity(wrapX(camCX), Math.max(0, Math.min(MAP_H - 1, camCY)));
+  if (nc && nc.res) {
+    document.getElementById('h-city').textContent = nc.emoji + ' ' + nc.name;
+    const r = nc.res;
+    document.getElementById('h-res').textContent =
+      `🍖${r.food} 🪵${r.wood} 🪨${r.stone} ⚔️${r.iron} 🪙${r.gold} 🍺${r.ale}`;
+  }
+}
+
+// ---- Inspector (Click-based panel) ----
+const inspPanel = document.getElementById('inspector-panel');
+const inspTitle = document.getElementById('insp-title');
+const inspBody = document.getElementById('insp-body');
+function esc(s) { const el = document.createElement('div'); el.textContent = s; return el.innerHTML; }
+
+function openInspector(tile) {
+  const dwarves = G.dwarves.filter(dw => dw.x === tile.x && dw.y === tile.y);
+  const city = CITIES.find(c => c.mx === tile.x && c.my === tile.y);
+  if (dwarves.length > 1) showDwarfList(dwarves);
+  else if (dwarves.length === 1) showDwarfInspector(dwarves[0]);
+  else if (city) showCityInspector(city);
+  else showTerrainInspector(tile);
+  inspPanel.style.display = 'block';
+}
+function closeInspector() { inspPanel.style.display = 'none'; }
+document.getElementById('btn-close-insp').onclick = closeInspector;
+
+// Draggable inspector via header
+(function() {
+  const header = document.querySelector('.insp-header');
+  let dragging = false, ox = 0, oy = 0;
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.insp-close')) return;
+    dragging = true;
+    ox = e.clientX - inspPanel.offsetLeft;
+    oy = e.clientY - inspPanel.offsetTop;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    inspPanel.style.left = (e.clientX - ox) + 'px';
+    inspPanel.style.top = (e.clientY - oy) + 'px';
+    inspPanel.style.right = 'auto';
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+})();
+
+function showDwarfList(dwarves) {
+  inspTitle.textContent = dwarves.length + ' Dwarves Here';
+  inspBody.textContent = '';
+  for (const dw of dwarves) {
+    const link = document.createElement('div');
+    link.className = 'idwarf-link';
+    link.style.color = dw.color;
+    link.textContent = dw.name + ' (' + dw.state + ')';
+    link.onclick = () => showDwarfInspector(dw);
+    inspBody.appendChild(link);
+  }
+}
+
+function showDwarfInspector(dw) {
+  const stateEmoji = dw.state === 'sleeping' ? '💤' : dw.state === 'mining' ? '⛏️' :
+    dw.state === 'eating' ? '🍖' : dw.state === 'building' ? '🔨' : dw.state === 'farming' ? '🌱' :
+    dw.state === 'hauling' ? '📦' : dw.state === 'gathering' ? '🧺' :
+    dw.state === 'crafting' ? '✨' : dw.state === 'seek_craft' ? '✨' :
+    dw.state === 'wander' ? '🚶' : '🧔';
+  const city = cityOf(dw);
+  const culture = CULTURES[city?.culture];
+  inspTitle.textContent = dw.name;
+  const s = dw.stats || {};
+  const mod = v => { const m = Math.floor((v - 10) / 2); return m >= 0 ? '+' + m : '' + m; };
+  const frag = document.createDocumentFragment();
+
+  const stateRow = document.createElement('div');
+  stateRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:4px';
+  const stateLine = document.createElement('div');
+  stateLine.style.cssText = 'font-size:10px;color:#a89984';
+  stateLine.textContent = stateEmoji + ' ' + dw.state + (dw.target ? ' \u2192 ' + dw.target.type : '');
+  stateRow.appendChild(stateLine);
+  const followBtn = document.createElement('button');
+  followBtn.className = 'sponsor-btn';
+  followBtn.style.cssText = 'font-size:9px;padding:1px 6px';
+  followBtn.textContent = G.followDwarf === dw.id ? '\uD83D\uDCCD Unfollow' : '\uD83D\uDCCD Follow';
+  followBtn.onclick = () => {
+    G.followDwarf = G.followDwarf === dw.id ? null : dw.id;
+    showDwarfInspector(dw);
+  };
+  stateRow.appendChild(followBtn);
+  frag.appendChild(stateRow);
+
+  if (city) {
+    const cityLine = document.createElement('div');
+    cityLine.style.cssText = 'font-size:10px;color:#665c54;margin:2px 0';
+    cityLine.textContent = '🏘️ ' + city.name + (culture ? ' (' + culture.country + ')' : '');
+    frag.appendChild(cityLine);
+  }
+
+  for (const b of [
+    { label: '🍖 Hunger', val: dw.hunger, color: '#fe8019' },
+    { label: '⚡ Energy', val: dw.energy, color: '#458588' },
+    { label: '😊 Happy', val: dw.happiness, color: '#98971a' },
+  ]) {
+    const row = document.createElement('div'); row.className = 'irow';
+    const l = document.createElement('span'); l.textContent = b.label;
+    const r = document.createElement('span'); r.textContent = Math.round(b.val) + '%';
+    row.append(l, r); frag.appendChild(row);
+    const bar = document.createElement('div'); bar.className = 'ibar';
+    const fill = document.createElement('div'); fill.className = 'ibar-fill';
+    fill.style.width = b.val + '%'; fill.style.background = b.color;
+    bar.appendChild(fill); frag.appendChild(bar);
+  }
+
+  const statsDiv = document.createElement('div'); statsDiv.className = 'istats';
+  for (const k of ['STR','DEX','CON','INT','WIS','CHA']) {
+    const span = document.createElement('span'); span.className = 'istat';
+    span.textContent = k + ' ';
+    const sv = document.createElement('span'); sv.className = 'sv'; sv.textContent = s[k] ?? '?';
+    const modSpan = document.createElement('span'); modSpan.style.color = '#665c54';
+    modSpan.textContent = ' (' + mod(s[k] ?? 10) + ')';
+    span.append(sv, modSpan); statsDiv.appendChild(span);
+  }
+  frag.appendChild(statsDiv);
+
+  const soulDiv = document.createElement('div'); soulDiv.className = 'isoul';
+  soulDiv.textContent = '🙏' + (dw.faith ?? '?') + ' ⚖️' + (dw.morality ?? '?') + ' 🔥' + (dw.ambition ?? '?') + ' 🎂' + (dw.age ?? '?');
+  frag.appendChild(soulDiv);
+
+  if (dw.traits?.length) { const t = document.createElement('div'); t.className = 'itraits'; t.textContent = dw.traits.join(', '); frag.appendChild(t); }
+  if (dw.backstory) { const b = document.createElement('div'); b.className = 'ibackstory'; b.textContent = dw.backstory; frag.appendChild(b); }
+
+  // Carrying info
+  if ((dw.carrying || 0) > 0) {
+    const carryDiv = document.createElement('div');
+    carryDiv.style.cssText = 'font-size:9px;color:#d5c4a1;margin:4px 0;background:#3c3836;padding:2px 4px;border-radius:2px';
+    const items = Object.entries(dw.carryItems || {}).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${k}`).join(', ');
+    carryDiv.textContent = `\uD83C\uDF92 Carrying: ${items} (${dw.carrying}/${carryCapacity(dw)})`;
+    frag.appendChild(carryDiv);
+  }
+
+  // Craft inventory
+  if (dw.inventory?.length > 0) {
+    const invDiv = document.createElement('div');
+    invDiv.style.cssText = 'font-size:9px;color:#d5c4a1;margin:4px 0;background:#3c3836;padding:2px 4px;border-radius:2px';
+    const invItems = dw.inventory.map(i => i.emoji + i.name).join(', ');
+    invDiv.textContent = `\uD83C\uDFD2 Inventory (${dw.inventory.length}/${MAX_INVENTORY}): ${invItems}`;
+    frag.appendChild(invDiv);
+  }
+
+  // Contextual actions section
+  const actDiv = document.createElement('div');
+  actDiv.style.cssText = 'margin-top:6px;border-top:1px solid #3c3836;padding-top:6px';
+  const actLabel = document.createElement('div');
+  actLabel.style.cssText = 'font-size:10px;color:#a89984;margin-bottom:4px;letter-spacing:0.05em;text-transform:uppercase';
+  actLabel.textContent = 'Direct this dwarf';
+  actDiv.appendChild(actLabel);
+  const actRow = document.createElement('div');
+  actRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap';
+  for (const [mode, label, tip] of [
+    ['mine', '\u26cf Mine', 'Drag on map to designate mining area'],
+    ['build', '\uD83E\uDDF1 Build', 'Drag on map to designate building area'],
+    ['farm', '\uD83C\uDF3E Farm', 'Drag on map to designate farm plots'],
+    ['road', '\uD83D\uDEE4\uFE0F Road', 'Drag on map to designate road path'],
+  ]) {
+    const btn = document.createElement('button');
+    btn.className = 'sponsor-btn';
+    btn.textContent = label;
+    btn.title = tip;
+    btn.onclick = () => { setMode(mode); closeInspector(); };
+    actRow.appendChild(btn);
+  }
+  actDiv.appendChild(actRow);
+  frag.appendChild(actDiv);
+
+  // Sponsor section
+  const sponsorDiv = document.createElement('div');
+  sponsorDiv.className = 'insp-sponsor';
+  if (dw.sponsored) {
+    const active = document.createElement('div');
+    active.className = 'sponsor-active';
+    active.textContent = '\u2B50 Brain upgraded (' + dw.sponsorTier + ') \u2014 ' + dw.sponsorCallsRemaining + ' decisions left';
+    sponsorDiv.appendChild(active);
+  } else {
+    const hint = document.createElement('div');
+    hint.className = 'sponsor-title';
+    hint.textContent = '\uD83E\uDDE0 Upgrade brain \u2014 smarter decisions';
+    sponsorDiv.appendChild(hint);
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'margin-top:4px;display:flex;gap:4px';
+    for (const [tier, label] of [['bronze','\uD83E\uDD49 $1'],['silver','\uD83E\uDD48 $3'],['gold','\uD83E\uDD47 $10']]) {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.className = 'sponsor-btn';
+      btn.onclick = () => sponsorDwarf(dw.id, tier);
+      btnRow.appendChild(btn);
+    }
+    sponsorDiv.appendChild(btnRow);
+  }
+  frag.appendChild(sponsorDiv);
+
+  const recentEvents = (dw.eventLog || []).slice(-50).reverse();
+  if (recentEvents.length) {
+    const evDiv = document.createElement('div'); evDiv.className = 'ievents';
+    for (const e of recentEvents) { const el = document.createElement('div'); el.className = 'ievent'; el.textContent = e.type + ': ' + e.description; evDiv.appendChild(el); }
+    frag.appendChild(evDiv);
+  }
+  inspBody.textContent = ''; inspBody.appendChild(frag);
+}
+
+function showCityInspector(city) {
+  const culture = CULTURES[city.culture];
+  inspTitle.textContent = city.emoji + ' ' + city.name;
+  const pop = G.dwarves.filter(dw => dw.cityId === city.id);
+  const r = city.res || {};
+  const frag = document.createDocumentFragment();
+
+  if (culture) {
+    const cInfo = document.createElement('div'); cInfo.style.cssText = 'font-size:10px;color:#a89984;margin:4px 0';
+    cInfo.textContent = culture.country + ', ' + culture.continent; frag.appendChild(cInfo);
+    const cTraits = document.createElement('div'); cTraits.className = 'itraits';
+    cTraits.textContent = 'Culture: ' + culture.traits.join(', '); frag.appendChild(cTraits);
+  }
+
+  // Ideology snapshot
+  if (pop.length > 0) {
+    const avgFaith = pop.reduce((s, d) => s + (d.faith ?? 50), 0) / pop.length;
+    const avgMoral = pop.reduce((s, d) => s + (d.morality ?? 50), 0) / pop.length;
+    const avgAmbition = pop.reduce((s, d) => s + (d.ambition ?? 50), 0) / pop.length;
+    const avgAge = pop.reduce((s, d) => s + (d.age ?? 30), 0) / pop.length;
+    let ideology;
+    if (avgAmbition > 70 && avgMoral < 40) ideology = 'Ruthless Expansionists';
+    else if (avgAmbition > 70) ideology = 'Ambitious Builders';
+    else if (avgFaith > 70 && avgMoral > 60) ideology = 'Devout Spiritualists';
+    else if (avgFaith > 70) ideology = 'Zealous Faithful';
+    else if (avgMoral > 70) ideology = 'Virtuous Commune';
+    else if (avgMoral < 30) ideology = 'Cutthroat Opportunists';
+    else if (avgAmbition < 30 && avgFaith < 30) ideology = 'Idle Hedonists';
+    else if (avgAmbition > 50 && avgFaith > 50) ideology = 'Mercantile Theocracy';
+    else ideology = 'Pragmatic Society';
+    const ideoDiv = document.createElement('div');
+    ideoDiv.style.cssText = 'font-size:11px;color:#fabd2f;margin:4px 0;font-weight:bold';
+    ideoDiv.textContent = '\u2696\uFE0F ' + ideology;
+    frag.appendChild(ideoDiv);
+    const statsLine = document.createElement('div');
+    statsLine.style.cssText = 'font-size:9px;color:#a89984;margin:2px 0';
+    statsLine.textContent = `\uD83D\uDE4F Faith: ${Math.round(avgFaith)} \u2696\uFE0F Morality: ${Math.round(avgMoral)} \uD83D\uDD25 Ambition: ${Math.round(avgAmbition)} \uD83C\uDF82 Avg Age: ${Math.round(avgAge)}`;
+    frag.appendChild(statsLine);
+    // Dominant traits
+    const traitCounts = {};
+    for (const d of pop) for (const t of (d.traits || [])) traitCounts[t] = (traitCounts[t] || 0) + 1;
+    const topTraits = Object.entries(traitCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t]) => t);
+    if (topTraits.length) {
+      const tLine = document.createElement('div'); tLine.className = 'itraits';
+      tLine.textContent = 'Dominant: ' + topTraits.join(', '); frag.appendChild(tLine);
+    }
+  }
+
+  const resDiv = document.createElement('div'); resDiv.className = 'ires';
+  for (const [icon, val] of [['🍖',r.food],['🪵',r.wood],['🪨',r.stone],['⚔️',r.iron],['🪙',r.gold],['🧵',r.cloth],['🍺',r.ale],['🌿',r.herbs],['🛏️',r.beds],['🪑',r.tables]]) {
+    const span = document.createElement('span'); span.className = 'ires-item'; span.textContent = icon + ' ';
+    const rv = document.createElement('span'); rv.className = 'rv'; rv.textContent = val ?? 0;
+    span.appendChild(rv); resDiv.appendChild(span);
+  }
+  frag.appendChild(resDiv);
+
+  const popSection = document.createElement('div'); popSection.style.cssText = 'margin-top:6px;border-top:1px solid #3c3836;padding-top:4px';
+  const popLabel = document.createElement('div'); popLabel.style.cssText = 'font-size:10px;color:#a89984;margin-bottom:2px';
+  popLabel.textContent = 'Population (' + pop.length + ')'; popSection.appendChild(popLabel);
+  for (const dw of pop) {
+    const link = document.createElement('div'); link.className = 'idwarf-link'; link.style.color = dw.color;
+    link.textContent = dw.name + ' (' + dw.state + ')'; link.onclick = () => showDwarfInspector(dw);
+    popSection.appendChild(link);
+  }
+  if (!pop.length) { const e = document.createElement('div'); e.style.cssText = 'font-size:10px;color:#665c54'; e.textContent = 'No dwarves here'; popSection.appendChild(e); }
+  frag.appendChild(popSection);
+  inspBody.textContent = ''; inspBody.appendChild(frag);
+}
+
+function showTerrainInspector(tile) {
+  const t = G.map[tile.y][tile.x];
+  const props = TERRAIN_PROPS[t] || { speed: 0, desc: 'Unknown terrain' };
+  inspTitle.textContent = TILE_NAMES[t] || 'Unknown';
+  const [lon, lat] = toLonLat(tile.x, tile.y);
+  const frag = document.createDocumentFragment();
+  const coordLine = document.createElement('div'); coordLine.style.cssText = 'font-size:10px;color:#a89984';
+  coordLine.textContent = 'Tile (' + tile.x + ', ' + tile.y + ')'; frag.appendChild(coordLine);
+  const geoLine = document.createElement('div'); geoLine.style.cssText = 'font-size:10px;color:#a89984';
+  geoLine.textContent = Math.abs(lat).toFixed(1) + (lat >= 0 ? 'N' : 'S') + ' ' + Math.abs(lon).toFixed(1) + (lon >= 0 ? 'E' : 'W'); frag.appendChild(geoLine);
+  const descLine = document.createElement('div'); descLine.style.cssText = 'font-size:10px;color:#d5c4a1;margin-top:4px;font-style:italic';
+  descLine.textContent = props.desc; frag.appendChild(descLine);
+  const walkLine = document.createElement('div'); walkLine.style.cssText = 'font-size:10px;color:#bdae93;margin-top:2px';
+  if (props.speed <= 0) walkLine.textContent = 'Impassable';
+  else {
+    const speedLabel = props.speed <= 0.5 ? 'Very Fast' : props.speed <= 1 ? 'Normal' : props.speed <= 2 ? 'Slow' : props.speed <= 3 ? 'Very Slow' : 'Extremely Slow';
+    walkLine.textContent = 'Walkable \u2022 Speed: ' + speedLabel + ' (' + props.speed + ')';
+  }
+  frag.appendChild(walkLine);
+  if (t === T.D_MINE || t === T.D_BUILD || t === T.D_FARM) {
+    const dLine = document.createElement('div'); dLine.style.cssText = 'font-size:10px;color:#fabd2f;margin-top:2px';
+    dLine.textContent = t === T.D_MINE ? 'Mining designated' : t === T.D_BUILD ? 'Build designated' : 'Farm designated'; frag.appendChild(dLine);
+  }
+  inspBody.textContent = ''; inspBody.appendChild(frag);
+}
+
+// ---- Input ----
+function tileFromMouse(e) {
+  const gx = Math.floor((e.clientX + G.cam.x) / TILE);
+  const gy = Math.floor((e.clientY + G.cam.y) / TILE);
+  if (gy < 0 || gy >= MAP_H) return null;
+  return { x: wrapX(gx), y: gy, gx };
+}
+
+let rightDrag = false, dragLast = null;
+
+canvas.addEventListener('mousemove', e => {
+  const tile = tileFromMouse(e);
+  G.hovTile = tile;
+
+  if (rightDrag && dragLast) {
+    G.cam.x -= e.clientX - dragLast.x;
+    G.cam.y -= e.clientY - dragLast.y;
+    // Clamp Y, wrap X handled in rendering
+    G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
+    dragLast = { x: e.clientX, y: e.clientY };
+    return;
+  }
+
+  if (tile) {
+    const [lon, lat] = toLonLat(tile.x, tile.y);
+    const latStr = Math.abs(lat).toFixed(1) + (lat >= 0 ? 'N' : 'S');
+    const lonStr = Math.abs(lon).toFixed(1) + (lon >= 0 ? 'E' : 'W');
+    document.getElementById('sb-left').textContent =
+      `(${tile.x}, ${tile.y}) ${TILE_NAMES[G.map[tile.y][tile.x]] || '?'}  ${latStr} ${lonStr}`;
+
+    if (G.drag) {
+      G.sel = {
+        x1: Math.min(G.drag.gx, tile.gx), y1: Math.min(G.drag.y, tile.y),
+        x2: Math.max(G.drag.gx, tile.gx), y2: Math.max(G.drag.y, tile.y)
+      };
+    }
+  }
+});
+
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 2) { rightDrag = true; dragLast = { x: e.clientX, y: e.clientY }; return; }
+  if (e.button !== 0) return;
+  if (G.mode === 'normal') {
+    // Check if clicking on a city label (above the city tile)
+    for (const city of CITIES) {
+      if (city.mx === undefined) continue;
+      for (const offset of [0, MAP_W, -MAP_W]) {
+        const cpx = (city.mx + offset) * TILE - G.cam.x + TILE / 2;
+        const cpy = city.my * TILE - G.cam.y - 4;
+        const labelW = 80; // approximate label width
+        if (e.clientX > cpx - labelW / 2 && e.clientX < cpx + labelW / 2 && e.clientY > cpy - 15 && e.clientY < cpy + 2) {
+          G.followDwarf = null;
+          showCityInspector(city);
+          inspPanel.style.display = 'block';
+          return;
+        }
+      }
+    }
+    const tile = tileFromMouse(e);
+    if (tile) {
+      const clickedDwarf = G.dwarves.find(dw => dw.x === tile.x && dw.y === tile.y);
+      if (!clickedDwarf || clickedDwarf.id !== G.followDwarf) G.followDwarf = null;
+      openInspector(tile);
+    }
+    return;
+  }
+  const tile = tileFromMouse(e);
+  if (tile) { G.drag = tile; G.sel = { x1: tile.gx, y1: tile.y, x2: tile.gx, y2: tile.y }; }
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (e.button === 2) { rightDrag = false; dragLast = null; return; }
+  if (!G.drag || !G.sel) { G.drag = null; return; }
+
+  const s = G.sel;
+  let count = 0;
+  const minable = new Set([T.MOUNTAIN, T.HILL, T.TUNDRA]);
+  const buildable = new Set([T.FLOOR, T.PLAINS, T.BEACH, T.DESERT, T.TUNDRA]);
+
+  if (G.mode === 'mine') {
+    for (let y = s.y1; y <= s.y2; y++)
+      for (let gx = s.x1; gx <= s.x2; gx++) {
+        const x = wrapX(gx);
+        if (minable.has(G.map[y][x])) { G.map[y][x] = T.D_MINE; count++; }
+      }
+    if (count) log(`⛏️ Designated ${count} tiles for mining`, 'mine');
+  } else if (G.mode === 'build') {
+    for (let y = s.y1; y <= s.y2; y++)
+      for (let gx = s.x1; gx <= s.x2; gx++) {
+        const x = wrapX(gx);
+        if (buildable.has(G.map[y][x])) { G.map[y][x] = T.D_BUILD; count++; }
+      }
+    if (count) log(`🧱 Designated ${count} tiles for building`, 'build');
+  } else if (G.mode === 'farm') {
+    for (let y = s.y1; y <= s.y2; y++)
+      for (let gx = s.x1; gx <= s.x2; gx++) {
+        const x = wrapX(gx);
+        if (buildable.has(G.map[y][x])) { G.map[y][x] = T.D_FARM; count++; }
+      }
+    if (count) log(`🌱 Designated ${count} farm plots`, 'farm');
+  } else if (G.mode === 'road') {
+    const roadable = new Set([T.PLAINS, T.DESERT, T.TUNDRA, T.HILL, T.BEACH, T.FOREST, T.TAIGA, T.JUNGLE, T.FLOOR, T.MOUNTAIN]);
+    for (let y = s.y1; y <= s.y2; y++)
+      for (let gx = s.x1; gx <= s.x2; gx++) {
+        const x = wrapX(gx);
+        if (roadable.has(G.map[y][x])) { G.map[y][x] = T.D_ROAD; count++; }
+      }
+    if (count) log(`🛤️ Designated ${count} tiles for road building`, 'build');
+  }
+
+  if (count) G.mapDirty = true;
+  G.drag = null; G.sel = null;
+  setMode('normal');
+  updateHUD();
+});
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('mouseleave', () => { G.hovTile = null; });
+
+// Keyboard
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key] = true; });
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+function handleKeys() {
+  const spd = 8;
+  if (keys['w'] || keys['ArrowUp']) G.cam.y -= spd;
+  if (keys['s'] || keys['ArrowDown']) G.cam.y += spd;
+  if (keys['a'] || keys['ArrowLeft']) G.cam.x -= spd;
+  if (keys['d'] || keys['ArrowRight']) G.cam.x += spd;
+  if (keys[' ']) { G.paused = !G.paused; keys[' '] = false; updateSpeedUI(); }
+  if (keys['Escape']) { setMode('normal'); closeInspector(); G.followDwarf = null; keys['Escape'] = false; }
+  // Clamp Y
+  G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
+}
+
+canvas.addEventListener('wheel', e => {
+  G.cam.x += e.deltaX;
+  G.cam.y += e.deltaY;
+  G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
+  e.preventDefault();
+}, { passive: false });
+
+// ---- Buttons ----
+function setMode(m) {
+  G.mode = m;
+  document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active'));
+  if (m === 'mine') document.getElementById('btn-mine').classList.add('active');
+  if (m === 'build') document.getElementById('btn-room').classList.add('active');
+  if (m === 'farm') document.getElementById('btn-farm').classList.add('active');
+  if (m === 'road') document.getElementById('btn-road').classList.add('active');
+}
+
+document.getElementById('btn-mine').onclick = () => setMode(G.mode === 'mine' ? 'normal' : 'mine');
+document.getElementById('btn-room').onclick = () => setMode(G.mode === 'build' ? 'normal' : 'build');
+document.getElementById('btn-farm').onclick = () => setMode(G.mode === 'farm' ? 'normal' : 'farm');
+document.getElementById('btn-road').onclick = () => setMode(G.mode === 'road' ? 'normal' : 'road');
+
+function updateSpeedUI() {
+  document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+  if (G.paused) document.getElementById('btn-pause').classList.add('active');
+  else {
+    const btn = document.querySelector(`.speed-btn[data-speed="${G.speed}"]`);
+    if (btn) btn.classList.add('active');
+  }
+}
+document.querySelectorAll('.speed-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const spd = parseInt(btn.dataset.speed);
+    if (spd === 0) G.paused = !G.paused;
+    else { G.speed = spd; G.paused = false; }
+    updateSpeedUI();
+  });
+});
+
+// ---- AI Client ----
+const AI = {
+  intentCache: new Map(), // dwarfId -> { action, reason, timestamp }
+  lastCallTime: { simple: 0, medium: 0, complex: 0, premium: 0 },
+  intervals: { simple: 10000, medium: 30000, complex: 120000, premium: 600000 },
+  enabled: true,
+  apiBase: '', // relative URL (same origin on Workers)
+  stats: { calls: 0, fallbacks: 0, errors: 0 },
+};
+
+const SEASONS_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
+
+function aiClientContext(cityDwarves, city) {
+  const res = city?.res || defaultRes();
+  return {
+    dwarves: (cityDwarves || G.dwarves).map(d => ({
+      id: d.id, name: d.name,
+      hunger: d.hunger, energy: d.energy, happiness: d.happiness,
+      state: d.state, x: d.x, y: d.y,
+      stats: d.stats, faith: d.faith, traits: d.traits,
+      eventLog: d.eventLog?.slice(-10),
+      cityId: d.cityId,
+    })),
+    resources: res,
+    cityName: city?.name,
+    culture: city?.culture,
+    season: SEASONS_NAMES[G.season] || 'Spring',
+    year: G.year,
+  };
+}
+
+async function aiCall(tier, cityDwarves, city) {
+  const now = Date.now();
+  if (now - AI.lastCallTime[tier] < AI.intervals[tier]) return;
+  AI.lastCallTime[tier] = now;
+
+  if (!AI.enabled || G.paused) return;
+
+  try {
+    const resp = await fetch(`${AI.apiBase}/api/decide/${tier}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(aiClientContext(cityDwarves, city)),
+    });
+
+    if (!resp.ok) {
+      AI.stats.fallbacks++;
+      return;
+    }
+
+    const data = await resp.json();
+    AI.stats.calls++;
+
+    if (data.decisions?.decisions) {
+      for (const dec of data.decisions.decisions) {
+        AI.intentCache.set(dec.dwarfId, {
+          action: dec.action,
+          targetDwarfId: dec.targetDwarfId,
+          reason: dec.reason,
+          timestamp: now,
+          tier,
+        });
+      }
+    } else if (data.decisions) {
+      const decisions = Array.isArray(data.decisions) ? data.decisions : [];
+      for (const dec of decisions) {
+        AI.intentCache.set(dec.dwarfId, {
+          action: dec.action,
+          targetDwarfId: dec.targetDwarfId,
+          reason: dec.reason,
+          timestamp: now,
+          tier,
+        });
+      }
+    }
+
+    // Mark sponsored dwarves from server response
+    if (data.sponsoredDwarfIds?.length) {
+      for (const id of data.sponsoredDwarfIds) {
+        const dw = G.dwarves.find(d => d.id === id);
+        if (dw) dw.sponsored = true;
+      }
+    }
+  } catch (e) {
+    AI.stats.errors++;
+  }
+}
+
+function aiTickAll() {
+  // Round-robin: process 4 cities per tick cycle
+  const activeCities = CITIES.filter(c => c.mx !== undefined && c.res);
+  if (!activeCities.length) return;
+  for (let i = 0; i < 4; i++) {
+    const city = activeCities[G.aiCityIndex % activeCities.length];
+    G.aiCityIndex = (G.aiCityIndex + 1) % activeCities.length;
+    const idleDwarves = G.dwarves.filter(d => d.cityId === city.id && d.state === 'idle');
+    if (idleDwarves.length > 0) {
+      aiCall('simple', idleDwarves, city);
+      break; // One AI call per frame to stay within budget
+    }
+  }
+}
+
+// Intent executor: maps AI intents to state machine
+function executeIntent(d) {
+  const intent = AI.intentCache.get(d.id);
+  if (!intent) return false;
+  // Expire intents older than 60 seconds
+  if (Date.now() - intent.timestamp > 60000) {
+    AI.intentCache.delete(d.id);
+    return false;
+  }
+
+  const action = intent.action;
+  AI.intentCache.delete(d.id);
+
+  switch (action) {
+    case 'eat':
+      d.state = 'seek_food'; d.target = null; d.path = [];
+      log(`${d.name} 🤖 AI: ${intent.reason}`, 'system');
+      return true;
+    case 'sleep':
+    case 'rest':
+      d.state = 'seek_sleep'; d.target = null; d.path = [];
+      log(`${d.name} 🤖 AI: ${intent.reason}`, 'system');
+      return true;
+    case 'mine':
+      return aiSeekTask(d, T.D_MINE, T.MOUNTAIN, 'mine', intent.reason);
+    case 'build':
+      return aiSeekTask(d, T.D_BUILD, null, 'build', intent.reason);
+    case 'farm':
+      return aiSeekFarmTask(d, intent.reason);
+    case 'chop': {
+      const tp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.TAIGA || G.map[y][x] === T.FOREST, false);
+      if (tp) {
+        const last = tp[tp.length - 1];
+        const adj = adjWalkable(last[0], last[1]);
+        if (adj) {
+          const p = bfs(d.x, d.y, (x, y) => x === adj[0] && y === adj[1], false);
+          if (p) { d.target = { type: 'chop', x: last[0], y: last[1] }; d.path = p; d.state = 'walk'; log(`${d.name} 🤖 AI: ${intent.reason}`, 'system'); return true; }
+        }
+      }
+      return false;
+    }
+    case 'explore':
+    case 'wander':
+      d.state = 'wander'; d.timer = 30 + Math.floor(Math.random() * 50);
+      log(`${d.name} 🤖 AI: ${intent.reason}`, 'system');
+      return true;
+    case 'pray':
+      d.state = 'wander'; d.timer = 10;
+      d.happiness = Math.min(100, d.happiness + 3);
+      log(`${d.name} 🙏 prays: ${intent.reason}`, 'system');
+      return true;
+    default:
+      // Unknown action, ignore
+      return false;
+  }
+}
+
+function aiSeekTask(d, designationType, naturalType, taskType, reason) {
+  const path = bfs(d.x, d.y, (x, y) => G.map[y][x] === designationType || (naturalType && G.map[y][x] === naturalType), false);
+  if (path) {
+    const last = path[path.length - 1];
+    const adj = adjWalkable(last[0], last[1]);
+    if (adj) {
+      const p = bfs(d.x, d.y, (x, y) => x === adj[0] && y === adj[1], false);
+      if (p) {
+        d.target = { type: taskType, x: last[0], y: last[1] };
+        d.path = p; d.state = 'walk';
+        log(`${d.name} 🤖 AI: ${reason}`, 'system');
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function aiSeekFarmTask(d, reason) {
+  const fp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.D_FARM, false);
+  if (fp) {
+    const last = fp[fp.length - 1];
+    if (G.map[last[1]][last[0]] === T.D_FARM) {
+      d.target = { type: 'farm', x: last[0], y: last[1] }; d.path = fp; d.state = 'walk';
+      log(`${d.name} 🤖 AI: ${reason}`, 'system');
+      return true;
+    }
+  }
+  return false;
+}
+
+// ---- State Persistence ----
+let lastSaveTime = 0;
+const SAVE_INTERVAL = 60000;
+
+function getSerializableState() {
+  const cityRes = {};
+  for (const c of CITIES) {
+    if (c.res) cityRes[c.id] = c.res;
+  }
+  return {
+    tick: G.tick, year: G.year, season: G.season, speed: G.speed,
+    cityResources: cityRes,
+    dwarves: G.dwarves.map(d => ({
+      id: d.id, name: d.name, x: d.x, y: d.y, cityId: d.cityId,
+      hunger: d.hunger, energy: d.energy, happiness: d.happiness,
+      state: d.state, timer: d.timer, color: d.color,
+      stats: d.stats, faith: d.faith, morality: d.morality, ambition: d.ambition,
+      traits: d.traits, backstory: d.backstory, eventLog: d.eventLog?.slice(-50), age: d.age,
+      carrying: d.carrying || 0, carryItems: d.carryItems || {},
+      inventory: d.inventory || [],
+    })),
+    stats: G.stats,
+    homeCity: G.homeCity ? { name: G.homeCity.name, mx: G.homeCity.mx, my: G.homeCity.my } : null,
+  };
+}
+
+async function saveGameState() {
+  try {
+    await fetch(`${AI.apiBase}/api/state/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(getSerializableState()),
+    });
+  } catch (e) { /* silent fail */ }
+}
+
+async function loadGameState() {
+  try {
+    const resp = await fetch(`${AI.apiBase}/api/state/load`);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data.state;
+  } catch (e) { return null; }
+}
+
+async function sponsorDwarf(dwarfId, tier) {
+  try {
+    const res = await fetch(`${AI.apiBase}/api/sponsor/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dwarfId, tier }),
+    });
+    const data = await res.json();
+    if (data.checkoutUrl) window.open(data.checkoutUrl, '_blank');
+    else log('Sponsorship failed: ' + (data.error || 'unknown'), 'system');
+  } catch (e) { log('Sponsorship request failed', 'system'); }
+}
+
+async function loadSponsorships() {
+  for (const d of G.dwarves) {
+    d.sponsored = false;
+    d.sponsorTier = null;
+    d.sponsorCallsRemaining = 0;
+  }
+  try {
+    // Load total sponsored value
+    const totalRes = await fetch(`${AI.apiBase}/api/sponsor/total`);
+    if (totalRes.ok) {
+      const { totalCents } = await totalRes.json();
+      document.getElementById('h-sponsored').textContent = '$' + (totalCents / 100).toFixed(0);
+    }
+    // Load per-dwarf sponsorships
+    for (const d of G.dwarves) {
+      const res = await fetch(`${AI.apiBase}/api/sponsor/status/${d.id}`);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.sponsorship) {
+        d.sponsored = true;
+        d.sponsorTier = data.sponsorship.tier;
+        d.sponsorCallsRemaining = data.sponsorship.calls_remaining;
+      }
+    }
+  } catch (e) { /* silent */ }
+}
+
+async function restoreState() {
+  const saved = await loadGameState();
+  if (!saved) return;
+
+  G.tick = saved.tick || 0;
+  G.year = saved.year || 1;
+  G.season = saved.season || 0;
+  G.stats = { ...G.stats, ...saved.stats };
+
+  // Restore per-city resources
+  if (saved.cityResources) {
+    for (const [cityId, res] of Object.entries(saved.cityResources)) {
+      const city = cityById(cityId);
+      if (city && city.res) Object.assign(city.res, res);
+    }
+  }
+
+  if (saved.dwarves && saved.dwarves.length > 0) {
+    G.dwarves = [];
+    for (const sd of saved.dwarves) {
+      const d = createDwarf(sd.x, sd.y, sd.cityId || '');
+      Object.assign(d, {
+        id: sd.id, name: sd.name, hunger: sd.hunger, energy: sd.energy, happiness: sd.happiness,
+        state: sd.state || 'idle', timer: sd.timer || 0, color: sd.color, cityId: sd.cityId || '',
+        stats: sd.stats || d.stats, faith: sd.faith ?? d.faith, morality: sd.morality ?? d.morality,
+        ambition: sd.ambition ?? d.ambition, traits: sd.traits || d.traits,
+        backstory: sd.backstory || d.backstory, eventLog: sd.eventLog || [], age: sd.age ?? d.age,
+        carrying: sd.carrying || 0, carryItems: sd.carryItems || {},
+        inventory: sd.inventory || [],
+      });
+      d.target = null; d.path = [];
+      G.dwarves.push(d);
+      G.usedNames.add(sd.name.split(' ')[0]);
+    }
+    log(`🔄 Restored ${G.dwarves.length} dwarves from saved state`, 'system');
+  }
+
+  if (saved.homeCity) {
+    G.homeCity = CITIES.find(c => c.name === saved.homeCity.name) || G.homeCity;
+  }
+
+  // Ensure minimum population: at least 2 dwarves per city
+  for (const city of CITIES) {
+    if (city.mx === undefined) continue;
+    const pop = G.dwarves.filter(d => d.cityId === city.id).length;
+    if (pop < 2) {
+      const needed = 2 + Math.floor(Math.random() * 2) - pop;
+      for (let i = 0; i < needed; i++) spawnDwarfAtCity(city);
+    }
+  }
+
+  updateHUD();
+}
+
+// Auto-save on tab close
+window.addEventListener('beforeunload', () => {
+  const blob = new Blob([JSON.stringify(getSerializableState())], { type: 'application/json' });
+  navigator.sendBeacon(`${AI.apiBase}/api/state/save`, blob);
+});
+
+// ---- Game Loop ----
+let lastTime = 0, tickAccum = 0, frames = 0, fpsTimer = 0;
+
+function gameLoop(ts) {
+  requestAnimationFrame(gameLoop);
+  const dt = ts - lastTime; lastTime = ts;
+  frames++; fpsTimer += dt;
+  if (fpsTimer >= 1000) {
+    document.getElementById('sb-fps').textContent = frames + ' fps';
+    frames = 0; fpsTimer = 0;
+  }
+
+  handleKeys();
+
+  // Camera follow dwarf
+  if (G.followDwarf) {
+    const fd = G.dwarves.find(d => d.id === G.followDwarf);
+    if (fd) {
+      G.cam.x = fd.x * TILE - canvas.width / 2 + TILE / 2;
+      G.cam.y = fd.y * TILE - canvas.height / 2 + TILE / 2;
+      G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
+    } else {
+      G.followDwarf = null;
+    }
+  }
+
+  if (!G.paused) {
+    tickAccum += dt * G.speed;
+    const TICK = 100;
+    let ticked = 0;
+    while (tickAccum >= TICK && ticked < 10) {
+      tickAccum -= TICK; G.tick++; ticked++;
+      for (const d of G.dwarves) tickDwarf(d);
+      tickSeason();
+      if (G.tick % 30 === 0) updateHUD();
+    }
+    if (ticked >= 10) tickAccum = 0;
+
+    // AI calls (real-time intervals, independent of game speed)
+    aiTickAll();
+
+    // Auto-save every 60s
+    const now = Date.now();
+    if (now - lastSaveTime > SAVE_INTERVAL) {
+      lastSaveTime = now;
+      saveGameState();
+    }
+  }
+
+  render();
+}
+
+// ---- Init ----
+async function init() {
+  resize();
+  createMmBuffer();
+  generateMap();
+
+  log(`🌍 Welcome to Dwarf Planet!`, 'system');
+  log(`🏘️ Home city: ${G.homeCity.name} ${G.homeCity.emoji}`, 'city');
+  log(`🎮 WASD/arrows to pan, scroll to move, right-drag to pan`, 'system');
+  log(`⛏️ Use Mine/Build/Farm buttons, then click-drag on map`, 'system');
+  log(`🖱️ Click tiles to inspect dwarves, cities, and terrain`, 'system');
+  log(`🌍 The map wraps horizontally - it's a planet!`, 'system');
+  log(`🤖 AI-powered decisions active`, 'system');
+
+  // Spawn 2-4 dwarves at every city
+  for (const city of CITIES) {
+    if (city.mx === undefined) continue;
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) spawnDwarfAtCity(city);
+  }
+
+  // Try to restore saved state
+  await restoreState();
+  loadSponsorships();
+
+  updateHUD();
+  G.mapDirty = true;
+  lastSaveTime = Date.now();
+  requestAnimationFrame(gameLoop);
+
+  // Show splash on first visit
+  if (!localStorage.getItem('dwarf-planet-visited')) {
+    localStorage.setItem('dwarf-planet-visited', '1');
+    setTimeout(() => DAUB.openModal('splash-modal'), 500);
+  }
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+else init();
+</script>
+</body>
+</html>
