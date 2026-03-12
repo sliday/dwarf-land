@@ -3511,8 +3511,52 @@ function render() {
   const offsetY = startGY * TILE - G.cam.y;
   ctx.drawImage(tileBuffer, offsetX, offsetY);
 
-  // Ocean wave animation — shimmer on ocean tiles adjacent to shore
+  // Road wave animation — only on connected road tiles
   const now = performance.now() * 0.001;
+  if (!G._connectedRoads || G.tick % 120 === 0) {
+    // Rebuild connected road set: BFS from all city tiles through road/asphalt/railroad
+    const crs = new Set();
+    const roadTypes = new Set([T.ROAD, T.ASPHALT, T.RAILROAD, T.CITY, T.FACTORY]);
+    for (const city of CITIES) {
+      if (city.mx === undefined) continue;
+      const visited = new Set();
+      const q = [[city.mx, city.my]];
+      visited.add(`${city.mx},${city.my}`);
+      while (q.length > 0 && visited.size < 2000) {
+        const [cx, cy] = q.shift();
+        const ct = G.map[cy]?.[cx];
+        if (ct === T.ROAD || ct === T.ASPHALT || ct === T.RAILROAD) crs.add(`${cx},${cy}`);
+        for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+          const nx = (cx + dx + MAP_W) % MAP_W, ny = cy + dy;
+          if (ny < 0 || ny >= MAP_H) continue;
+          const k = `${nx},${ny}`;
+          if (visited.has(k)) continue;
+          if (!roadTypes.has(G.map[ny][nx])) continue;
+          visited.add(k);
+          q.push([nx, ny]);
+        }
+      }
+    }
+    G._connectedRoads = crs;
+  }
+  if (G._connectedRoads.size > 0) {
+    for (let gy = Math.max(0, startGY); gy < Math.min(MAP_H, endGY); gy++) {
+      for (let gx = startGX; gx < endGX; gx++) {
+        const wx = wrapX(gx);
+        if (!G._connectedRoads.has(`${wx},${gy}`)) continue;
+        const wave = Math.sin((wx + gy) * 1.2 + now * 2.5) * 0.5 + 0.5;
+        if (wave < 0.25) continue;
+        const alpha = (wave - 0.25) * 0.2;
+        const px = gx * TILE - G.cam.x;
+        const py = gy * TILE - G.cam.y;
+        if (px < -TILE || py < -TILE || px > w + TILE || py > h + TILE) continue;
+        ctx.fillStyle = `rgba(255,240,200,${alpha})`;
+        ctx.fillRect(px, py, TILE, TILE);
+      }
+    }
+  }
+
+  // Ocean wave animation — shimmer on ocean tiles adjacent to shore
   for (let gy = Math.max(0, startGY); gy < Math.min(MAP_H, endGY); gy++) {
     for (let gx = startGX; gx < endGX; gx++) {
       const wx = wrapX(gx);
