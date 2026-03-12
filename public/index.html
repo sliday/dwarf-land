@@ -3134,6 +3134,37 @@ function varyColor(hex, x, y) {
   return `rgb(${Math.max(0,Math.min(255,r+v))},${Math.max(0,Math.min(255,g+v))},${Math.max(0,Math.min(255,b+v))})`;
 }
 
+function ditherEdges(ctx, px, py, wx, wy) {
+  const t = G.map[wy][wx];
+  if (t === T.OCEAN) return;
+  // [dx, dy, horizontal-edge?]
+  const edges = [[0,-1,true],[0,1,true],[-1,0,false],[1,0,false]];
+  for (const [dx, dy, horiz] of edges) {
+    const nx = wrapX(wx + dx), ny = wy + dy;
+    if (ny < 0 || ny >= MAP_H) continue;
+    const nt = G.map[ny][nx];
+    if (nt === t || nt === T.OCEAN) continue;
+    const nBase = BG_COLORS[nt] || '#042040';
+    ctx.fillStyle = varyColor(nBase, nx, ny);
+    const h = tileHash(wx * 7 + dx, wy * 13 + dy);
+    for (let d = 0; d < 4; d++) {
+      const mask = (d === 0) ? 0x55 : (d === 1) ? 0xAA : (d === 2) ? 0x44 : 0x11;
+      const bits = (h >>> (d * 5)) ^ (d * 0x9E3779B9);
+      for (let i = 0; i < TILE; i++) {
+        if (!((bits >>> (i & 7)) & 1) && !((mask >>> (i & 7)) & 1)) continue;
+        if (d >= 3 && (i & 1)) continue;
+        if (horiz) {
+          const ly = dy < 0 ? d : TILE - 1 - d;
+          ctx.fillRect(px + i, py + ly, 1, 1);
+        } else {
+          const lx = dx < 0 ? d : TILE - 1 - d;
+          ctx.fillRect(px + lx, py + i, 1, 1);
+        }
+      }
+    }
+  }
+}
+
 function patchTile(gx, gy) {
   if (!tileBufferCtx || tileBufferCamTX === -9999) return;
   const c = gx - tileBufferCamTX;
@@ -3145,6 +3176,7 @@ function patchTile(gx, gy) {
   const base = BG_COLORS[t] || '#042040';
   tileBufferCtx.fillStyle = varyColor(base, wx, gy);
   tileBufferCtx.fillRect(px, py, TILE, TILE);
+  ditherEdges(tileBufferCtx, px, py, wx, gy);
   let em = EMOJI[t];
   if (t === T.GRAVE) { const gd = G.graves[`${wx},${gy}`]; if (gd) em = gd.emoji; }
   if (em && t !== T.OCEAN) {
@@ -3227,6 +3259,14 @@ function renderTileBuffer(startGX, startGY, endGX, endGY) {
             tileBufferCtx.fillStyle = varyColor(base, wrapX(startGX + c + cc), startGY + r + rr);
             tileBufferCtx.fillRect(px + cc * TILE, py + rr * TILE, TILE, TILE);
           }
+        }
+      }
+
+      // Dither edges for border cells of this group
+      for (let rr = 0; rr < bestN; rr++) {
+        for (let cc = 0; cc < bestN; cc++) {
+          if (rr > 0 && rr < bestN - 1 && cc > 0 && cc < bestN - 1) continue;
+          ditherEdges(tileBufferCtx, px + cc * TILE, py + rr * TILE, wrapX(startGX + c + cc), startGY + r + rr);
         }
       }
 
