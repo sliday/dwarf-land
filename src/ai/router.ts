@@ -289,3 +289,71 @@ Example: {"emoji": "💨", "name": "Steam"} for Water + Fire`;
     costCents: 0,
   };
 }
+
+// Epitaph generation — uses SIMPLE tier (cheapest, gemini-3.1-flash-lite-preview)
+const EPITAPH_MODELS = TIER_CONFIG.simple.models;
+const EPITAPH_COSTS = TIER_CONFIG.simple.costPerM;
+
+export interface EpitaphResult {
+  epitaph: string;
+  model: string;
+  tokensIn: number;
+  tokensOut: number;
+  costCents: number;
+}
+
+export async function generateEpitaph(
+  context: { name: string; cause: string; age: number; cityName?: string },
+  apiKey: string
+): Promise<EpitaphResult> {
+  const openrouter = createOpenRouter({ apiKey });
+
+  const prompt = `Write a short gravestone epitaph (1-2 sentences) for a dwarf.
+NAME: ${context.name}
+CAUSE: ${context.cause}
+AGE: ${context.age}
+${context.cityName ? `HOME: ${context.cityName}` : ''}
+Be poetic but brief. Think medieval fantasy tombstone inscription. Reply with ONLY the epitaph text, no quotes.`;
+
+  for (let i = 0; i < EPITAPH_MODELS.length; i++) {
+    const modelId = EPITAPH_MODELS[i];
+    try {
+      const result = await generateText({
+        model: openrouter(modelId),
+        prompt,
+        maxOutputTokens: 80,
+      });
+
+      const tokensIn = result.usage?.inputTokens ?? 0;
+      const tokensOut = result.usage?.outputTokens ?? 0;
+      const costCents = estimateCostCents(tokensIn, tokensOut, EPITAPH_COSTS[i]);
+
+      return {
+        epitaph: (result.text || '').trim().slice(0, 200),
+        model: modelId,
+        tokensIn,
+        tokensOut,
+        costCents,
+      };
+    } catch (err: any) {
+      console.error(`Epitaph model ${modelId} failed:`, err?.message || err);
+      if (i === EPITAPH_MODELS.length - 1) {
+        return {
+          epitaph: `Here lies ${context.name}, who ${context.cause.toLowerCase()}. May they find peace beneath the mountain.`,
+          model: 'local-fallback',
+          tokensIn: 0,
+          tokensOut: 0,
+          costCents: 0,
+        };
+      }
+    }
+  }
+
+  return {
+    epitaph: `Rest in peace, ${context.name}.`,
+    model: 'local-fallback',
+    tokensIn: 0,
+    tokensOut: 0,
+    costCents: 0,
+  };
+}

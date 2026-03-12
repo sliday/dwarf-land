@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import { Polar } from '@polar-sh/sdk';
 import { validateEvent, WebhookVerificationError } from '@polar-sh/sdk/webhooks';
 import type { Env, Tier, GameState } from './shared/types';
-import { routeDecision, generateBackstory, generateCraftResult } from './ai/router';
+import { routeDecision, generateBackstory, generateCraftResult, generateEpitaph } from './ai/router';
 import { checkBudget, logUsage } from './guardrails/budget';
 import { checkRateLimit } from './guardrails/rate-limiter';
 import { saveState, loadState } from './db/state';
@@ -257,6 +257,23 @@ app.post('/api/craft', async (c) => {
   } catch (err: any) {
     console.error('Craft error:', err?.message || err);
     return c.json({ error: 'Craft failed' }, 500);
+  }
+});
+
+// Epitaph generation — gravestone inscription
+app.post('/api/epitaph', async (c) => {
+  const rateLimitOk = checkRateLimit('simple');
+  if (!rateLimitOk) return c.json({ error: 'Rate limited' }, 429);
+
+  try {
+    const body = await c.req.json<{ name: string; cause: string; age: number; cityName?: string }>();
+    if (!body?.name) return c.json({ error: 'Missing name' }, 400);
+    const result = await generateEpitaph(body, c.env.OPENROUTER_API_KEY);
+    await logUsage(c.env.DB, 'simple', result.model, result.tokensIn, result.tokensOut, result.costCents);
+    return c.json({ ok: true, epitaph: result.epitaph, model: result.model, costCents: result.costCents });
+  } catch (err: any) {
+    console.error('Epitaph error:', err?.message || err);
+    return c.json({ error: 'Epitaph generation failed' }, 500);
   }
 });
 

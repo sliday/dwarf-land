@@ -4269,10 +4269,11 @@ const TILE_RESOURCE_KEY = {
 
 function showTerrainInspector(tile) {
   const t = G.map[tile.y][tile.x];
-  const props = TERRAIN_PROPS[t] || { speed: 0, desc: 'Unknown terrain' };
   const graveKey = `${tile.x},${tile.y}`;
   const graveData = t === T.GRAVE && G.graves[graveKey] ? G.graves[graveKey] : null;
-  inspTitle.textContent = graveData ? graveData.emoji + ' ' + graveData.name : (TILE_NAMES[t] || 'Unknown');
+  if (graveData) { showGraveInspector(tile.x, tile.y, graveData); return; }
+  const props = TERRAIN_PROPS[t] || { speed: 0, desc: 'Unknown terrain' };
+  inspTitle.textContent = TILE_NAMES[t] || 'Unknown';
   const [lon, lat] = toLonLat(tile.x, tile.y);
   const frag = document.createDocumentFragment();
   const coordLine = document.createElement('div'); coordLine.style.cssText = 'font-size:10px;color:#a89984';
@@ -5275,6 +5276,114 @@ document.getElementById('hud-year-wrap').onclick = () => {
   if (isMobile) inspPanel.classList.add('open'); else inspPanel.style.display = 'block';
   inspCurrent = { type: 'timeline' };
 };
+
+// Graveyard panel
+function showGraveyardPanel() {
+  const graves = G.graves || {};
+  const entries = Object.entries(graves);
+  inspTitle.textContent = '⚰️ Graveyard (' + entries.length + ' fallen)';
+  const frag = document.createDocumentFragment();
+  for (const [key, g] of entries) {
+    const [gx, gy] = key.split(',').map(Number);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid #3c3836;cursor:pointer;font-size:10px';
+    row.onclick = () => { G.cam.x = gx * TILE - canvas.width / 2; G.cam.y = gy * TILE - canvas.height / 2; showGraveInspector(gx, gy, g); };
+    const nameSpan = document.createElement('span');
+    nameSpan.style.cssText = 'color:#ebdbb2;flex:1';
+    nameSpan.textContent = g.emoji + ' ' + g.name;
+    const causeSpan = document.createElement('span');
+    causeSpan.style.cssText = 'color:#928374;font-size:9px;white-space:nowrap';
+    causeSpan.textContent = g.cause || 'Unknown';
+    row.append(nameSpan, causeSpan);
+    frag.appendChild(row);
+  }
+  if (entries.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'font-size:11px;color:#928374';
+    empty.textContent = 'No graves yet.';
+    frag.appendChild(empty);
+  }
+  inspBody.textContent = ''; inspBody.appendChild(frag);
+  inspPanel.classList.remove('hidden');
+  if (isMobile) inspPanel.classList.add('open'); else inspPanel.style.display = 'block';
+  inspCurrent = { type: 'graveyard' };
+}
+
+// Grave inspector with AI epitaph
+function showGraveInspector(gx, gy, g) {
+  inspTitle.textContent = g.emoji + ' ' + g.name;
+  const frag = document.createDocumentFragment();
+
+  const coordLine = document.createElement('div');
+  coordLine.style.cssText = 'font-size:10px;color:#a89984';
+  coordLine.textContent = 'Grave at (' + gx + ', ' + gy + ')';
+  frag.appendChild(coordLine);
+
+  if (g.age) {
+    const ageLine = document.createElement('div');
+    ageLine.style.cssText = 'font-size:10px;color:#a89984;margin-top:2px';
+    ageLine.textContent = 'Died at age ' + g.age;
+    frag.appendChild(ageLine);
+  }
+
+  const causeLine = document.createElement('div');
+  causeLine.style.cssText = 'font-size:11px;color:#fb4934;margin-top:4px';
+  causeLine.textContent = '☠️ ' + (g.cause || 'Cause unknown');
+  frag.appendChild(causeLine);
+
+  if (g.cityId) {
+    const city = cityById(g.cityId);
+    if (city) {
+      const cityLine = document.createElement('div');
+      cityLine.style.cssText = 'font-size:10px;color:#665c54;margin-top:2px;cursor:pointer';
+      cityLine.textContent = '🏘️ ' + city.name;
+      cityLine.onclick = () => { G.cam.x = city.mx * TILE - canvas.width / 2; G.cam.y = city.my * TILE - canvas.height / 2; showCityInspector(city); };
+      frag.appendChild(cityLine);
+    }
+  }
+
+  // Epitaph area
+  const epitaphDiv = document.createElement('div');
+  epitaphDiv.style.cssText = 'margin-top:8px;padding:6px 8px;background:#3c3836;border-radius:4px;border-left:3px solid #928374';
+  const graveKey = `${gx},${gy}`;
+  if (g.epitaph) {
+    epitaphDiv.style.cssText += ';font-size:11px;color:#d5c4a1;font-style:italic';
+    epitaphDiv.textContent = '"' + g.epitaph + '"';
+  } else {
+    epitaphDiv.style.cssText += ';font-size:10px;color:#928374';
+    epitaphDiv.textContent = 'Loading epitaph…';
+    const cityName = g.cityId ? (cityById(g.cityId)?.name || '') : '';
+    fetch(`${AI.apiBase}/api/epitaph`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: g.name, cause: g.cause || 'Unknown', age: g.age || 20, cityName }),
+    }).then(r => r.ok ? r.json() : null).then(data => {
+      if (data?.epitaph) {
+        g.epitaph = data.epitaph;
+        G.graves[graveKey] = g;
+        epitaphDiv.style.cssText = 'margin-top:8px;padding:6px 8px;background:#3c3836;border-radius:4px;border-left:3px solid #928374;font-size:11px;color:#d5c4a1;font-style:italic';
+        epitaphDiv.textContent = '"' + data.epitaph + '"';
+      } else {
+        epitaphDiv.textContent = '"Rest in peace, ' + g.name + '."';
+      }
+    }).catch(() => {
+      epitaphDiv.textContent = '"Rest in peace, ' + g.name + '."';
+    });
+  }
+  frag.appendChild(epitaphDiv);
+
+  // Back to graveyard link
+  const backLink = document.createElement('div');
+  backLink.style.cssText = 'font-size:10px;color:#83a598;cursor:pointer;margin-top:6px;text-decoration:underline';
+  backLink.textContent = '← Back to graveyard';
+  backLink.onclick = () => showGraveyardPanel();
+  frag.appendChild(backLink);
+
+  inspBody.textContent = ''; inspBody.appendChild(frag);
+  inspPanel.classList.remove('hidden');
+  if (isMobile) inspPanel.classList.add('open'); else inspPanel.style.display = 'block';
+  inspCurrent = { type: 'grave', key: graveKey };
+}
 
 // Sponsored dwarves panel
 document.getElementById('hud-sponsored-wrap').onclick = async () => {

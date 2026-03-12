@@ -136,11 +136,11 @@ const pendingLogs = [], pendingToasts = [], pendingMapChanges = [], pendingGrave
 function log(msg, type, rarity, cityEmoji, lx, ly) { pendingLogs.push({msg,type,rarity:rarity||1,season:G.season,cityEmoji:cityEmoji||null,lx:lx??null,ly:ly??null}); }
 function mapSet(x, y, tile) { G.map[y][x] = tile; G.mapDeltas[`${x},${y}`] = tile; pendingMapChanges.push({x,y,tile}); }
 const GRAVE_EMOJIS = ['🪦','💀','☠️','⚰️','🕯️'];
-function placeGrave(d) {
+function placeGrave(d, cause) {
   const wx = wrapX(d.x);
   if (G.map[d.y] && G.map[d.y][wx] !== T.OCEAN) {
     mapSet(wx, d.y, T.GRAVE);
-    const gd = {name:d.name, emoji:GRAVE_EMOJIS[Math.floor(Math.random()*GRAVE_EMOJIS.length)]};
+    const gd = {name:d.name, emoji:GRAVE_EMOJIS[Math.floor(Math.random()*GRAVE_EMOJIS.length)], cause:cause||'Unknown', age:d.age??20, cityId:d.cityId};
     G.graves[`${wx},${d.y}`] = gd;
     pendingGraves.push({x:wx, y:d.y, ...gd});
   }
@@ -450,7 +450,7 @@ function tickDwarf(d) {
   }
   // HP system
   if (!d.maxHp) { d.maxHp = 8 + Math.floor((d.stats?.CON||10)/3); d.hp = d.hp ?? d.maxHp; d.ac = d.ac ?? 10+Math.floor(((d.stats?.DEX||10)-10)/2); }
-  if (d.hp <= 0) { d.state = 'dead'; d.dead = true; placeGrave(d); log(`${d.name} \u2620\uFE0F has died!`, 'system', 4, null, d.x, d.y); addEvent(d, 'death', 'Died in combat'); return; }
+  if (d.hp <= 0) { d.state = 'dead'; d.dead = true; placeGrave(d, 'Died in combat'); log(`${d.name} \u2620\uFE0F has died!`, 'system', 4, null, d.x, d.y); addEvent(d, 'death', 'Died in combat'); return; }
   if (d.poisonTicks > 0) { d.hp -= 1; d.poisonTicks--; if (d.poisonTicks === 0) log(`${d.name} recovered from poison`, 'system', 2); }
   if (d.hp < d.maxHp && d.hunger > 20 && d.energy > 30 && G.tick % 50 === 0) d.hp = Math.min(d.maxHp, d.hp + 1);
 
@@ -490,7 +490,7 @@ function tickDwarf(d) {
     if (d.starveTicks >= STARVE_DEATH) {
       log(`${d.name} \u2620\uFE0F starved to death`, 'system', 4, null, d.x, d.y);
       addEvent(d, 'death', 'Died of starvation');
-      placeGrave(d); d.dead = true; return;
+      placeGrave(d, 'Starved to death'); d.dead = true; return;
     }
     if (d.starveTicks >= STARVE_IMMOBILE && d.state !== 'starving') {
       d.state = 'starving'; d.target = null; d.path = [];
@@ -1563,7 +1563,7 @@ function animalCombat(a, d) {
       if (String(t.dmg).includes('+poison')) d.poisonTicks = (d.poisonTicks||0) + 3;
       log(`${t.emoji} ${a.type} hit ${d.name} for ${dmg} dmg!`, 'combat', 2);
       if (d.hp <= 0) {
-        d.dead = true; d.state = 'dead'; placeGrave(d);
+        d.dead = true; d.state = 'dead'; placeGrave(d, `Killed by a ${a.type}`);
         log(`${d.name} \u2620\uFE0F was killed by a ${a.type}!`, 'system', 4, null, d.x, d.y);
         addEvent(d, 'death', `Killed by a ${a.type}`);
         return;
@@ -1739,7 +1739,7 @@ function tickSeason() {
       for (const d of G.dwarves) {
         d.age = (d.age ?? 20) + 1;
         if (d.age >= 70 && Math.random() < 0.03 * (d.age - 69)) {
-          placeGrave(d);
+          placeGrave(d, `Died of old age at ${d.age}`);
           log(`${d.name} \u2620\uFE0F passed away at age ${d.age}`, 'system', 4, null, d.x, d.y);
           addEvent(d, 'death', `Died of old age at ${d.age}`);
           deadIds.push(d.id);
