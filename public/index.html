@@ -390,10 +390,12 @@ const LAND = [
   // SOUTH AMERICA
   [-62,-5,16,14], [-50,-15,14,16], [-65,-28,10,12], [-68,-40,6,14],
   [-72,-15,6,12], [-72,-32,5,10], [-55,-5,10,8], [-45,-23,8,6],
-  // EUROPE
-  [10,52,18,10], [25,55,14,8], [5,45,10,6], [-5,40,8,5], [15,42,5,6],
+  // EUROPE (mainland — does NOT cover British Isles)
+  [12,52,16,10], [25,55,14,8], [5,45,10,6], [-5,40,8,5], [15,42,5,6],
   [25,40,8,5], [10,64,6,6], [22,66,10,5], [32,62,12,6], [-20,65,5,3],
-  [0,54,5,4], [35,55,8,6], [-8,54,4,4],
+  [35,55,8,6],
+  // BRITISH ISLES (separate islands)
+  [-1,54,4,5], [-7,54,3,4],
   // AFRICA
   [22,10,20,16], [38,0,14,14], [27,-12,16,14], [28,-27,10,12],
   [15,30,12,7], [32,28,10,6], [48,8,6,10], [10,5,8,8],
@@ -469,6 +471,7 @@ const CITIES = [
   { id: 'ottawa', name: 'Ottawa', lon: -76, lat: 45, emoji: '🍁', culture: 'canadian' },
   { id: 'wellington', name: 'Wellington', lon: 175, lat: -41, emoji: '🥝', culture: 'kiwi' },
   { id: 'rabat', name: 'Rabat', lon: -7, lat: 34, emoji: '🫖', culture: 'moroccan' },
+  { id: 'dublin', name: 'Dublin', lon: -6, lat: 53, emoji: '☘️', culture: 'irish' },
 ];
 
 const CULTURES = {
@@ -518,6 +521,7 @@ const CULTURES = {
   canadian:    { country: 'Canada',      continent: 'North America', firstNames: ['Liam','Olivia','Noah','Emma','Ethan','Ava','Lucas','Charlotte'], lastNames: ['Tremblay','Roy','Gagnon','Bouchard','Cote','Belanger'], traits: ['polite','hardy'] },
   kiwi:        { country: 'New Zealand', continent: 'Oceania',       firstNames: ['Jack','Isla','Oliver','Amelia','Leo','Willow','Finn','Maia'], lastNames: ['Smith','Williams','Brown','Wilson','Taylor','Anderson'], traits: ['adventurous','easygoing'] },
   moroccan:    { country: 'Morocco',     continent: 'Africa',        firstNames: ['Youssef','Fatima','Omar','Amina','Amine','Khadija','Adam','Maryam'], lastNames: ['El-Idrissi','Benali','Alaoui','Mansouri','Berrada','Fassi'], traits: ['hospitable','resilient'] },
+  irish:       { country: 'Ireland',    continent: 'Europe',        firstNames: ['Sean','Aoife','Cian','Siobhan','Oisin','Niamh','Conor','Saoirse'], lastNames: ["O'Brien","Murphy","Kelly","O'Sullivan","Walsh","Byrne"], traits: ['spirited','eloquent'] },
 };
 
 const DWARF_NAMES = [
@@ -1488,6 +1492,10 @@ function aiIdle(d) {
     }
   }
 
+  // Very rare: ambitious dwarves with full carry may found a new city
+  if (Math.random() < 0.005 && (d.carrying || 0) >= carryCapacity(d)) {
+    if (tryFoundCity(d)) return;
+  }
   // Adventurous or ambitious dwarves may try sailing
   if (Math.random() < 0.02 && (d.ambition ?? 50) > 60) {
     if (trySeaSailing(d)) return;
@@ -1930,6 +1938,81 @@ function aiSail(d) {
   if (d.energy < 20) {
     d.energy = Math.min(100, d.energy + 1.5);
   }
+}
+
+// Found a new city: 2 ambitious dwarves from same city, both at max carry, far from cities
+function tryFoundCity(d) {
+  if (CITIES.length >= 60) return false; // global city cap
+  if ((d.ambition ?? 50) < 80) return false;
+  if ((d.carrying || 0) < carryCapacity(d)) return false;
+  // Must be far from any existing city (>30 tiles Manhattan distance)
+  for (const c of CITIES) {
+    if (c.mx === undefined) continue;
+    const dx = Math.min(Math.abs(c.mx - d.x), MAP_W - Math.abs(c.mx - d.x));
+    const dy = Math.abs(c.my - d.y);
+    if (dx + dy < 30) return false;
+  }
+  // Need a partner from same city, nearby, also at max carry
+  const partner = G.dwarves.find(o =>
+    o !== d && o.cityId === d.cityId && o.state === 'idle' &&
+    (o.carrying || 0) >= carryCapacity(o) &&
+    Math.abs(o.x - d.x) <= 2 && Math.abs(o.y - d.y) <= 2
+  );
+  if (!partner) return false;
+  // Must be on walkable land
+  if (!isWalkable(d.x, d.y)) return false;
+  // Count surrounding land tiles (need space for fortress)
+  let land = 0;
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++) {
+      const x = wrapX(d.x + dx), y = d.y + dy;
+      if (y >= 0 && y < MAP_H && G.map[y][x] !== T.OCEAN && G.map[y][x] !== T.FISH_SPOT) land++;
+    }
+  if (land < 6) return false;
+  // Found! Pool resources from both dwarves
+  const pooled = {};
+  for (const founder of [d, partner]) {
+    for (const [k, v] of Object.entries(founder.carryItems || {})) {
+      pooled[k] = (pooled[k] || 0) + v;
+    }
+    founder.carrying = 0; founder.carryItems = {};
+  }
+  // Create city
+  const parentCity = cityOf(d);
+  const newId = 'colony_' + Math.random().toString(36).slice(2, 6);
+  const newCity = {
+    id: newId, name: d.name.split(' ')[1] + 'heim',
+    lon: 0, lat: 0, emoji: '🏕️',
+    culture: parentCity.culture || 'american',
+    mx: d.x, my: d.y,
+    res: { stone: 0, wood: 0, food: 20, iron: 0, gold: 0, cloth: 0, ale: 0, herbs: 0, beds: 0, tables: 0 },
+  };
+  // Add pooled resources
+  for (const [k, v] of Object.entries(pooled)) {
+    if (newCity.res[k] !== undefined) newCity.res[k] += v;
+  }
+  CITIES.push(newCity);
+  // Build 3x3 fortress
+  const cx = d.x, cy = d.y;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const x = wrapX(cx + dx), y = cy + dy;
+      if (y < 0 || y >= MAP_H) continue;
+      if (dx === 0 && dy === 0) G.map[y][x] = T.CITY;
+      else if (dy === -1) { G.map[y][x] = T.BED; newCity.res.beds++; }
+      else if (dy === 1) G.map[y][x] = T.STOCKPILE;
+      else G.map[y][x] = T.FLOOR;
+    }
+  }
+  // Transfer both dwarves to new city
+  d.cityId = newId; partner.cityId = newId;
+  d.state = 'idle'; d.target = null; d.path = [];
+  partner.state = 'idle'; partner.target = null; partner.path = [];
+  G.mapDirty = true;
+  log(`🏕️ ${d.name} and ${partner.name} founded ${newCity.name}!`, 'system');
+  addEvent(d, 'found', `Founded ${newCity.name}`);
+  addEvent(partner, 'found', `Founded ${newCity.name}`);
+  return true;
 }
 
 // Idle dwarves near coast with excess resources may build/board ships
