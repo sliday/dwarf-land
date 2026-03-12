@@ -46,6 +46,7 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 
 ### Ships & Sea Travel
 - Ships built at coastal cities (10 wood + 3 cloth + 2 iron)
+- **Ship beaching**: docked ships move onto adjacent land tiles so dwarves can walk to them; ships launch back to water when sailing begins
 - 1 captain per ship — sails across ocean to other coastal cities
 - Captain sleeps and eats aboard; ship auto-fishes from fish spots
 - Cargo system: resources transfer to destination city on arrival
@@ -105,14 +106,14 @@ Pay to upgrade a dwarf's AI reasoning tier via Polar.sh. Sponsored dwarves get a
 - **AI:** OpenRouter via Vercel AI SDK v6 + Zod v4 schemas
 - **Payments:** Polar.sh (@polar-sh/sdk)
 - **Frontend:** Vanilla JS canvas + DAUB UI (grunge theme)
-- **Tests:** Vitest (277 tests across 15 files)
+- **Tests:** Vitest (295 tests across 18 files)
 
 ## Development
 
 ```bash
 npm install
 npm run dev              # local dev server
-npm test                 # run 277 tests
+npm test                 # run 295 tests
 npm run test:watch       # vitest watch mode
 npm run db:migrate:local # apply D1 migrations locally
 npm run db:migrate:remote # apply D1 migrations to production
@@ -166,5 +167,5 @@ src/guardrails/        # Budget + rate limiting
 src/db/state.ts        # D1 state persistence
 migrations/            # D1 SQL migrations
 scripts/               # Import/seed scripts
-tests/                 # 17 test files, 277 tests
+tests/                 # 18 test files, 295 tests
 ```
