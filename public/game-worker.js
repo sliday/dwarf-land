@@ -736,6 +736,34 @@ function tryTradeCaravan(d) {
   return true;
 }
 
+function findRoadGap(dx, dy, radius) {
+  const ROAD_SET = new Set([T.ROAD, T.ASPHALT, T.RAILROAD]);
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  for (let r = 1; r <= radius; r++) {
+    for (const [ddx, ddy] of dirs) {
+      const x1 = wrapX(dx + ddx * r), y1 = dy + ddy * r;
+      if (y1 < 0 || y1 >= MAP_H) continue;
+      const t1 = G.map[y1][x1];
+      if (!ROAD_SET.has(t1)) continue;
+      // Found a road tile — look backward for gap then road
+      for (let gap = 1; gap <= 2; gap++) {
+        const gx = wrapX(dx + ddx * (r - gap)), gy = dy + ddy * (r - gap);
+        if (gy < 0 || gy >= MAP_H) break;
+        const gt = G.map[gy][gx];
+        if (ROAD_SET.has(gt)) break; // no gap
+        if (!isWalkable(gx, gy)) break;
+        // Check tile before gap is road
+        const bx = wrapX(dx + ddx * (r - gap - 1)), by = dy + ddy * (r - gap - 1);
+        if (by < 0 || by >= MAP_H) continue;
+        if (ROAD_SET.has(G.map[by][bx])) {
+          return {x: gx, y: gy};
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function aiIdle(d) {
   if (d._tickSlot === undefined) d._tickSlot = G.dwarves.indexOf(d) % 4;
   if (G.tick % 4 !== d._tickSlot) return;
@@ -802,6 +830,13 @@ function aiIdle(d) {
       if (G.map[last[1]][last[0]] === T.D_ROAD) {
         d.target = {type:'road',x:last[0],y:last[1]}; d.path = rp; d.state = 'walk'; return;
       }
+    }
+  }
+  if (res.stone >= 1 && Math.random() < 0.2) {
+    const gap = findRoadGap(d.x, d.y, 10);
+    if (gap) {
+      const gp = bfs(d.x, d.y, (x,y) => x === gap.x && y === gap.y, false);
+      if (gp) { d.target = {type:'fix_road',x:gap.x,y:gap.y}; d.path = gp; d.state = 'walk'; return; }
     }
   }
   if (((res.stone >= 2 && res.iron >= 1) || (res.iron >= 3 && res.wood >= 2)) && Math.random() < 0.15) {
@@ -1003,6 +1038,11 @@ function aiBuild(d) {
       log(`${d.name} 🟫 built a gravel road`, 'build', 1);
       addEvent(d, 'build', 'Built a road');
       d.happiness = Math.min(100, d.happiness + 2);
+    } else if (d.target.type === 'fix_road' && res.stone >= 1 && isWalkable(x, y) && G.map[y][x] !== T.ROAD && G.map[y][x] !== T.ASPHALT && G.map[y][x] !== T.RAILROAD) {
+      res.stone -= 1; mapSet(x, y, T.ROAD); G.stats.built++; G.roadGraphDirty = true;
+      log(`${d.name} 🔧 repaired a road gap`, 'build', 2);
+      addEvent(d, 'build', 'Repaired a road gap');
+      d.happiness = Math.min(100, d.happiness + 3);
     } else if (d.target.type === 'upgrade_road' && G.map[y][x] === T.ROAD && res.stone >= 2 && res.iron >= 1) {
       res.stone -= 2; res.iron -= 1; mapSet(x, y, T.ASPHALT); G.stats.built++; G.roadGraphDirty = true;
       log(`${d.name} ⬛ paved road to asphalt!`, 'build', 2);
@@ -1221,8 +1261,10 @@ function autoConnectCities() {
   const [cityA, cityB] = bestPair;
 
   // A* pathfind on walkable terrain, preferring existing roads
+  // Include building tiles so we can path through city centers
   const roadable = new Set([T.PLAINS,T.FOREST,T.TAIGA,T.DESERT,T.TUNDRA,T.HILL,T.BEACH,
-    T.ROAD,T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY,T.FLOOR,T.FARM,T.D_ROAD]);
+    T.ROAD,T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY,T.FLOOR,T.FARM,T.D_ROAD,
+    T.BED,T.STOCKPILE,T.TABLE,T.WALL]);
   const goal = `${cityB.mx},${cityB.my}`;
   const openSet = [{x:cityA.mx, y:cityA.my, g:0, f:0}];
   const gScore = new Map(); gScore.set(`${cityA.mx},${cityA.my}`, 0);
@@ -1244,7 +1286,10 @@ function autoConnectCities() {
       if (ny < 0 || ny >= MAP_H) continue;
       const t = G.map[ny][nx];
       if (!roadable.has(t)) continue;
-      const moveCost = (t === T.ROAD || t === T.ASPHALT || t === T.RAILROAD || t === T.CITY || t === T.FACTORY) ? 0.5 : 1;
+      const moveCost = (t === T.ROAD || t === T.ASPHALT || t === T.RAILROAD) ? 0.3
+        : (t === T.CITY || t === T.FACTORY || t === T.FLOOR) ? 0.5
+        : (t === T.BED || t === T.STOCKPILE || t === T.TABLE || t === T.WALL) ? 3
+        : 1;
       const tentG = cur.g + moveCost;
       const nKey = `${nx},${ny}`;
       if (tentG < (gScore.get(nKey) ?? Infinity)) {
@@ -1267,9 +1312,11 @@ function autoConnectCities() {
   }
 
   let roadsBuilt = 0;
+  const dontOverwrite = new Set([T.ROAD,T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY,T.FLOOR,
+    T.BED,T.STOCKPILE,T.TABLE,T.WALL,T.FARM,T.OCEAN,T.GRAVE]);
   for (const [rx, ry] of path) {
     const t = G.map[ry][rx];
-    if (t !== T.ROAD && t !== T.ASPHALT && t !== T.RAILROAD && t !== T.CITY && t !== T.FACTORY && t !== T.FLOOR) {
+    if (!dontOverwrite.has(t)) {
       mapSet(rx, ry, T.ROAD);
       roadsBuilt++;
     }
