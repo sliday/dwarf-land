@@ -1515,6 +1515,22 @@ function generateMap() {
     }
   }
 
+  // Spawn starting ships at coastal cities
+  for (const city of placedCities) {
+    let launchX = null, launchY = null;
+    for (let dy = -3; dy <= 3 && launchX === null; dy++)
+      for (let dx = -3; dx <= 3 && launchX === null; dx++) {
+        const x = wrapX(city.mx + dx), y = city.my + dy;
+        if (y >= 0 && y < MAP_H && isWater(x, y)) { launchX = x; launchY = y; }
+      }
+    if (launchX !== null) {
+      for (let i = 0; i < 2; i++) {
+        const ship = createShip(launchX, launchY, null, city.id);
+        G.ships.push(ship);
+      }
+    }
+  }
+
   // Center camera on home
   G.cam.x = hx * TILE - canvas.width / 2;
   G.cam.y = hy * TILE - canvas.height / 2;
@@ -2904,7 +2920,7 @@ function tryFoundCity(d) {
 
 // Idle dwarves near coast with excess resources may build/board ships
 function trySeaSailing(d) {
-  if (G.ships.length >= 20) return false; // global ship cap
+  if (G.ships.length >= 50) return false; // global ship cap
   const city = cityOf(d);
   if (!city || !city.res) return false;
   // Only sail if city is coastal

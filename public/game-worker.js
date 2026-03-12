@@ -1564,7 +1564,7 @@ function tryFoundCity(d) {
 }
 
 function trySeaSailing(d) {
-  if (G.ships.length >= 20) return false;
+  if (G.ships.length >= 50) return false;
   const city = cityOf(d);
   if (!city || !city.res) return false;
   if (!isCoastal(city.mx, city.my)) {
