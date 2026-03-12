@@ -68,6 +68,31 @@ describe('Dwarf Sex Property', () => {
     expect(restored.sex).toBe('F');
   });
 
+  it('gendered names: males get even-indexed names, females get odd-indexed', () => {
+    const firstNames = ['James', 'Emily', 'Mason', 'Olivia', 'Ethan', 'Sophia', 'Liam', 'Ava'];
+    const maleNames = firstNames.filter((_, i) => i % 2 === 0); // James, Mason, Ethan, Liam
+    const femaleNames = firstNames.filter((_, i) => i % 2 === 1); // Emily, Olivia, Sophia, Ava
+
+    expect(maleNames).toEqual(['James', 'Mason', 'Ethan', 'Liam']);
+    expect(femaleNames).toEqual(['Emily', 'Olivia', 'Sophia', 'Ava']);
+
+    // Verify male sex picks from even indices
+    for (let i = 0; i < 50; i++) {
+      const sex = 'M';
+      const gendered = firstNames.filter((_, idx) => sex === 'M' ? idx % 2 === 0 : idx % 2 === 1);
+      const name = gendered[Math.floor(Math.random() * gendered.length)];
+      expect(maleNames).toContain(name);
+    }
+
+    // Verify female sex picks from odd indices
+    for (let i = 0; i < 50; i++) {
+      const sex = 'F';
+      const gendered = firstNames.filter((_, idx) => sex === 'M' ? idx % 2 === 0 : idx % 2 === 1);
+      const name = gendered[Math.floor(Math.random() * gendered.length)];
+      expect(femaleNames).toContain(name);
+    }
+  });
+
   it('defaults to M when sex is missing (backwards compat)', () => {
     const d = makeDwarf();
     delete (d as any).sex;

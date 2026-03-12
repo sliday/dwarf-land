@@ -327,9 +327,11 @@ function tryCraftInventoryGain(d, tileType) {
 function createDwarf(x, y, cityId) {
   const city = cityById(cityId);
   const culture = city ? CULTURES[city.culture] : null;
+  const sex = Math.random() < 0.5 ? 'M' : 'F';
   let first, last;
   if (culture) {
-    first = culture.firstNames[Math.floor(Math.random()*culture.firstNames.length)];
+    const gendered = culture.firstNames.filter((_,i) => sex === 'M' ? i%2===0 : i%2===1);
+    first = gendered.length ? gendered[Math.floor(Math.random()*gendered.length)] : culture.firstNames[Math.floor(Math.random()*culture.firstNames.length)];
     last = culture.lastNames[Math.floor(Math.random()*culture.lastNames.length)];
   } else {
     first = DWARF_NAMES[Math.floor(Math.random()*DWARF_NAMES.length)];
@@ -354,7 +356,7 @@ function createDwarf(x, y, cityId) {
     backstory:'', eventLog:[],
     age:20+Math.floor(Math.random()*30),
     carrying:0, carryItems:{}, inventory:[],
-    sex: Math.random() < 0.5 ? 'M' : 'F',
+    sex,
   };
 }
 function findNearbyLand(cx, cy) {
