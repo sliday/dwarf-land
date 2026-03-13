@@ -944,19 +944,6 @@ function aiIdle(d) {
       }
     }
   }
-  if (res.stone >= 2) {
-    const bp = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_BUILD, false);
-    if (bp) {
-      const last = bp[bp.length-1];
-      if (G.map[last[1]][last[0]] === T.D_BUILD) {
-        const adj = adjWalkable(last[0], last[1]);
-        if (adj) {
-          const p = bfs(d.x, d.y, (x,y) => x === adj[0] && y === adj[1], false);
-          if (p) { d.target = {type:'build',x:last[0],y:last[1]}; d.path = p; d.state = 'walk'; return; }
-        }
-      }
-    }
-  }
   {
     const rp = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_ROAD || G.map[y][x] === T.D_UPGRADE, false);
     if (rp) {
@@ -1195,12 +1182,7 @@ function aiBuild(d) {
     const {x,y} = d.target;
     const res = cityOf(d).res;
     if (!res) { d.state = 'idle'; d.target = null; return; }
-    if (G.map[y][x] === T.D_BUILD && res.stone >= 2) {
-      res.stone -= 2; mapSet(x, y, T.WALL); G.stats.built++;
-      log(`${d.name} 🧱 built a wall`, 'build', 1, null, d.x, d.y);
-      addEvent(d, 'build', 'Built a wall');
-      d.happiness = Math.min(100, d.happiness + 3);
-    } else if (G.map[y][x] === T.D_ROAD) {
+    if (G.map[y][x] === T.D_ROAD) {
       mapSet(x, y, T.PATH); G.stats.built++; G.roadGraphDirty = true;
       log(`${d.name} 👣 cleared a dirt path`, 'build', 1, null, d.x, d.y);
       addEvent(d, 'build', 'Cleared a path');
@@ -2568,7 +2550,7 @@ function executeIntent(d) {
       d.state = 'seek_sleep'; d.target = null; d.path = [];
       log(`${d.name} 🤖 AI: ${intent.reason}`, 'system', 2); return true;
     case 'mine': return aiSeekTask(d, T.D_MINE, T.MOUNTAIN, 'mine', intent.reason);
-    case 'build': return aiSeekTask(d, T.D_BUILD, null, 'build', intent.reason);
+    case 'build': return false; // removed: wall building was not useful
     case 'farm': return aiSeekFarmTask(d, intent.reason);
     case 'chop': {
       const tp = bfs(d.x,d.y,(x,y)=>G.map[y][x]===T.TAIGA||G.map[y][x]===T.FOREST,false);

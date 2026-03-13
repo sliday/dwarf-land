@@ -423,7 +423,7 @@
       <p>Roads connect cities automatically. Dwarves upgrade roads to railroads (3 iron + 2 wood) for ultra-fast travel. Cities auto-expand when population and resources allow.</p>
 
       <h4>Resources &amp; Building</h4>
-      <p>Each city has its own resource pool (food, wood, stone, iron, gold, cloth, ale, herbs). Dwarves mine, farm, build, eat, sleep, and socialize autonomously. Use the Mine/Build/Farm/Road buttons to designate areas on the map.</p>
+      <p>Each city has its own resource pool (food, wood, stone, iron, gold, cloth, ale, herbs). Dwarves mine, farm, eat, sleep, and socialize autonomously. Use the Mine/Farm/Road buttons to designate areas on the map. Drawing Road on existing roads designates them for upgrade.</p>
 
       <h4>Continuous World</h4>
       <p>The world is alive while you watch. State saves automatically every 60 seconds. Come back anytime &mdash; your dwarves remember everything.</p>
@@ -4476,9 +4476,8 @@ function showDwarfInspector(dw) {
   actRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap';
   for (const [mode, label, tip] of [
     ['mine', '\u26cf Mine', 'Drag on map to designate mining area'],
-    ['build', '\uD83E\uDDF1 Build', 'Drag on map to designate building area'],
     ['farm', '\uD83C\uDF3E Farm', 'Drag on map to designate farm plots'],
-    ['road', '\uD83D\uDEE4\uFE0F Road', 'Drag on map to designate road path'],
+    ['road', '\uD83D\uDEE4\uFE0F Road', 'Drag on map to designate road path (draw on roads to upgrade)'],
   ]) {
     const btn = document.createElement('button');
     btn.className = 'sponsor-btn';
@@ -4625,9 +4624,9 @@ function showTerrainInspector(tile) {
     walkLine.textContent = 'Walkable \u2022 Speed: ' + speedLabel + ' (' + props.speed + ')';
   }
   frag.appendChild(walkLine);
-  if (t === T.D_MINE || t === T.D_BUILD || t === T.D_FARM || t === T.D_UPGRADE) {
+  if (t === T.D_MINE || t === T.D_FARM || t === T.D_UPGRADE) {
     const dLine = document.createElement('div'); dLine.style.cssText = 'font-size:10px;color:#fabd2f;margin-top:2px';
-    dLine.textContent = t === T.D_MINE ? 'Mining designated' : t === T.D_BUILD ? 'Build designated' : t === T.D_UPGRADE ? 'Road upgrade designated' : 'Farm designated'; frag.appendChild(dLine);
+    dLine.textContent = t === T.D_MINE ? 'Mining designated' : t === T.D_UPGRADE ? 'Road upgrade designated' : 'Farm designated'; frag.appendChild(dLine);
   }
   // Show cities ranked by resource for resource tiles
   const resKey = TILE_RESOURCE_KEY[t];
@@ -4759,13 +4758,6 @@ function finalizeDesignation() {
         if (minable.has(G.map[y][x])) { G.map[y][x] = T.D_MINE; count++; }
       }
     if (count) log(`⛏️ Designated ${count} tiles for mining`, 'mine');
-  } else if (G.mode === 'build') {
-    for (let y = s.y1; y <= s.y2; y++)
-      for (let gx = s.x1; gx <= s.x2; gx++) {
-        const x = wrapX(gx);
-        if (buildable.has(G.map[y][x])) { G.map[y][x] = T.D_BUILD; count++; }
-      }
-    if (count) log(`🧱 Designated ${count} tiles for building`, 'build');
   } else if (G.mode === 'farm') {
     for (let y = s.y1; y <= s.y2; y++)
       for (let gx = s.x1; gx <= s.x2; gx++) {
@@ -4796,7 +4788,7 @@ function finalizeDesignation() {
         for (let gx = s.x1; gx <= s.x2; gx++) {
           const x = wrapX(gx);
           const t = G.map[y][x];
-          if (t === T.D_MINE || t === T.D_BUILD || t === T.D_FARM || t === T.D_ROAD || t === T.D_UPGRADE) {
+          if (t === T.D_MINE || t === T.D_FARM || t === T.D_ROAD || t === T.D_UPGRADE) {
             changes.push({ x, y, tile: t });
           }
         }
