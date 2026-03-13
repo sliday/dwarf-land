@@ -17,6 +17,9 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - Auto-generated dirt paths between cities using A* (land-only, no ocean crossing); dwarves upgrade over time
 - 4-tier road system: dirt path (👣 free) → gravel (🟫 1 stone) → asphalt (⬛ 2 stone + 1 iron) → railroad (# on ⬛, 3 iron + 2 wood); single-lane rendering, each tier progressively faster
 - **Road gap auto-repair**: dwarves detect broken single-lane roads (1-2 tile gaps) within 10 tiles and auto-fix them with a dirt path
+- **Smart road upgrades**: dwarves pick upgrade targets that extend the longest unbroken chain of same-type road (chain-scoring algorithm, 15-tile scan radius)
+- **Orphan road scrapping**: dwarves detect disconnected road tiles (flood-fill ≤8 tiles, no city/factory connection) and demolish them, recovering stone; scrapped tiles become bare dirt
+- **Dirt tile lifecycle**: scrapped roads become bare dirt (🟤 darker brown, slightly slower) that naturally regrows to plains after 1 year
 - **Persistent terrain**: all tile changes (builds, farms, roads, mines, designations) saved as deltas and restored on reload
 - **Loop Hero rendering**: adjacent same-type terrain tiles grouped into larger squares with scaled emojis (greedy cover, world-aligned for scroll stability)
 - **Latitude-aware beaches**: beach umbrella emoji (🏖️) only on tropical/temperate shores (below 45°) adjacent to ocean; high-latitude beaches show clean sand
@@ -141,14 +144,14 @@ Pay to upgrade a dwarf's AI reasoning tier via Polar.sh. Sponsored dwarves get a
 - **AI:** OpenRouter via Vercel AI SDK v6 + Zod v4 schemas
 - **Payments:** Polar.sh (@polar-sh/sdk)
 - **Frontend:** Vanilla JS canvas + DAUB UI (grunge theme)
-- **Tests:** Vitest (366 tests across 21 files)
+- **Tests:** Vitest (388 tests across 22 files)
 
 ## Development
 
 ```bash
 npm install
 npm run dev              # local dev server
-npm test                 # run 366 tests
+npm test                 # run 388 tests
 npm run test:watch       # vitest watch mode
 npm run db:migrate:local # apply D1 migrations locally
 npm run db:migrate:remote # apply D1 migrations to production
@@ -202,5 +205,5 @@ src/guardrails/        # Budget + rate limiting
 src/db/state.ts        # D1 state persistence
 migrations/            # D1 SQL migrations
 scripts/               # Import/seed scripts
-tests/                 # 21 test files, 366 tests
+tests/                 # 22 test files, 388 tests
 ```

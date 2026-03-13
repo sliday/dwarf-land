@@ -8,14 +8,14 @@ const T = {
   MUSHROOM:16,FARM:17,CITY:18,D_MINE:19,D_BUILD:20,D_FARM:21,
   IRON_ORE:22,GOLD_VEIN:23,GEMS:24,BERRY_BUSH:25,HERB_PATCH:26,CLAY:27,
   FISH_SPOT:28,DEER:29,CORAL:30,CRAB:31,ROAD:32,D_ROAD:33,RAILROAD:34,
-  GRAVE:35,ASPHALT:36,FACTORY:37,PATH:38
+  GRAVE:35,ASPHALT:36,FACTORY:37,PATH:38,DIRT:39
 };
 const WALKABLE = new Set([
   T.TUNDRA,T.TAIGA,T.FOREST,T.PLAINS,T.DESERT,T.JUNGLE,T.HILL,T.BEACH,T.MOUNTAIN,
   T.FLOOR,T.STOCKPILE,T.BED,T.TABLE,T.DOOR,T.MUSHROOM,T.FARM,T.CITY,
   T.D_MINE,T.D_FARM,T.D_ROAD,T.PATH,T.ROAD,T.ASPHALT,T.RAILROAD,
   T.BERRY_BUSH,T.HERB_PATCH,T.CLAY,T.DEER,T.CRAB,
-  T.GRAVE,T.FACTORY
+  T.GRAVE,T.FACTORY,T.DIRT
 ]);
 const WILD_FOOD = new Set([T.MUSHROOM,T.BERRY_BUSH,T.CRAB]);
 const GATHERABLE = new Set([T.BERRY_BUSH,T.HERB_PATCH,T.IRON_ORE,T.GOLD_VEIN,T.GEMS,T.FISH_SPOT,T.CRAB,T.DEER,T.CLAY,T.CORAL]);
@@ -33,6 +33,7 @@ const TERRAIN_PROPS = {
   [T.FISH_SPOT]:{speed:0},[T.DEER]:{speed:1},[T.CORAL]:{speed:0},[T.CRAB]:{speed:1},
   [T.RAILROAD]:{speed:0.2},
   [T.FACTORY]:{speed:1},
+  [T.DIRT]:{speed:1.2},
 };
 const SHIP_COST = { wood:10, cloth:3, iron:2 }, SHIP_CARGO_MAX = 20;
 const VEHICLE_TYPES = {
@@ -128,7 +129,7 @@ const G = {
   dwarves:[], usedNames:new Set(),
   animals:[], animalGrid:{},
   ships:[], vehicles:[], stats:{mined:0,built:0,farmed:0},
-  graves:{}, yearResolutions:[], suburbs:[],
+  graves:{}, yearResolutions:[], suburbs:[], dirtTiles:[],
   homeCity:null, aiCityIndex:0, dwarfGrid:{},
   mapDeltas:{},
 };
@@ -812,6 +813,70 @@ function findRoadGap(dx, dy, radius) {
   return null;
 }
 
+function chainLen(x, y, type) {
+  let total = 0;
+  const dirs = [[0,-1],[0,1],[1,0],[-1,0]];
+  for (const [ddx, ddy] of dirs) {
+    for (let i = 1; i <= 20; i++) {
+      const nx = wrapX(x + ddx * i), ny = y + ddy * i;
+      if (ny < 0 || ny >= MAP_H || G.map[ny][nx] !== type) break;
+      total++;
+    }
+  }
+  return total;
+}
+
+function bestUpgradeTarget(dx, dy, res) {
+  let toType, fromType;
+  if (res.iron >= 3 && res.wood >= 2) { fromType = T.ASPHALT; toType = T.RAILROAD; }
+  else if (res.stone >= 2 && res.iron >= 1) { fromType = T.ROAD; toType = T.ASPHALT; }
+  else if (res.stone >= 1) { fromType = T.PATH; toType = T.ROAD; }
+  else return null;
+  const radius = 15;
+  let best = null, bestScore = -1, bestDist = Infinity;
+  for (let oy = -radius; oy <= radius; oy++) {
+    const ny = dy + oy;
+    if (ny < 0 || ny >= MAP_H) continue;
+    for (let ox = -radius; ox <= radius; ox++) {
+      const nx = wrapX(dx + ox);
+      if (G.map[ny][nx] !== fromType) continue;
+      const score = chainLen(nx, ny, toType);
+      const dist = Math.abs(ox) + Math.abs(oy);
+      if (score > bestScore || (score === bestScore && dist < bestDist)) {
+        best = {x:nx, y:ny, fromType, toType};
+        bestScore = score;
+        bestDist = dist;
+      }
+    }
+  }
+  return best;
+}
+
+function isOrphanRoad(x, y) {
+  const ROAD_LIKE = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD, T.CITY, T.FACTORY]);
+  let neighbors = 0;
+  const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
+  for (const [ddx, ddy] of dirs) {
+    const nx = wrapX(x+ddx), ny = y+ddy;
+    if (ny >= 0 && ny < MAP_H && ROAD_LIKE.has(G.map[ny][nx])) neighbors++;
+  }
+  if (neighbors === 0) return true;
+  const visited = new Set(), queue = [`${x},${y}`];
+  visited.add(queue[0]);
+  while (queue.length && visited.size <= 8) {
+    const [cx, cy] = queue.shift().split(',').map(Number);
+    if (G.map[cy][cx] === T.CITY || G.map[cy][cx] === T.FACTORY) return false;
+    for (const [ddx, ddy] of dirs) {
+      const nx = wrapX(cx+ddx), ny = cy+ddy;
+      const k = `${nx},${ny}`;
+      if (ny >= 0 && ny < MAP_H && !visited.has(k) && ROAD_LIKE.has(G.map[ny][nx])) {
+        visited.add(k); queue.push(k);
+      }
+    }
+  }
+  return true;
+}
+
 function aiIdle(d) {
   if (d._tickSlot === undefined) d._tickSlot = G.dwarves.indexOf(d) % 4;
   if (G.tick % 4 !== d._tickSlot) return;
@@ -887,13 +952,21 @@ function aiIdle(d) {
       if (gp) { d.target = {type:'fix_road',x:gap.x,y:gap.y}; d.path = gp; d.state = 'walk'; return; }
     }
   }
+  if (Math.random() < 0.05) {
+    const SCRAP_ROAD = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD]);
+    const sp = bfs(d.x, d.y, (x,y) => SCRAP_ROAD.has(G.map[y][x]) && isOrphanRoad(x, y), false);
+    if (sp && sp.length < 20) {
+      const last = sp[sp.length-1];
+      d.target = {type:'scrap_road', x:last[0], y:last[1]};
+      d.path = sp; d.state = 'walk'; return;
+    }
+  }
   if (((res.stone >= 1) || (res.stone >= 2 && res.iron >= 1) || (res.iron >= 3 && res.wood >= 2)) && Math.random() < 0.15) {
-    const rrp = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.PATH || G.map[y][x] === T.ROAD || G.map[y][x] === T.ASPHALT, false);
-    if (rrp && rrp.length < 30) {
-      const last = rrp[rrp.length-1];
-      const lt = G.map[last[1]][last[0]];
-      if (lt === T.PATH || lt === T.ROAD || lt === T.ASPHALT) {
-        d.target = {type:'upgrade_road',x:last[0],y:last[1]}; d.path = rrp; d.state = 'walk'; return;
+    const best = bestUpgradeTarget(d.x, d.y, res);
+    if (best) {
+      const rrp = bfs(d.x, d.y, (x,y) => x === best.x && y === best.y, false);
+      if (rrp && rrp.length < 30) {
+        d.target = {type:'upgrade_road',x:best.x,y:best.y}; d.path = rrp; d.state = 'walk'; return;
       }
     }
   }
@@ -1108,6 +1181,15 @@ function aiBuild(d) {
       log(`${d.name} 🛤️ upgraded to railroad!`, 'build', 3, null, d.x, d.y);
       addEvent(d, 'build', 'Upgraded to railroad');
       d.happiness = Math.min(100, d.happiness + 5);
+    } else if (d.target.type === 'scrap_road') {
+      const st = G.map[y][x];
+      if (st === T.PATH || st === T.ROAD || st === T.ASPHALT || st === T.RAILROAD) {
+        if (st !== T.PATH && res) res.stone = (res.stone || 0) + 1;
+        mapSet(x, y, T.DIRT); G.roadGraphDirty = true;
+        G.dirtTiles.push({x, y, year:G.year});
+        log(`${d.name} 🧹 scrapped an orphan road`, 'build', 1, null, d.x, d.y);
+        addEvent(d, 'build', 'Scrapped orphan road');
+      }
     }
     d.target = null; d.timer = 0; d.state = 'idle';
   }
@@ -2017,6 +2099,14 @@ function tickSeason() {
         }
       }
       if (deadIds.length) G.dwarves = G.dwarves.filter(dw => !deadIds.includes(dw.id));
+      // Age dirt tiles back to plains
+      G.dirtTiles = G.dirtTiles.filter(dt => {
+        if (G.year - dt.year >= 1) {
+          if (G.map[dt.y] && G.map[dt.y][dt.x] === T.DIRT) mapSet(dt.x, dt.y, T.PLAINS);
+          return false;
+        }
+        return true;
+      });
       // Factory car manufacturing (once per year)
       for (const city of CITIES) {
         if (!city.res || city.mx === undefined) continue;
@@ -2422,6 +2512,7 @@ function getSerializableState() {
     graves:G.graves,
     yearResolutions:G.yearResolutions,
     suburbs:G.suburbs,
+    dirtTiles:G.dirtTiles,
   };
 }
 
@@ -2454,6 +2545,7 @@ self.onmessage = function(e) {
       G.graves = data.state?.graves || {};
       G.yearResolutions = data.state?.yearResolutions || [];
       G.suburbs = data.state?.suburbs || [];
+      G.dirtTiles = data.state?.dirtTiles || [];
       // Restore dwarf paths/targets to empty (they were stripped for transfer)
       for (const d of G.dwarves) {
         if (!d.path) d.path = [];
@@ -2547,6 +2639,7 @@ self.onmessage = function(e) {
         }
       }
       G.suburbs = saved.suburbs || [];
+      G.dirtTiles = saved.dirtTiles || [];
       // Ensure min population
       for (const city of CITIES) {
         if (city.mx === undefined) continue;
