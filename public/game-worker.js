@@ -8,12 +8,12 @@ const T = {
   MUSHROOM:16,FARM:17,CITY:18,D_MINE:19,D_BUILD:20,D_FARM:21,
   IRON_ORE:22,GOLD_VEIN:23,GEMS:24,BERRY_BUSH:25,HERB_PATCH:26,CLAY:27,
   FISH_SPOT:28,DEER:29,CORAL:30,CRAB:31,ROAD:32,D_ROAD:33,RAILROAD:34,
-  GRAVE:35,ASPHALT:36,FACTORY:37,PATH:38,DIRT:39
+  GRAVE:35,ASPHALT:36,FACTORY:37,PATH:38,DIRT:39,D_UPGRADE:40
 };
 const WALKABLE = new Set([
   T.TUNDRA,T.TAIGA,T.FOREST,T.PLAINS,T.DESERT,T.JUNGLE,T.HILL,T.BEACH,T.MOUNTAIN,
   T.FLOOR,T.STOCKPILE,T.BED,T.TABLE,T.DOOR,T.MUSHROOM,T.FARM,T.CITY,
-  T.D_MINE,T.D_FARM,T.D_ROAD,T.PATH,T.ROAD,T.ASPHALT,T.RAILROAD,
+  T.D_MINE,T.D_FARM,T.D_ROAD,T.D_UPGRADE,T.PATH,T.ROAD,T.ASPHALT,T.RAILROAD,
   T.BERRY_BUSH,T.HERB_PATCH,T.CLAY,T.DEER,T.CRAB,
   T.GRAVE,T.FACTORY,T.DIRT
 ]);
@@ -27,7 +27,7 @@ const TERRAIN_PROPS = {
   [T.HILL]:{speed:2},[T.BEACH]:{speed:1},[T.FLOOR]:{speed:1},[T.WALL]:{speed:0},
   [T.STOCKPILE]:{speed:1},[T.BED]:{speed:1},[T.TABLE]:{speed:1},[T.DOOR]:{speed:1},
   [T.MUSHROOM]:{speed:1},[T.FARM]:{speed:1},[T.CITY]:{speed:1},
-  [T.D_MINE]:{speed:1},[T.D_BUILD]:{speed:0},[T.D_FARM]:{speed:1},[T.D_ROAD]:{speed:1},
+  [T.D_MINE]:{speed:1},[T.D_BUILD]:{speed:0},[T.D_FARM]:{speed:1},[T.D_ROAD]:{speed:1},[T.D_UPGRADE]:{speed:0.7},
   [T.PATH]:{speed:1},[T.ROAD]:{speed:0.7},[T.ASPHALT]:{speed:0.4},[T.IRON_ORE]:{speed:4},[T.GOLD_VEIN]:{speed:4},[T.GEMS]:{speed:4},
   [T.BERRY_BUSH]:{speed:1},[T.HERB_PATCH]:{speed:1},[T.CLAY]:{speed:1},
   [T.FISH_SPOT]:{speed:0},[T.DEER]:{speed:1},[T.CORAL]:{speed:0},[T.CRAB]:{speed:1},
@@ -130,7 +130,7 @@ const G = {
   dwarves:[], usedNames:new Set(),
   animals:[], animalGrid:{},
   ships:[], vehicles:[], stats:{mined:0,built:0,farmed:0},
-  graves:{}, yearResolutions:[], suburbs:[], dirtTiles:[],
+  graves:{}, yearResolutions:[], suburbs:[], dirtTiles:[], upgradeFrom:{},
   homeCity:null, aiCityIndex:0, dwarfGrid:{},
   mapDeltas:{},
 };
@@ -958,11 +958,15 @@ function aiIdle(d) {
     }
   }
   {
-    const rp = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_ROAD, false);
+    const rp = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_ROAD || G.map[y][x] === T.D_UPGRADE, false);
     if (rp) {
       const last = rp[rp.length-1];
-      if (G.map[last[1]][last[0]] === T.D_ROAD) {
+      const tile = G.map[last[1]][last[0]];
+      if (tile === T.D_ROAD) {
         d.target = {type:'road',x:last[0],y:last[1]}; d.path = rp; d.state = 'walk'; return;
+      }
+      if (tile === T.D_UPGRADE) {
+        d.target = {type:'upgrade_road',x:last[0],y:last[1]}; d.path = rp; d.state = 'walk'; return;
       }
     }
   }
@@ -1206,6 +1210,28 @@ function aiBuild(d) {
       log(`${d.name} 🔧 repaired a road gap`, 'build', 2, null, d.x, d.y);
       addEvent(d, 'build', 'Repaired a road gap');
       d.happiness = Math.min(100, d.happiness + 3);
+    } else if (d.target.type === 'upgrade_road' && G.map[y][x] === T.D_UPGRADE) {
+      const key = `${x},${y}`;
+      const orig = G.upgradeFrom[key] ?? T.PATH;
+      delete G.upgradeFrom[key];
+      if (orig === T.PATH && res.stone >= 1) {
+        res.stone -= 1; mapSet(x, y, T.ROAD); G.stats.built++; G.roadGraphDirty = true;
+        log(`${d.name} 🟫 upgraded path to gravel road`, 'build', 1, null, d.x, d.y);
+        addEvent(d, 'build', 'Upgraded path to gravel');
+        d.happiness = Math.min(100, d.happiness + 2);
+      } else if (orig === T.ROAD && res.stone >= 2 && res.iron >= 1) {
+        res.stone -= 2; res.iron -= 1; mapSet(x, y, T.ASPHALT); G.stats.built++; G.roadGraphDirty = true;
+        log(`${d.name} ⬛ upgraded road to asphalt!`, 'build', 2, null, d.x, d.y);
+        addEvent(d, 'build', 'Upgraded road to asphalt');
+        d.happiness = Math.min(100, d.happiness + 3);
+      } else if (orig === T.ASPHALT && res.iron >= 3 && res.wood >= 2) {
+        res.iron -= 3; res.wood -= 2; mapSet(x, y, T.RAILROAD); G.stats.built++; G.roadGraphDirty = true;
+        log(`${d.name} 🛤️ upgraded to railroad!`, 'build', 3, null, d.x, d.y);
+        addEvent(d, 'build', 'Upgraded to railroad');
+        d.happiness = Math.min(100, d.happiness + 5);
+      } else {
+        mapSet(x, y, orig); // revert if can't afford
+      }
     } else if (d.target.type === 'upgrade_road' && G.map[y][x] === T.PATH && res.stone >= 1) {
       res.stone -= 1; mapSet(x, y, T.ROAD); G.stats.built++; G.roadGraphDirty = true;
       log(`${d.name} 🟫 paved path to gravel road`, 'build', 1, null, d.x, d.y);
@@ -1440,7 +1466,7 @@ function autoConnectCities() {
   // A* pathfind on walkable terrain, preferring existing roads
   // Include building tiles so we can path through city centers
   const roadable = new Set([T.PLAINS,T.FOREST,T.TAIGA,T.DESERT,T.TUNDRA,T.HILL,T.BEACH,
-    T.PATH,T.ROAD,T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY,T.FLOOR,T.FARM,T.D_ROAD,
+    T.PATH,T.ROAD,T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY,T.FLOOR,T.FARM,T.D_ROAD,T.D_UPGRADE,
     T.BED,T.STOCKPILE,T.TABLE,T.WALL]);
   const goal = `${cityB.mx},${cityB.my}`;
   const openSet = [{x:cityA.mx, y:cityA.my, g:0, f:0}];
@@ -2681,7 +2707,10 @@ self.onmessage = function(e) {
       if (data.paused !== undefined) G.paused = data.paused;
       break;
     case 'designate':
-      for (const ch of data.changes) { G.map[ch.y][ch.x] = ch.tile; G.mapDeltas[`${ch.x},${ch.y}`] = ch.tile; }
+      for (const ch of data.changes) {
+        if (ch.tile === T.D_UPGRADE) G.upgradeFrom[`${ch.x},${ch.y}`] = G.map[ch.y][ch.x];
+        G.map[ch.y][ch.x] = ch.tile; G.mapDeltas[`${ch.x},${ch.y}`] = ch.tile;
+      }
       break;
     case 'save_request':
       self.postMessage({type:'save_response', state:getSerializableState()});

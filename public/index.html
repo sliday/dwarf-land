@@ -456,7 +456,7 @@ const T = {
   IRON_ORE: 22, GOLD_VEIN: 23, GEMS: 24,
   BERRY_BUSH: 25, HERB_PATCH: 26, CLAY: 27,
   FISH_SPOT: 28, DEER: 29, CORAL: 30, CRAB: 31,
-  ROAD: 32, D_ROAD: 33,
+  ROAD: 32, D_ROAD: 33, D_UPGRADE: 40,
   RAILROAD: 34,
   GRAVE: 35,
   ASPHALT: 36,
@@ -476,7 +476,7 @@ const WALKABLE = new Set([
   T.TUNDRA, T.TAIGA, T.FOREST, T.PLAINS, T.DESERT, T.JUNGLE, T.HILL, T.BEACH,
   T.MOUNTAIN,
   T.FLOOR, T.STOCKPILE, T.BED, T.TABLE, T.DOOR, T.MUSHROOM, T.FARM, T.CITY,
-  T.D_MINE, T.D_FARM, T.D_ROAD, T.PATH, T.ROAD, T.RAILROAD,
+  T.D_MINE, T.D_FARM, T.D_ROAD, T.D_UPGRADE, T.PATH, T.ROAD, T.RAILROAD,
   T.BERRY_BUSH, T.HERB_PATCH, T.CLAY, T.DEER, T.CRAB,
   T.GRAVE,T.FACTORY,T.DIRT
 ]);
@@ -509,6 +509,7 @@ const TERRAIN_PROPS = {
   [T.D_BUILD]:   { speed: 0, desc: 'Designated for building' },
   [T.D_FARM]:    { speed: 1, desc: 'Designated for farming' },
   [T.D_ROAD]:    { speed: 1, desc: 'Designated for road building' },
+  [T.D_UPGRADE]: { speed: 0.7, desc: 'Designated for road upgrade' },
   [T.ROAD]:      { speed: 0.7, desc: 'Gravel road, decent travel' },
   [T.ASPHALT]:   { speed: 0.4, desc: 'Asphalt road, fast travel' },
   [T.IRON_ORE]:  { speed: 4, desc: 'Iron ore deposit' },
@@ -573,7 +574,7 @@ const EMOJI = {
   [T.IRON_ORE]: '⚙️', [T.GOLD_VEIN]: '✨', [T.GEMS]: '💎',
   [T.BERRY_BUSH]: '🫐', [T.HERB_PATCH]: '🌿', [T.CLAY]: '🏺',
   [T.FISH_SPOT]: '🐟', [T.DEER]: '🦌', [T.CORAL]: '🪸', [T.CRAB]: '🦀',
-  [T.PATH]: '👣', [T.ROAD]: '🟫', [T.D_ROAD]: '🚧', [T.ASPHALT]: '⬛', [T.RAILROAD]: null,
+  [T.PATH]: '👣', [T.ROAD]: '🟫', [T.D_ROAD]: '🚧', [T.D_UPGRADE]: '🔺', [T.ASPHALT]: '⬛', [T.RAILROAD]: null,
   [T.GRAVE]: '🪦',
   [T.FACTORY]: '🏭',
   [T.DIRT]: null
@@ -591,7 +592,7 @@ const BG_COLORS = {
   [T.IRON_ORE]: '#8a6a4a', [T.GOLD_VEIN]: '#8a7a20', [T.GEMS]: '#5a3a7a',
   [T.BERRY_BUSH]: '#2a4a2a', [T.HERB_PATCH]: '#3a5a2a', [T.CLAY]: '#9a7a5a',
   [T.FISH_SPOT]: '#1a5a8a', [T.DEER]: '#4a6a3a', [T.CORAL]: '#6a3a5a', [T.CRAB]: '#c4965a',
-  [T.PATH]: '#6a6050', [T.ROAD]: '#8a7a5a', [T.D_ROAD]: '#7a6a4a', [T.ASPHALT]: '#3a3a3a', [T.RAILROAD]: '#3a3a3a',
+  [T.PATH]: '#6a6050', [T.ROAD]: '#8a7a5a', [T.D_ROAD]: '#7a6a4a', [T.D_UPGRADE]: '#8a6a2a', [T.ASPHALT]: '#3a3a3a', [T.RAILROAD]: '#3a3a3a',
   [T.GRAVE]: '#3a3a3a',
   [T.FACTORY]: '#504945',
   [T.DIRT]: '#6a5a3a'
@@ -609,7 +610,7 @@ const TILE_NAMES = {
   [T.IRON_ORE]: '⚙️ Iron Ore', [T.GOLD_VEIN]: '✨ Gold Vein', [T.GEMS]: '💎 Gems',
   [T.BERRY_BUSH]: '🫐 Berry Bush', [T.HERB_PATCH]: '🌿 Herb Patch', [T.CLAY]: '🏺 Clay',
   [T.FISH_SPOT]: '🐟 Fish', [T.DEER]: '🦌 Wild Game', [T.CORAL]: '🪸 Coral', [T.CRAB]: '🦀 Crabs',
-  [T.PATH]: '👣 Dirt Path', [T.ROAD]: '🟫 Gravel Road', [T.D_ROAD]: '🚧 Road (planned)', [T.ASPHALT]: '⬛ Asphalt Road', [T.RAILROAD]: '# Railroad',
+  [T.PATH]: '👣 Dirt Path', [T.ROAD]: '🟫 Gravel Road', [T.D_ROAD]: '🚧 Road (planned)', [T.D_UPGRADE]: '🔺 Upgrade (planned)', [T.ASPHALT]: '⬛ Asphalt Road', [T.RAILROAD]: '# Railroad',
   [T.FACTORY]: '🏭 Factory',
   [T.DIRT]: '🟤 Bare Dirt'
 };
@@ -1034,7 +1035,7 @@ function getRailImg(mask) {
 }
 
 // Road direction rendering — Transport Tycoon style road sprites
-const ROAD_TYPES = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD, T.CITY, T.FACTORY, T.D_ROAD]);
+const ROAD_TYPES = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD, T.CITY, T.FACTORY, T.D_ROAD, T.D_UPGRADE]);
 const roadDirCache = {};
 function getRoadDirImg(t, mask) {
   const key = t + '|' + mask;
@@ -4624,9 +4625,9 @@ function showTerrainInspector(tile) {
     walkLine.textContent = 'Walkable \u2022 Speed: ' + speedLabel + ' (' + props.speed + ')';
   }
   frag.appendChild(walkLine);
-  if (t === T.D_MINE || t === T.D_BUILD || t === T.D_FARM) {
+  if (t === T.D_MINE || t === T.D_BUILD || t === T.D_FARM || t === T.D_UPGRADE) {
     const dLine = document.createElement('div'); dLine.style.cssText = 'font-size:10px;color:#fabd2f;margin-top:2px';
-    dLine.textContent = t === T.D_MINE ? 'Mining designated' : t === T.D_BUILD ? 'Build designated' : 'Farm designated'; frag.appendChild(dLine);
+    dLine.textContent = t === T.D_MINE ? 'Mining designated' : t === T.D_BUILD ? 'Build designated' : t === T.D_UPGRADE ? 'Road upgrade designated' : 'Farm designated'; frag.appendChild(dLine);
   }
   // Show cities ranked by resource for resource tiles
   const resKey = TILE_RESOURCE_KEY[t];
@@ -4774,23 +4775,30 @@ function finalizeDesignation() {
     if (count) log(`🌱 Designated ${count} farm plots`, 'farm');
   } else if (G.mode === 'road') {
     const roadable = new Set([T.PLAINS, T.DESERT, T.TUNDRA, T.HILL, T.BEACH, T.FOREST, T.TAIGA, T.JUNGLE, T.FLOOR, T.MOUNTAIN, T.MUSHROOM]);
+    const upgradeable = new Set([T.PATH, T.ROAD, T.ASPHALT]);
+    let upgradeCount = 0;
     for (let y = s.y1; y <= s.y2; y++)
       for (let gx = s.x1; gx <= s.x2; gx++) {
         const x = wrapX(gx);
         if (roadable.has(G.map[y][x])) { G.map[y][x] = T.D_ROAD; count++; }
+        else if (upgradeable.has(G.map[y][x])) { G.map[y][x] = T.D_UPGRADE; count++; upgradeCount++; }
       }
-    if (count) log(`🛤️ Designated ${count} tiles for road building`, 'build');
+    if (upgradeCount && !count) log(`🔺 Designated ${upgradeCount} road tiles for upgrade`, 'build');
+    else if (upgradeCount) log(`🛤️ Designated ${count - upgradeCount} new + ${upgradeCount} upgrades`, 'build');
+    else if (count) log(`🛤️ Designated ${count} tiles for road building`, 'build');
   }
 
   if (count) {
     G.mapDirty = true;
     if (gameWorker) {
       const changes = [];
-      const target = G.mode === 'mine' ? T.D_MINE : G.mode === 'build' ? T.D_BUILD : G.mode === 'farm' ? T.D_FARM : T.D_ROAD;
       for (let y = s.y1; y <= s.y2; y++)
         for (let gx = s.x1; gx <= s.x2; gx++) {
           const x = wrapX(gx);
-          if (G.map[y][x] === target) changes.push({ x, y, tile: target });
+          const t = G.map[y][x];
+          if (t === T.D_MINE || t === T.D_BUILD || t === T.D_FARM || t === T.D_ROAD || t === T.D_UPGRADE) {
+            changes.push({ x, y, tile: t });
+          }
         }
       if (changes.length) gameWorker.postMessage({ type: 'designate', changes });
     }
