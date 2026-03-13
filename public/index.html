@@ -92,6 +92,8 @@
     scrollbar-width: thin; scrollbar-color: #504945 transparent;
   }
   .log-entry { padding: 2px 0; display: flex; gap: 8px; }
+  .log-entry[data-lx] { border-radius: 3px; padding: 2px 4px; margin: 0 -4px; }
+  .log-entry[data-lx]:hover { background: rgba(255,255,255,0.07); }
   .log-entry .ts { color: #665c54; min-width: 36px; flex-shrink: 0; }
   .log-entry.t-mine .msg { color: #fabd2f; }
   .log-entry.t-build .msg { color: #83a598; }
@@ -3124,7 +3126,7 @@ function tickSeason() {
       // Per-city harvest based on nearby farms and resource tiles
       for (const city of CITIES) {
         if (!city.res || city.mx === undefined) continue;
-        let farmCount = 0, fishCount = 0, berryCount = 0, herbCount = 0;
+        let farmCount = 0, fishCount = 0, berryCount = 0, herbCount = 0, bedCount = 0, tableCount = 0;
         const r = 15;
         for (let dy = -r; dy <= r; dy++) {
           for (let dx = -r; dx <= r; dx++) {
@@ -3135,8 +3137,12 @@ function tickSeason() {
             else if (t === T.FISH_SPOT || t === T.CRAB) fishCount++;
             else if (t === T.BERRY_BUSH) berryCount++;
             else if (t === T.HERB_PATCH) herbCount++;
+            else if (t === T.BED) bedCount++;
+            else if (t === T.TABLE) tableCount++;
           }
         }
+        city.res.beds = bedCount;
+        city.res.tables = tableCount;
         const cityPop = G.dwarves.filter(d => d.cityId === city.id).length;
         const harvest = 10 + farmCount * 3 + fishCount * 2 + berryCount + cityPop * 2;
         city.res.food += harvest;

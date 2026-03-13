@@ -433,7 +433,7 @@ function spawnDwarfAtCity(city) {
   }
   const d = createDwarf(x, y, city.id);
   G.dwarves.push(d);
-  log(`${d.name} has arrived at ${city.name}!`, 'system', 3);
+  log(`${d.name} has arrived at ${city.name}!`, 'system', 3, null, d.x, d.y);
   backstoryQueue.push(d);
 }
 function spawnDwarf() {
@@ -492,14 +492,14 @@ function tickDwarf(d) {
       if (land) {
         d.x = land[0]; d.y = land[1];
         d.state = 'idle'; d.target = null; d.path = [];
-        log(`${d.name} was rescued from the sea!`, 'system', 3);
+        log(`${d.name} was rescued from the sea!`, 'system', 3, null, d.x, d.y);
       }
     }
   }
   // HP system
   if (!d.maxHp) { d.maxHp = 8 + Math.floor((d.stats?.CON||10)/3); d.hp = d.hp ?? d.maxHp; d.ac = d.ac ?? 10+Math.floor(((d.stats?.DEX||10)-10)/2); }
   if (d.hp <= 0) { d.state = 'dead'; d.dead = true; placeGrave(d, 'Died in combat'); log(`${d.name} \u2620\uFE0F has died!`, 'system', 4, null, d.x, d.y); addEvent(d, 'death', 'Died in combat'); return; }
-  if (d.poisonTicks > 0) { d.hp -= 1; d.poisonTicks--; if (d.poisonTicks === 0) log(`${d.name} recovered from poison`, 'system', 2); }
+  if (d.poisonTicks > 0) { d.hp -= 1; d.poisonTicks--; if (d.poisonTicks === 0) log(`${d.name} recovered from poison`, 'system', 2, null, d.x, d.y); }
   if (d.hp < d.maxHp && d.hunger > 20 && d.energy > 30 && G.tick % 50 === 0) d.hp = Math.min(d.maxHp, d.hp + 1);
 
   // Flee from dangerous animals (low HP or weak STR)
@@ -542,7 +542,7 @@ function tickDwarf(d) {
     }
     if (d.starveTicks >= STARVE_IMMOBILE && d.state !== 'starving') {
       d.state = 'starving'; d.target = null; d.path = [];
-      log(`${d.name} \uD83D\uDE35 is too weak to move \u2014 needs food!`, 'system', 3);
+      log(`${d.name} \uD83D\uDE35 is too weak to move \u2014 needs food!`, 'system', 3, null, d.x, d.y);
     }
   } else { d.starveTicks = 0; }
   if (d.state === 'starving') { tryShareFood(d); return; }
@@ -607,7 +607,7 @@ function tryShareFood(d) {
     const shareAmt = Math.min(other.carryItems.food, 2);
     other.carryItems.food -= shareAmt; other.carrying -= shareAmt;
     d.hunger = Math.min(100, d.hunger + shareAmt * 12);
-    log(`${other.name} \uD83E\uDD1D shared food with ${d.name}`, 'eat', 2);
+    log(`${other.name} \uD83E\uDD1D shared food with ${d.name}`, 'eat', 2, null, d.x, d.y);
     addEvent(d, 'social', `${other.name} shared food`);
     addEvent(other, 'social', `Shared food with ${d.name}`);
     d.happiness = Math.min(100, d.happiness + 3);
@@ -638,7 +638,7 @@ function tryTrade(d) {
       if (get2 && d.inventory.length < MAX_INVENTORY) d.inventory.push(get2);
       const gaveStr = give ? give.emoji+give.name : '?';
       const gotStr = [get1,get2].filter(Boolean).map(i => i.emoji+i.name).join(', ') || '?';
-      log(`${d.name} \uD83E\uDD1D outsmarted ${other.name}: gave ${gaveStr}, got ${gotStr}`, 'trade', 2);
+      log(`${d.name} \uD83E\uDD1D outsmarted ${other.name}: gave ${gaveStr}, got ${gotStr}`, 'trade', 2, null, d.x, d.y);
       addEvent(d, 'trade', `Gave ${gaveStr} to ${other.name}, got ${gotStr} (favorable)`);
       addEvent(other, 'trade', `Gave ${gotStr} to ${d.name}, got ${gaveStr} (unfavorable)`);
     } else if (intDiff <= -5) {
@@ -650,7 +650,7 @@ function tryTrade(d) {
       if (get && d.inventory.length < MAX_INVENTORY) d.inventory.push(get);
       const gaveStr = [give1,give2].filter(Boolean).map(i => i.emoji+i.name).join(', ') || '?';
       const gotStr = get ? get.emoji+get.name : '?';
-      log(`${other.name} \uD83E\uDD1D outsmarted ${d.name}: ${d.name} gave ${gaveStr}, got ${gotStr}`, 'trade', 2);
+      log(`${other.name} \uD83E\uDD1D outsmarted ${d.name}: ${d.name} gave ${gaveStr}, got ${gotStr}`, 'trade', 2, null, d.x, d.y);
       addEvent(d, 'trade', `Gave ${gaveStr} to ${other.name}, got ${gotStr} (unfavorable)`);
       addEvent(other, 'trade', `Gave ${gotStr} to ${d.name}, got ${gaveStr} (favorable)`);
     } else {
@@ -660,7 +660,7 @@ function tryTrade(d) {
       if (get && d.inventory.length < MAX_INVENTORY) d.inventory.push(get);
       const gaveStr = give ? give.emoji+give.name : '?';
       const gotStr = get ? get.emoji+get.name : '?';
-      log(`${d.name} \uD83E\uDD1D traded with ${other.name}: ${gaveStr} \u2194 ${gotStr}`, 'trade', 2);
+      log(`${d.name} \uD83E\uDD1D traded with ${other.name}: ${gaveStr} \u2194 ${gotStr}`, 'trade', 2, null, d.x, d.y);
       addEvent(d, 'trade', `Traded ${gaveStr} for ${gotStr} with ${other.name}`);
       addEvent(other, 'trade', `Traded ${gotStr} for ${gaveStr} with ${d.name}`);
     }
@@ -830,7 +830,7 @@ function aiIdle(d) {
           d.carryItems.food -= amt; d.carrying -= amt;
           starving.hunger = Math.min(100, starving.hunger + amt * 12);
           starving.starveTicks = 0; starving.state = 'idle';
-          log(`${d.name} \uD83E\uDD1D rescued ${starving.name} with food!`, 'eat', 2);
+          log(`${d.name} \uD83E\uDD1D rescued ${starving.name} with food!`, 'eat', 2, null, d.x, d.y);
           d.target = null;
         }
         return;
@@ -992,7 +992,7 @@ function aiWalk(d) {
     else if (tt === 'craft') d.state = 'crafting';
     else if (tt === 'deposit') {
       const total = depositCarry(d);
-      if (total) { log(`${d.name} \uD83D\uDCE6 deposited ${total} items at stockpile`, 'haul', 2); addEvent(d, 'haul', `Deposited ${total} items`); }
+      if (total) { log(`${d.name} \uD83D\uDCE6 deposited ${total} items at stockpile`, 'haul', 2, null, d.x, d.y); addEvent(d, 'haul', `Deposited ${total} items`); }
       d.target = null; d.timer = 0; d.state = 'idle'; return;
     } else if (tt === 'rescue_feed') {
       const starving = G.dwarves.find(o => o.id === d.target.dwarfId);
@@ -1001,7 +1001,7 @@ function aiWalk(d) {
         d.carryItems.food -= amt; d.carrying -= amt;
         starving.hunger = Math.min(100, starving.hunger + amt * 12);
         starving.starveTicks = 0; starving.state = 'idle';
-        log(`${d.name} \uD83E\uDD1D rescued ${starving.name} with food!`, 'eat', 2);
+        log(`${d.name} \uD83E\uDD1D rescued ${starving.name} with food!`, 'eat', 2, null, d.x, d.y);
       }
       d.target = null; d.state = 'idle'; return;
     } else if (tt === 'trade_caravan') {
@@ -1053,14 +1053,14 @@ function aiMine(d) {
       let extra = '';
       if (tile === T.MOUNTAIN && Math.random() < 0.4) { addCarry(d, 'iron', 1); extra += ' +1 iron!'; }
       if (tile === T.MOUNTAIN && Math.random() < 0.05) { addCarry(d, 'gold', 1); extra += ' +1 gold!'; }
-      log(`${d.name} \u26cf\uFE0F mined ${stoneAmt} stone${extra}`, 'mine', 1);
+      log(`${d.name} \u26cf\uFE0F mined ${stoneAmt} stone${extra}`, 'mine', 1, null, d.x, d.y);
       addEvent(d, 'mine', `Mined ${stoneAmt} stone${extra}`);
       d.happiness = Math.min(100, d.happiness + 2);
       tryCraftInventoryGain(d, tile);
     } else if (d.target.type === 'chop' && (tile === T.FOREST || tile === T.TAIGA || tile === T.JUNGLE)) {
       mapSet(x, y, T.PLAINS);
       addCarry(d, 'wood', 3);
-      log(`${d.name} \uD83EA93 chopped wood`, 'haul', 1);
+      log(`${d.name} \uD83EA93 chopped wood`, 'haul', 1, null, d.x, d.y);
       addEvent(d, 'chop', 'Chopped wood');
       tryCraftInventoryGain(d, tile);
     }
@@ -1080,32 +1080,32 @@ function aiBuild(d) {
     if (!res) { d.state = 'idle'; d.target = null; return; }
     if (G.map[y][x] === T.D_BUILD && res.stone >= 2) {
       res.stone -= 2; mapSet(x, y, T.WALL); G.stats.built++;
-      log(`${d.name} 🧱 built a wall`, 'build', 1);
+      log(`${d.name} 🧱 built a wall`, 'build', 1, null, d.x, d.y);
       addEvent(d, 'build', 'Built a wall');
       d.happiness = Math.min(100, d.happiness + 3);
     } else if (G.map[y][x] === T.D_ROAD) {
       mapSet(x, y, T.PATH); G.stats.built++; G.roadGraphDirty = true;
-      log(`${d.name} 👣 cleared a dirt path`, 'build', 1);
+      log(`${d.name} 👣 cleared a dirt path`, 'build', 1, null, d.x, d.y);
       addEvent(d, 'build', 'Cleared a path');
       d.happiness = Math.min(100, d.happiness + 1);
     } else if (d.target.type === 'fix_road' && isWalkable(x, y) && G.map[y][x] !== T.PATH && G.map[y][x] !== T.ROAD && G.map[y][x] !== T.ASPHALT && G.map[y][x] !== T.RAILROAD) {
       mapSet(x, y, T.PATH); G.stats.built++; G.roadGraphDirty = true;
-      log(`${d.name} 🔧 repaired a road gap`, 'build', 2);
+      log(`${d.name} 🔧 repaired a road gap`, 'build', 2, null, d.x, d.y);
       addEvent(d, 'build', 'Repaired a road gap');
       d.happiness = Math.min(100, d.happiness + 3);
     } else if (d.target.type === 'upgrade_road' && G.map[y][x] === T.PATH && res.stone >= 1) {
       res.stone -= 1; mapSet(x, y, T.ROAD); G.stats.built++; G.roadGraphDirty = true;
-      log(`${d.name} 🟫 paved path to gravel road`, 'build', 1);
+      log(`${d.name} 🟫 paved path to gravel road`, 'build', 1, null, d.x, d.y);
       addEvent(d, 'build', 'Paved path to gravel');
       d.happiness = Math.min(100, d.happiness + 2);
     } else if (d.target.type === 'upgrade_road' && G.map[y][x] === T.ROAD && res.stone >= 2 && res.iron >= 1) {
       res.stone -= 2; res.iron -= 1; mapSet(x, y, T.ASPHALT); G.stats.built++; G.roadGraphDirty = true;
-      log(`${d.name} ⬛ paved road to asphalt!`, 'build', 2);
+      log(`${d.name} ⬛ paved road to asphalt!`, 'build', 2, null, d.x, d.y);
       addEvent(d, 'build', 'Paved road to asphalt');
       d.happiness = Math.min(100, d.happiness + 3);
     } else if (d.target.type === 'upgrade_road' && G.map[y][x] === T.ASPHALT && res.iron >= 3 && res.wood >= 2) {
       res.iron -= 3; res.wood -= 2; mapSet(x, y, T.RAILROAD); G.stats.built++; G.roadGraphDirty = true;
-      log(`${d.name} 🛤️ upgraded to railroad!`, 'build', 3);
+      log(`${d.name} 🛤️ upgraded to railroad!`, 'build', 3, null, d.x, d.y);
       addEvent(d, 'build', 'Upgraded to railroad');
       d.happiness = Math.min(100, d.happiness + 5);
     }
@@ -1121,7 +1121,7 @@ function aiFarm(d) {
     const {x,y} = d.target;
     if (G.map[y][x] === T.D_FARM) {
       mapSet(x, y, T.FARM); G.stats.farmed++;
-      log(`${d.name} 🌱 planted a farm`, 'farm', 1);
+      log(`${d.name} 🌱 planted a farm`, 'farm', 1, null, d.x, d.y);
       addEvent(d, 'farm', 'Planted a farm');
       d.happiness = Math.min(100, d.happiness + 2);
     }
@@ -1140,43 +1140,43 @@ function aiGather(d) {
       switch (tile) {
         case T.BERRY_BUSH:
           addCarry(d,'food',3); mapSet(x,y,T.PLAINS);
-          log(`${d.name} \uD83E\uDED0 gathered berries (+3 food)`, 'farm', 1);
+          log(`${d.name} \uD83E\uDED0 gathered berries (+3 food)`, 'farm', 1, null, d.x, d.y);
           addEvent(d,'gather','Gathered berries'); d.hunger = Math.min(100,d.hunger+15); break;
         case T.HERB_PATCH:
           addCarry(d,'herbs',2); mapSet(x,y,T.PLAINS);
-          log(`${d.name} \uD83C\uDF3F gathered herbs (+2 herbs)`, 'farm', 1);
+          log(`${d.name} \uD83C\uDF3F gathered herbs (+2 herbs)`, 'farm', 1, null, d.x, d.y);
           addEvent(d,'gather','Gathered herbs'); break;
         case T.IRON_ORE:
           addCarry(d,'iron',2); addCarry(d,'stone',1); mapSet(x,y,T.HILL);
-          log(`${d.name} \u2699\uFE0F mined iron ore (+2 iron)`, 'mine', 2);
+          log(`${d.name} \u2699\uFE0F mined iron ore (+2 iron)`, 'mine', 2, null, d.x, d.y);
           addEvent(d,'gather','Mined iron ore'); break;
         case T.GOLD_VEIN:
           addCarry(d,'gold',2); mapSet(x,y,T.MOUNTAIN);
-          log(`${d.name} \u2728 found gold (+2 gold)`, 'mine', 2);
+          log(`${d.name} \u2728 found gold (+2 gold)`, 'mine', 2, null, d.x, d.y);
           addEvent(d,'gather','Mined gold vein'); break;
         case T.GEMS:
           addCarry(d,'gold',5); mapSet(x,y,T.MOUNTAIN);
-          log(`${d.name} \uD83D\uDC8E discovered gems! (+5 gold)`, 'mine', 3);
+          log(`${d.name} \uD83D\uDC8E discovered gems! (+5 gold)`, 'mine', 3, null, d.x, d.y);
           addEvent(d,'gather','Discovered gems!'); d.happiness = Math.min(100,d.happiness+10); break;
         case T.FISH_SPOT:
           addCarry(d,'food',4); mapSet(x,y,T.OCEAN);
-          log(`${d.name} \uD83D\uDC1F caught fish (+4 food)`, 'farm', 2);
+          log(`${d.name} \uD83D\uDC1F caught fish (+4 food)`, 'farm', 2, null, d.x, d.y);
           addEvent(d,'gather','Caught fish'); d.hunger = Math.min(100,d.hunger+10); break;
         case T.CRAB:
           addCarry(d,'food',2); mapSet(x,y,T.BEACH);
-          log(`${d.name} \uD83E\uDD80 caught crabs (+2 food)`, 'farm', 2);
+          log(`${d.name} \uD83E\uDD80 caught crabs (+2 food)`, 'farm', 2, null, d.x, d.y);
           addEvent(d,'gather','Caught crabs'); d.hunger = Math.min(100,d.hunger+8); break;
         case T.DEER:
           addCarry(d,'food',6); addCarry(d,'cloth',1); mapSet(x,y,T.PLAINS);
-          log(`${d.name} \uD83E\uDD8C hunted game (+6 food, +1 cloth)`, 'mine', 2);
+          log(`${d.name} \uD83E\uDD8C hunted game (+6 food, +1 cloth)`, 'mine', 2, null, d.x, d.y);
           addEvent(d,'gather','Hunted wild game'); break;
         case T.CLAY:
           addCarry(d,'stone',2); mapSet(x,y,T.BEACH);
-          log(`${d.name} \uD83C\uDFFA gathered clay (+2 stone)`, 'haul', 2);
+          log(`${d.name} \uD83C\uDFFA gathered clay (+2 stone)`, 'haul', 2, null, d.x, d.y);
           addEvent(d,'gather','Gathered clay'); break;
         case T.CORAL:
           addCarry(d,'gold',1); mapSet(x,y,T.OCEAN);
-          log(`${d.name} \uD83E\uDEB8 harvested coral (+1 gold)`, 'farm', 2);
+          log(`${d.name} \uD83E\uDEB8 harvested coral (+1 gold)`, 'farm', 2, null, d.x, d.y);
           addEvent(d,'gather','Harvested coral'); break;
       }
     }
@@ -1211,7 +1211,7 @@ async function drainCraftQueue() {
       if (res.ok && res.result) {
         d.inventory.splice(0,2);
         addInventoryItem(d, res.result);
-        log(`${d.name} \u2728 combined ${item1.emoji}${item1.name} + ${item2.emoji}${item2.name} = ${res.result.emoji}${res.result.name}!`, 'craft', 2);
+        log(`${d.name} \u2728 combined ${item1.emoji}${item1.name} + ${item2.emoji}${item2.name} = ${res.result.emoji}${res.result.name}!`, 'craft', 2, null, d.x, d.y);
         addEvent(d, 'craft', `Combined ${item1.name} + ${item2.name} = ${res.result.name}`);
         d.happiness = Math.min(100, d.happiness + 5);
         const city = cityOf(d);
@@ -1223,7 +1223,7 @@ async function drainCraftQueue() {
       const name = (item1.name.slice(0,3)+item2.name.slice(-3)).slice(0,20);
       const fallback = {emoji:emojis[Math.floor(Math.random()*emojis.length)],name};
       addInventoryItem(d, fallback);
-      log(`${d.name} \u2728 crafted ${fallback.emoji}${fallback.name}`, 'craft', 2);
+      log(`${d.name} \u2728 crafted ${fallback.emoji}${fallback.name}`, 'craft', 2, null, d.x, d.y);
       addEvent(d, 'craft', `Crafted ${fallback.name}`);
     }
     await new Promise(r => setTimeout(r, 1500+Math.random()*2000));
@@ -1519,7 +1519,7 @@ function boardShip(d, ship, destCity) {
     d.carryItems = {}; d.carrying = 0;
   }
   d.state = 'sailing'; d.target = {type:'sail',shipId:ship.id};
-  log(`${d.name} ⛵ set sail from ${cityOf(d).name} to ${destCity.name}!`, 'system', 3);
+  log(`${d.name} ⛵ set sail from ${cityOf(d).name} to ${destCity.name}!`, 'system', 3, null, d.x, d.y);
   addEvent(d, 'sail', `Boarded ship to ${destCity.name}`);
   return true;
 }
@@ -1537,7 +1537,7 @@ function aiSail(d) {
       const cargoAmt = shipCargo(ship);
       ship.cargo = {}; ship.cargoTotal = 0;
       d.cityId = destCity.id; ship.captainId = null;
-      log(`${d.name} ⚓ arrived at ${destCity.name}${cargoAmt > 0 ? ` with ${cargoAmt} goods` : ''}!`, 'system', 3);
+      log(`${d.name} ⚓ arrived at ${destCity.name}${cargoAmt > 0 ? ` with ${cargoAmt} goods` : ''}!`, 'system', 3, null, d.x, d.y);
       addEvent(d, 'sail', `Arrived at ${destCity.name}`);
     }
     ship.target = null; d.state = 'idle'; d.target = null;
@@ -1605,7 +1605,7 @@ function tryFoundCity(d) {
   d.cityId = newId; partner.cityId = newId;
   d.state = 'idle'; d.target = null; d.path = [];
   partner.state = 'idle'; partner.target = null; partner.path = [];
-  log(`🏕️ ${d.name} and ${partner.name} founded ${newCity.name}!`, 'system', 5);
+  log(`🏕️ ${d.name} and ${partner.name} founded ${newCity.name}!`, 'system', 5, null, d.x, d.y);
   addEvent(d, 'found', `Founded ${newCity.name}`);
   addEvent(partner, 'found', `Founded ${newCity.name}`);
   return true;
@@ -1745,7 +1745,7 @@ function aiSeekFood(d) {
     d.timer = 0; return;
   }
   if (res.food > 0) { d.target = {type:'eat',src:'stockpile'}; d.state = 'eating'; d.timer = 0; return; }
-  log(`${d.name} \uD83D\uDE2B is starving!`, 'system', 3);
+  log(`${d.name} \uD83D\uDE2B is starving!`, 'system', 3, null, d.x, d.y);
   addEvent(d, 'starve', 'Starving - no food available');
   d.state = 'wander'; d.timer = 40+Math.floor(Math.random()*40);
 }
@@ -1764,13 +1764,13 @@ function aiEat(d) {
         const amt = src === 'mushroom' ? 40 : src === 'berry' ? 35 : 25;
         d.hunger = Math.min(100, d.hunger + Math.round(amt * statMod(effectiveStat(d, 'WIS'))));
         const emoji = src === 'mushroom' ? '🍄' : src === 'berry' ? '🫐' : '🦀';
-        log(`${d.name} ${emoji} ate ${src === 'mushroom' ? 'a mushroom' : src === 'berry' ? 'berries' : 'crabs'}`, 'eat', 1);
+        log(`${d.name} ${emoji} ate ${src === 'mushroom' ? 'a mushroom' : src === 'berry' ? 'berries' : 'crabs'}`, 'eat', 1, null, d.x, d.y);
         addEvent(d, 'eat', `Ate ${src}`);
       }
     } else if (res.food > 0) {
       res.food--;
       d.hunger = Math.min(100, d.hunger + Math.round(35 * statMod(effectiveStat(d, 'WIS'))));
-      log(`${d.name} 🍖 ate from stockpile`, 'eat', 1);
+      log(`${d.name} 🍖 ate from stockpile`, 'eat', 1, null, d.x, d.y);
       addEvent(d, 'eat', 'Ate from stockpile');
     }
     d.happiness = Math.min(100, d.happiness + 5);
@@ -1793,7 +1793,7 @@ function aiSleep(d) {
   const recoveryRate = 1.5 * statMod(effectiveStat(d, 'CON'));
   d.energy = Math.min(100, d.energy + recoveryRate);
   if (d.energy >= 90 || d.timer >= 40) {
-    log(`${d.name} 😴 woke up`, 'sleep', 1);
+    log(`${d.name} 😴 woke up`, 'sleep', 1, null, d.x, d.y);
     addEvent(d, 'sleep', 'Slept and recovered energy');
     d.happiness = Math.min(100, d.happiness + 5);
     d.target = null; d.timer = 0; d.state = 'idle';
@@ -1831,7 +1831,7 @@ function animalCombat(a, d) {
       if (dmg < 1) dmg = 1;
       d.hp -= dmg;
       if (String(t.dmg).includes('+poison')) d.poisonTicks = (d.poisonTicks||0) + 3;
-      log(`${t.emoji} ${a.type} hit ${d.name} for ${dmg} dmg!`, 'combat', 2);
+      log(`${t.emoji} ${a.type} hit ${d.name} for ${dmg} dmg!`, 'combat', 2, null, d.x, d.y);
       if (d.hp <= 0) {
         d.dead = true; d.state = 'dead'; placeGrave(d, `Killed by a ${a.type}`);
         log(`${d.name} \u2620\uFE0F was killed by a ${a.type}!`, 'system', 4, null, d.x, d.y);
@@ -1848,7 +1848,7 @@ function animalCombat(a, d) {
       let dmg = rollD(8) + strMod;
       if (dmg < 1) dmg = 1;
       a.hp -= dmg;
-      log(`${d.name} hit ${t.emoji} ${a.type} for ${dmg} dmg!`, 'combat', 2);
+      log(`${d.name} hit ${t.emoji} ${a.type} for ${dmg} dmg!`, 'combat', 2, null, d.x, d.y);
       if (a.hp <= 0) {
         a.dead = true;
         const foodGain = t.food;
@@ -1857,7 +1857,7 @@ function animalCombat(a, d) {
           if (city?.res) city.res.food += foodGain;
           d.hunger = Math.min(100, d.hunger + foodGain * 5);
         }
-        log(`${d.name} killed a ${t.emoji} ${a.type}!`, 'combat', 3);
+        log(`${d.name} killed a ${t.emoji} ${a.type}!`, 'combat', 3, null, d.x, d.y);
         addEvent(d, 'combat', `Killed a ${a.type}`);
         d.happiness = Math.min(100, d.happiness + 2);
       }
@@ -1981,7 +1981,7 @@ function tickAnimals() {
           a.owner = d.id;
           d.pet = a.id;
           d.happiness = Math.min(100, d.happiness + 5);
-          log(`${d.name} adopted a ${t.emoji} ${a.type}!`, 'system', 3);
+          log(`${d.name} adopted a ${t.emoji} ${a.type}!`, 'system', 3, null, d.x, d.y);
           addEvent(d, 'social', `Adopted a ${a.type}`);
           break;
         }
@@ -2083,7 +2083,7 @@ function tickSeason() {
     if (G.season === 0 || G.season === 1) {
       for (const city of [...CITIES, ...G.suburbs]) {
         if (!city.res || city.mx === undefined) continue;
-        let farmCount=0, fishCount=0, berryCount=0, herbCount=0;
+        let farmCount=0, fishCount=0, berryCount=0, herbCount=0, bedCount=0, tableCount=0;
         const r = 15;
         for (let dy = -r; dy <= r; dy++)
           for (let dx = -r; dx <= r; dx++) {
@@ -2093,7 +2093,11 @@ function tickSeason() {
             else if (t === T.FISH_SPOT || t === T.CRAB) fishCount++;
             else if (t === T.BERRY_BUSH) berryCount++;
             else if (t === T.HERB_PATCH) herbCount++;
+            else if (t === T.BED) bedCount++;
+            else if (t === T.TABLE) tableCount++;
           }
+        city.res.beds = bedCount;
+        city.res.tables = tableCount;
         const cityPop = G.dwarves.filter(d => d.cityId === city.id).length;
         const harvest = 10 + farmCount*3 + fishCount*2 + berryCount + cityPop*2;
         city.res.food += harvest;
