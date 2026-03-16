@@ -4009,15 +4009,24 @@ function render() {
     for (const offset of [0, MAP_W, -MAP_W]) {
       const px = (ship.x + offset) * TILE - G.cam.x;
       const py = ship.y * TILE - G.cam.y;
-      if (px < -TILE || py < -TILE || px > w + TILE || py > h + TILE) continue;
+      if (px < -TILE * 2 || py < -TILE * 2 || px > w + TILE * 2 || py > h + TILE * 2) continue;
+      const cx = px + TILE / 2, cy = py + TILE / 2;
+      // White background circle so ship is visible on ocean
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.beginPath(); ctx.arc(cx, cy, TILE * 0.55, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#504945'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(cx, cy, TILE * 0.55, 0, Math.PI * 2); ctx.stroke();
       try { ctx.drawImage(getEmojiImg('⛵'), px, py); } catch (e) {}
       if (inspShipId === ship.id) {
-        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 300);
-        ctx.strokeStyle = `rgba(131,165,152,${0.4 + pulse * 0.5})`;
+        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
+        // Outer glow
+        ctx.strokeStyle = `rgba(250,189,47,${0.5 + pulse * 0.5})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(cx, cy, TILE + pulse * 5, 0, Math.PI * 2); ctx.stroke();
+        // Inner ring
+        ctx.strokeStyle = `rgba(251,241,199,${0.6 + pulse * 0.4})`;
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(px + TILE / 2, py + TILE / 2, TILE * 0.8 + pulse * 3, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.beginPath(); ctx.arc(cx, cy, TILE * 0.7, 0, Math.PI * 2); ctx.stroke();
       }
       break;
     }
