@@ -229,7 +229,7 @@
   .mobile .hud-stat .label { font-size: 8px; }
   @media (max-width: 430px) {
     .mobile #hud-sponsored-wrap { display: none; }
-    .mobile #hud-ships-wrap { display: none; }
+    .mobile #hud-travel-wrap { display: none; }
     .mobile .hud-stat .value#h-res { font-size: 11px; }
     .mobile .hud-stat .value#h-city { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   }
@@ -336,7 +336,7 @@
   </div>
   <div class="hud-stat" id="hud-pop-wrap"><div class="label">Dwarves</div><div class="value" id="h-pop">0</div></div>
   <div class="hud-stat" id="hud-res-wrap"><div class="label">Resources</div><div class="value" id="h-res">-</div></div>
-  <div class="hud-stat" id="hud-ships-wrap" title="Click to see ships"><div class="label">Ships</div><div class="value" id="h-ships">⛵ 0</div></div>
+  <div class="hud-stat" id="hud-travel-wrap" title="Click to see traveling dwarves"><div class="label">Travel</div><div class="value" id="h-travel">🚶 0</div></div>
   <div class="hud-stat" id="hud-year-wrap"><div class="label">Year</div><div class="value" id="h-year">1</div></div>
   <div class="hud-stat" id="hud-sponsored-wrap" title="Click to see sponsored dwarves"><div class="label">Sponsored</div><div class="value" id="h-sponsored" style="color:#fabd2f">$0</div></div>
 </div>
@@ -954,8 +954,6 @@ const G = {
   map: [], tick: 0, speed: 1, paused: false,
   year: 1, season: 0,
   dwarves: [], usedNames: new Set(),
-  ships: [],
-  vehicles: [],
   animals: [],
   stats: { mined: 0, built: 0, farmed: 0 },
   mapDeltas: {},
@@ -1640,22 +1638,6 @@ function generateMap() {
     }
   }
 
-  // Spawn starting ships at coastal cities
-  for (const city of placedCities) {
-    let launchX = null, launchY = null;
-    for (let dy = -3; dy <= 3 && launchX === null; dy++)
-      for (let dx = -3; dx <= 3 && launchX === null; dx++) {
-        const x = wrapX(city.mx + dx), y = city.my + dy;
-        if (y >= 0 && y < MAP_H && isWater(x, y)) { launchX = x; launchY = y; }
-      }
-    if (launchX !== null) {
-      for (let i = 0; i < 2; i++) {
-        const ship = createShip(launchX, launchY, null, city.id);
-        G.ships.push(ship);
-      }
-    }
-  }
-
   // Center camera on home
   G.cam.x = hx * TILE - canvas.width / 2;
   G.cam.y = hy * TILE - canvas.height / 2;
@@ -1936,7 +1918,7 @@ function findNearbyLand(cx, cy) {
 }
 
 function tickDwarf(d) {
-  if (d.state !== 'sailing' && !isWalkable(d.x, d.y)) {
+  if (d.state !== 'traveling' && !isWalkable(d.x, d.y)) {
     const city = cityOf(d);
     if (city.mx !== undefined) {
       const land = findNearbyLand(city.mx, city.my) || findNearbyLand(d.x, d.y);
@@ -2005,7 +1987,7 @@ function tickDwarf(d) {
     case 'hauling': aiWalk(d); break;
     case 'seek_craft': aiSeekCraft(d); break;
     case 'crafting': aiCraft(d); break;
-    case 'sailing': aiSail(d); break;
+    case 'traveling': aiWalk(d); break;
     case 'going_rescue': aiWalk(d); break;
   }
 }
@@ -2295,10 +2277,6 @@ function aiIdle(d) {
   // Very rare: ambitious dwarves with full carry may found a new city
   if (Math.random() < 0.005 && (d.carrying || 0) >= carryCapacity(d)) {
     if (tryFoundCity(d)) return;
-  }
-  // Adventurous or ambitious dwarves may try sailing
-  if (Math.random() < 0.02 && (d.ambition ?? 50) > 60) {
-    if (trySeaSailing(d)) return;
   }
   if (Math.random() < 0.03 && tryTradeCaravan(d)) return;
 
@@ -2608,11 +2586,7 @@ function aiCraft(d) {
 // ---- Ships ----
 const SHIP_COST = { wood: 10, cloth: 3, iron: 2 };
 const SHIP_CARGO_MAX = 20;
-const VEHICLE_TYPES = {
-  cart:  { emoji:'\uD83D\uDC34', capacity:8,  name:'Horse Cart' },
-  car:   { emoji:'\uD83D\uDE97', capacity:15, name:'Car' },
-  train: { emoji:'\uD83D\uDE82', capacity:40, name:'Train' },
-};
+const TRAVEL_EMOJIS = { walk:'🚶', cart:'🐴', car:'🚗', train:'🚂', ship:'⛵' };
 
 function shipNameForCity(cityId) {
   const city = cityById(cityId);
@@ -2737,19 +2711,6 @@ function tickShips() {
   for (const ship of G.ships) tickShip(ship);
 }
 
-// ---- Vehicles (fallback single-thread) ----
-function tickVehicleFB(v) {
-  if (v.state !== 'en_route' || v.path.length === 0) return;
-  const [nx,ny] = v.path.shift();
-  v.x = nx; v.y = ny;
-  const driver = v.driverId ? G.dwarves.find(d => d.id === v.driverId) : null;
-  if (driver) { driver.x = nx; driver.y = ny; }
-  if (v.path.length === 0) { v.state = 'parked'; }
-}
-function tickVehicles() {
-  for (const v of G.vehicles) tickVehicleFB(v);
-}
-
 // ---- Animals (fallback single-thread) ----
 const ANIMAL_TYPES_FB = {
   cat:{hp:4,ac:12,atk:0,dmg:0,speed:0.3,food:1,danger:false,pet:true,terrain:[T.PLAINS,T.FOREST,T.ROAD]},
@@ -2833,7 +2794,7 @@ function tickAnimals() {
   G.animals = G.animals.filter(a => !a.dead);
   // Dwarf combat with animals on same tile
   for (const d of G.dwarves) {
-    if (d.dead || d.state==='sailing') continue;
+    if (d.dead || d.state==='traveling') continue;
     for (const a of (G.animalGrid?.[`${d.x>>3},${d.y>>3}`]||[])) {
       if (a.dead||a.owner||!ANIMAL_TYPES_FB[a.type]?.danger) continue;
       if (a.x===d.x&&a.y===d.y) animalCombatFB(a,d);
@@ -3956,7 +3917,6 @@ function render() {
   }
 
   // Draw dwarves
-  const VEHICLE_EMOJIS = { cart:'\uD83D\uDC34', car:'\uD83D\uDE97', train:'\uD83D\uDE82' };
   for (const d of G.dwarves) {
     // Check both regular and wrapped positions
     for (const offset of [0, MAP_W, -MAP_W]) {
@@ -3976,8 +3936,7 @@ function render() {
                      d.state === 'eating' || d.state === 'going_eat' ? '🍖' :
                      d.state === 'building' ? '🔨' : d.state === 'farming' ? '🌱' :
                      d.state === 'hauling' ? '📦' : d.state === 'gathering' ? '🧺' :
-                     d.state === 'sailing' ? '⛵' : d.state === 'driving' ? (VEHICLE_EMOJIS[G.vehicles.find(v => v.driverId === d.id)?.type] || '🚗') : d.state === 'riding' ? null : '🧔';
-      if (!dEmoji) continue; // riding — hidden inside vehicle
+                     d.state === 'traveling' ? (TRAVEL_EMOJIS[d.travelMode] || '🚶') : '🧔';
       try { ctx.drawImage(getEmojiImg(dEmoji), px, py); } catch (e) {}
       if (d.sponsored) {
         try { ctx.drawImage(getEmojiImg('⭐'), px + TILE / 2, py - 2); } catch (e) {}
@@ -3998,54 +3957,6 @@ function render() {
         ctx.beginPath();
         ctx.arc(px + TILE / 2, py + TILE / 2, TILE * 0.7 + pulse * 3, 0, Math.PI * 2);
         ctx.stroke();
-      }
-      break;
-    }
-  }
-
-  // Draw ships
-  const inspShipId = inspCurrent?.type === 'ship' ? inspCurrent.id : null;
-  for (const ship of G.ships) {
-    for (const offset of [0, MAP_W, -MAP_W]) {
-      const px = (ship.x + offset) * TILE - G.cam.x;
-      const py = ship.y * TILE - G.cam.y;
-      if (px < -TILE * 2 || py < -TILE * 2 || px > w + TILE * 2 || py > h + TILE * 2) continue;
-      const cx = px + TILE / 2, cy = py + TILE / 2;
-      // White background circle so ship is visible on ocean
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.beginPath(); ctx.arc(cx, cy, TILE * 0.55, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#504945'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(cx, cy, TILE * 0.55, 0, Math.PI * 2); ctx.stroke();
-      try { ctx.drawImage(getEmojiImg('⛵'), px, py); } catch (e) {}
-      if (inspShipId === ship.id) {
-        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
-        // Outer glow
-        ctx.strokeStyle = `rgba(250,189,47,${0.5 + pulse * 0.5})`;
-        ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(cx, cy, TILE + pulse * 5, 0, Math.PI * 2); ctx.stroke();
-        // Inner ring
-        ctx.strokeStyle = `rgba(251,241,199,${0.6 + pulse * 0.4})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(cx, cy, TILE * 0.7, 0, Math.PI * 2); ctx.stroke();
-      }
-      break;
-    }
-  }
-
-  // Draw vehicles
-  for (const v of G.vehicles) {
-    for (const offset of [0, MAP_W, -MAP_W]) {
-      const px = (v.x + offset) * TILE - G.cam.x;
-      const py = v.y * TILE - G.cam.y;
-      if (px < -TILE || py < -TILE || px > w + TILE || py > h + TILE) continue;
-      try { ctx.drawImage(getEmojiImg(VEHICLE_EMOJIS[v.type] || '\uD83D\uDE97'), px, py); } catch (e) {}
-      if (v.passengers?.length > 0) {
-        ctx.fillStyle = '#fbf1c7'; ctx.font = 'bold 7px monospace';
-        ctx.fillText(v.passengers.length.toString(), px + TILE - 5, py + 4);
-      }
-      if (v.mode === 'freight') {
-        ctx.fillStyle = '#d79921';
-        ctx.fillRect(px + TILE/2 - 1, py + TILE - 2, 3, 2);
       }
       break;
     }
@@ -4108,16 +4019,6 @@ function renderMinimap() {
   for (const d of G.dwarves) {
     mmCtx.fillRect(d.x * sx, d.y * sy, 2, 2);
   }
-  // Ship dots
-  mmCtx.fillStyle = '#83a598';
-  for (const s of G.ships) {
-    mmCtx.fillRect(s.x * sx, s.y * sy, 2, 2);
-  }
-  // Vehicle dots
-  mmCtx.fillStyle = '#d79921';
-  for (const v of G.vehicles) {
-    mmCtx.fillRect(v.x * sx, v.y * sy, 2, 2);
-  }
 }
 
 // ---- HUD ----
@@ -4152,7 +4053,7 @@ function getTemperature(lat, season) {
 function updateHUD() {
   document.getElementById('h-pop').textContent = fmtN(G.dwarves.length);
   document.getElementById('h-year').textContent = G.year;
-  document.getElementById('h-ships').textContent = '⛵ ' + G.ships.length;
+  document.getElementById('h-travel').textContent = '🚶 ' + G.dwarves.filter(d => d.state === 'traveling').length;
   document.getElementById('sb-season').textContent = SEASONS[G.season] + ', Year ' + G.year;
 
   // Temperature-based UI tinting
@@ -4204,12 +4105,6 @@ function updateHUD() {
     } else if (inspCurrent.type === 'animal') {
       const a = G.animals.find(a => a.id === inspCurrent.id);
       if (a) showAnimalInspector(a); else closeInspector();
-    } else if (inspCurrent.type === 'ship') {
-      const s = G.ships.find(s => s.id === inspCurrent.id);
-      if (s) showShipInspector(s); else closeInspector();
-    } else if (inspCurrent.type === 'vehicle') {
-      const v = G.vehicles.find(v => v.id === inspCurrent.id);
-      if (v) showVehicleInspector(v); else closeInspector();
     }
     inspRefreshing = false;
   }
@@ -4277,19 +4172,13 @@ function resetInspectorPosition() {
 function openInspector(tile) {
   resetInspectorPosition();
   const dwarves = G.dwarves.filter(dw => dw.x === tile.x && dw.y === tile.y);
-  const ship = G.ships.find(s => s.x === tile.x && s.y === tile.y);
   const animal = G.animals.find(a => a.x === tile.x && a.y === tile.y);
   const city = CITIES.find(c => c.mx === tile.x && c.my === tile.y);
   if (dwarves.length > 1) showDwarfList(dwarves);
   else if (dwarves.length === 1) showDwarfInspector(dwarves[0]);
   else if (animal) showAnimalInspector(animal);
-  else if (ship) showShipInspector(ship);
-  else {
-    const vehicle = G.vehicles.find(v => v.x === tile.x && v.y === tile.y);
-    if (vehicle) showVehicleInspector(vehicle);
-    else if (city) showCityInspector(city);
-    else showTerrainInspector(tile);
-  }
+  else if (city) showCityInspector(city);
+  else showTerrainInspector(tile);
   if (isMobile) {
     inspPanel.classList.add('open');
     document.querySelector('.event-log')?.classList.add('collapsed');
@@ -4334,129 +4223,6 @@ function showAnimalInspector(animal) {
   inspBody.textContent = ''; inspBody.appendChild(frag);
 }
 
-function centerOnShip(shipId) {
-  const ship = G.ships.find(s => s.id === shipId);
-  if (!ship) return null;
-  let tx = ship.x, ty = ship.y;
-  if (tx == null || ty == null || (tx === 0 && ty === 0)) {
-    const city = cityById(ship.cityId);
-    if (city && city.mx != null) { tx = city.mx; ty = city.my; }
-  }
-  G.cam.x = tx * TILE - canvas.width / 2;
-  G.cam.y = ty * TILE - canvas.height / 2;
-  return ship;
-}
-function showShipInspector(ship) {
-  if (!inspRefreshing) inspCurrent = {type:'ship', id:ship.id};
-  inspTitle.textContent = '⛵ ' + (ship.name || 'Ship ' + ship.id.slice(2));
-  const frag = document.createDocumentFragment();
-  const city = cityById(ship.cityId);
-  const captain = G.dwarves.find(d => d.id === ship.captainId);
-
-  const stLine = document.createElement('div');
-  stLine.style.cssText = 'font-size:10px;color:#a89984;margin:4px 0';
-  stLine.textContent = 'State: ' + ship.state + (city ? ' | Home: ' + city.name : '');
-  frag.appendChild(stLine);
-
-  if (captain) {
-    const capLine = document.createElement('div');
-    capLine.className = 'idwarf-link';
-    capLine.style.color = captain.color;
-    capLine.textContent = '👤 Captain: ' + captain.name;
-    capLine.onclick = () => showDwarfInspector(captain);
-    frag.appendChild(capLine);
-  } else {
-    const noCapLine = document.createElement('div');
-    noCapLine.style.cssText = 'font-size:10px;color:#665c54;margin:2px 0';
-    noCapLine.textContent = '👤 No captain (available)';
-    frag.appendChild(noCapLine);
-  }
-
-  const cargoTotal = shipCargo(ship);
-  if (cargoTotal > 0) {
-    const cargoDiv = document.createElement('div');
-    cargoDiv.style.cssText = 'font-size:9px;color:#d5c4a1;margin:4px 0;background:#3c3836;padding:2px 4px;border-radius:2px';
-    const items = Object.entries(ship.cargo).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${k}`).join(', ');
-    cargoDiv.textContent = '📦 Cargo: ' + items + ' (' + cargoTotal + '/' + SHIP_CARGO_MAX + ')';
-    frag.appendChild(cargoDiv);
-  }
-
-  if (ship.target) {
-    const destCity = cityById(ship.target.cityId);
-    const destLine = document.createElement('div');
-    destLine.style.cssText = 'font-size:10px;color:#83a598;margin:2px 0';
-    destLine.textContent = '🧭 Destination: ' + (destCity ? destCity.name : 'Unknown') + ' (' + ship.path.length + ' tiles)';
-    frag.appendChild(destLine);
-  }
-
-  inspBody.textContent = ''; inspBody.appendChild(frag);
-}
-
-function showVehicleInspector(vehicle) {
-  if (!inspRefreshing) inspCurrent = {type:'vehicle', id:vehicle.id};
-  const vt = VEHICLE_TYPES[vehicle.type] || { emoji:'🚗', name:'Vehicle', capacity:10 };
-  inspTitle.textContent = vt.emoji + ' ' + vt.name;
-  const frag = document.createDocumentFragment();
-  const city = cityById(vehicle.cityId);
-
-  const stLine = document.createElement('div');
-  stLine.style.cssText = 'font-size:10px;color:#a89984;margin:4px 0';
-  const modeLabel = (vehicle.mode === 'trade' ? 'Trade' : vehicle.mode === 'freight' ? 'Freight' : 'Idle');
-  stLine.textContent = 'State: ' + vehicle.state + ' | Mode: ' + modeLabel + (city ? ' | Home: ' + city.name : '');
-  frag.appendChild(stLine);
-
-  const driver = vehicle.driverId ? G.dwarves.find(d => d.id === vehicle.driverId) : null;
-  if (driver) {
-    const driverLine = document.createElement('div');
-    driverLine.className = 'idwarf-link';
-    driverLine.style.color = driver.color;
-    driverLine.textContent = '\uD83D\uDC64 Driver: ' + driver.name;
-    driverLine.onclick = () => showDwarfInspector(driver);
-    frag.appendChild(driverLine);
-  } else {
-    const noDriver = document.createElement('div');
-    noDriver.style.cssText = 'font-size:10px;color:#665c54;margin:2px 0';
-    noDriver.textContent = '\uD83D\uDC64 No driver (parked)';
-    frag.appendChild(noDriver);
-  }
-
-  if (vehicle.passengers?.length > 0) {
-    const paxLine = document.createElement('div');
-    paxLine.style.cssText = 'font-size:10px;color:#d5c4a1;margin:4px 0';
-    paxLine.textContent = '👥 Passengers: ' + vehicle.passengers.length;
-    frag.appendChild(paxLine);
-    for (const pid of vehicle.passengers) {
-      const p = G.dwarves.find(d => d.id === pid);
-      if (p) {
-        const pLink = document.createElement('div');
-        pLink.className = 'idwarf-link';
-        pLink.style.cssText = 'font-size:9px;color:' + p.color + ';margin-left:8px;cursor:pointer';
-        pLink.textContent = '  ' + p.name;
-        pLink.onclick = () => showDwarfInspector(p);
-        frag.appendChild(pLink);
-      }
-    }
-  }
-
-  const cargoTotal = vehicle.cargoTotal || 0;
-  if (cargoTotal > 0) {
-    const cargoDiv = document.createElement('div');
-    cargoDiv.style.cssText = 'font-size:9px;color:#d5c4a1;margin:4px 0;background:#3c3836;padding:2px 4px;border-radius:2px';
-    const items = Object.entries(vehicle.cargo).filter(([,v]) => v > 0).map(([k,v]) => `${v} ${k}`).join(', ');
-    cargoDiv.textContent = '\uD83D\uDCE6 Cargo: ' + items + ' (' + cargoTotal + '/' + vt.capacity + ')';
-    frag.appendChild(cargoDiv);
-  }
-
-  if (vehicle.target) {
-    const destCity = cityById(vehicle.target.cityId);
-    const destLine = document.createElement('div');
-    destLine.style.cssText = 'font-size:10px;color:#d79921;margin:2px 0';
-    destLine.textContent = '\uD83E\uDDED Destination: ' + (destCity ? destCity.name : 'Unknown') + ' (' + (vehicle.pathLength || 0) + ' tiles)';
-    frag.appendChild(destLine);
-  }
-
-  inspBody.textContent = ''; inspBody.appendChild(frag);
-}
 
 let inspCurrent = null;
 let inspRefreshing = false;
@@ -4508,7 +4274,7 @@ function showDwarfInspector(dw) {
     dw.state === 'eating' ? '🍖' : dw.state === 'building' ? '🔨' : dw.state === 'farming' ? '🌱' :
     dw.state === 'hauling' ? '📦' : dw.state === 'gathering' ? '🧺' :
     dw.state === 'crafting' ? '✨' : dw.state === 'seek_craft' ? '✨' :
-    dw.state === 'sailing' ? '⛵' : dw.state === 'driving' ? '🚗' : dw.state === 'wander' ? '🚶' : '🧔';
+    dw.state === 'traveling' ? (TRAVEL_EMOJIS[dw.travelMode] || '🚶') : dw.state === 'wander' ? '🚶' : '🧔';
   const city = cityOf(dw);
   const culture = CULTURES[city?.culture];
   const sexEmoji = dw.sex === 'F' ? '♀' : '♂';
@@ -5424,19 +5190,6 @@ if (!isMobile) {
       }));
     }
 
-    // Ships
-    const shipMatches = G.ships.filter(s => (s.name || s.id).toLowerCase().includes(q)).slice(0, 5);
-    for (const s of shipMatches) {
-      found = true;
-      const city = cityById(s.cityId);
-      results.appendChild(makeRow('⛵', s.name || 'Ship ' + s.id.slice(2), city ? city.name + ' · ' + s.state : s.state, '#83a598', () => {
-        closeSearch();
-        const sh = centerOnShip(s.id) || s;
-        showShipInspector(sh);
-        if (isMobile) inspPanel.classList.add('open'); else inspPanel.style.display = 'block';
-      }));
-    }
-
     // Dwarves
     const dwarfMatches = G.dwarves.filter(d => d.name && d.name.toLowerCase().includes(q)).slice(0, 15);
     for (const d of dwarfMatches) {
@@ -5674,6 +5427,7 @@ function getSerializableState() {
       inventory: d.inventory || [],
       hp: d.hp, maxHp: d.maxHp, ac: d.ac, poisonTicks: d.poisonTicks || 0, pet: d.pet || null,
       sex: d.sex || 'M',
+      travelMode: d.travelMode || null,
     })),
     animals: G.animals.map(a => ({
       id:a.id,type:a.type,x:a.x,y:a.y,hp:a.hp,maxHp:a.maxHp,ac:a.ac,
@@ -5681,10 +5435,6 @@ function getSerializableState() {
     })),
     stats: G.stats,
     homeCity: G.homeCity ? { name: G.homeCity.name, mx: G.homeCity.mx, my: G.homeCity.my } : null,
-    ships: G.ships.map(s => ({
-      id: s.id, name: s.name, x: s.x, y: s.y, captainId: s.captainId, cityId: s.cityId,
-      cargo: s.cargo, state: s.state,
-    })),
     mapDeltas: G.mapDeltas || {},
   };
 }
@@ -5762,7 +5512,7 @@ function applySponsorships() {
 }
 
 // Population panel
-const POP_STATE_EMOJIS = {sleeping:'💤',mining:'⛏️',eating:'🍖',building:'🔨',farming:'🌱',hauling:'📦',gathering:'🧺',crafting:'✨',seek_craft:'✨',sailing:'⛵',driving:'🚗',wander:'🚶',walk:'🚶',idle:'🧔',fleeing:'😰',starving:'💀',seek_food:'🍖',seek_sleep:'💤',dead:'☠️'};
+const POP_STATE_EMOJIS = {sleeping:'💤',mining:'⛏️',eating:'🍖',building:'🔨',farming:'🌱',hauling:'📦',gathering:'🧺',crafting:'✨',seek_craft:'✨',traveling:'🚶',wander:'🚶',walk:'🚶',idle:'🧔',fleeing:'😰',starving:'💀',seek_food:'🍖',seek_sleep:'💤',dead:'☠️'};
 let popSort = 'name', popDir = 1, popFilter = '';
 function showPopulationPanel() {
   let list = G.dwarves.filter(d => !d.dead);
@@ -5866,35 +5616,41 @@ function showPopulationPanel() {
 }
 document.getElementById('hud-pop-wrap').onclick = () => { popFilter = ''; positionInspectorBelow(document.getElementById('hud-pop-wrap')); showPopulationPanel(); };
 
-// Ships panel
-document.getElementById('hud-ships-wrap').onclick = () => {
-  positionInspectorBelow(document.getElementById('hud-ships-wrap'));
-  inspTitle.textContent = '⛵ Ships (' + G.ships.length + ')';
+// Travel panel
+document.getElementById('hud-travel-wrap').onclick = () => {
+  positionInspectorBelow(document.getElementById('hud-travel-wrap'));
+  const travelers = G.dwarves.filter(d => d.state === 'traveling');
+  inspTitle.textContent = '🚶 Traveling (' + travelers.length + ')';
   const frag = document.createDocumentFragment();
-  if (G.ships.length === 0) {
+  if (travelers.length === 0) {
     const msg = document.createElement('div');
     msg.style.cssText = 'color:#a89984;font-size:12px';
-    msg.textContent = 'No ships yet. Cities build ships when they have enough wood and iron.';
+    msg.textContent = 'No dwarves are currently traveling.';
     frag.appendChild(msg);
   } else {
-    const byState = {};
-    for (const s of G.ships) { byState[s.state] = (byState[s.state] || 0) + 1; }
+    const byMode = {};
+    for (const d of travelers) { const m = d.travelMode || 'walk'; byMode[m] = (byMode[m] || 0) + 1; }
     const summary = document.createElement('div');
     summary.style.cssText = 'font-size:11px;color:#928374;margin-bottom:6px';
-    summary.textContent = Object.entries(byState).map(([k,v]) => v + ' ' + k).join(' · ');
+    summary.textContent = Object.entries(byMode).map(([k,v]) => (TRAVEL_EMOJIS[k] || '🚶') + ' ' + v + ' ' + k).join(' · ');
     frag.appendChild(summary);
-    const sorted = [...G.ships].sort((a,b) => (a.name || a.id).localeCompare(b.name || b.id));
-    for (const s of sorted) {
-      const city = cityById(s.cityId);
+    const sorted = [...travelers].sort((a,b) => a.name.localeCompare(b.name));
+    for (const d of sorted) {
+      const city = cityOf(d);
       const row = document.createElement('div');
       row.style.cssText = 'padding:3px 0;border-bottom:1px solid #3c3836;cursor:pointer;font-size:11px';
       const name = document.createElement('strong');
-      name.textContent = '⛵ ' + (s.name || 'Ship ' + s.id.slice(2));
+      name.textContent = (TRAVEL_EMOJIS[d.travelMode] || '🚶') + ' ' + d.name;
       const info = document.createElement('span');
       info.style.cssText = 'color:#928374;margin-left:6px';
-      info.textContent = s.state + (city ? ' · ' + city.name : '');
+      const dest = d.target?.cityId ? cityById(d.target.cityId)?.name : '';
+      info.textContent = (d.travelMode || 'walk') + (dest ? ' → ' + dest : '') + (city ? ' · ' + city.name : '');
       row.append(name, info);
-      row.onclick = () => { const sh = centerOnShip(s.id) || s; showShipInspector(sh); };
+      row.onclick = () => {
+        G.cam.x = d.x * TILE - canvas.width / 2;
+        G.cam.y = d.y * TILE - canvas.height / 2;
+        showDwarfInspector(d);
+      };
       frag.appendChild(row);
     }
   }
@@ -6221,17 +5977,6 @@ async function restoreState() {
     G.homeCity = CITIES.find(c => c.name === saved.homeCity.name) || G.homeCity;
   }
 
-  // Restore ships
-  if (saved.ships?.length) {
-    G.ships = saved.ships.map(s => ({
-      ...createShip(s.x, s.y, s.captainId, s.cityId),
-      id: s.id, name: s.name || shipNameForCity(s.cityId), cargo: s.cargo || {}, state: s.state || 'docked',
-      cargoTotal: Object.values(s.cargo || {}).reduce((a, b) => a + b, 0),
-      path: [], target: null,
-    }));
-    log(`⛵ Restored ${G.ships.length} ships`, 'system');
-  }
-
   // Restore animals
   if (saved.animals?.length) {
     G.animals = saved.animals.map(a => ({...createAnimal(a.type, a.x, a.y), ...a, path:[], target:null}));
@@ -6320,8 +6065,6 @@ function gameLoop(ts) {
         }
         for (const d of G.dwarves) tickDwarf(d);
         G.dwarves = G.dwarves.filter(d => !d.dead);
-        tickShips();
-        tickVehicles();
         tickAnimals();
         tickSeason();
       } catch (e) { console.error('Tick error:', e); }
@@ -6359,8 +6102,6 @@ function initWorker() {
       case 'snapshot':
         G.dwarves = data.dwarves;
         if (Object.keys(G.sponsorMap).length) applySponsorships();
-        G.ships = data.ships;
-        G.vehicles = data.vehicles || [];
         G.animals = data.animals || [];
         G.tick = data.tick;
         G.year = data.year;
@@ -6432,8 +6173,6 @@ function initWorker() {
       ...d, path: [], target: null,
       usedNames: undefined,
     })),
-    ships: G.ships,
-    vehicles: G.vehicles,
     animals: G.animals,
     state: {
       tick: G.tick, year: G.year, season: G.season, speed: G.speed,
