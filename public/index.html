@@ -278,7 +278,6 @@
   .mobile .mobile-cancel-btn.visible { display: block; }
 
   .mobile .mode-border { box-shadow: inset 0 0 0 3px #fabd2f; }
-  .mobile .mode-border.build { box-shadow: inset 0 0 0 3px #83a598; }
   .mobile .mode-border.farm { box-shadow: inset 0 0 0 3px #8ec07c; }
   .mobile .mode-border.road { box-shadow: inset 0 0 0 3px #d5c4a1; }
 </style>
@@ -328,7 +327,6 @@
   <div class="section-label">Click and draw to create:</div>
   <div class="action-row">
     <button class="action-btn" id="btn-mine" title="Drag on map to mark mountains/hills for mining">&#x26cf; Mine</button>
-    <button class="action-btn" id="btn-room" title="Drag on map to mark areas for wall construction">&#x1f9f1; Build</button>
     <button class="action-btn" id="btn-farm" title="Drag on map to mark areas for farm plots">&#x1f33e; Farm</button>
     <button class="action-btn" id="btn-road" title="Drag on map to mark areas for road construction">&#x1f6e4;&#xfe0f; Road</button>
     <button class="action-btn" id="btn-search" title="Search for a dwarf by name">&#x1f50d;</button>
@@ -3810,7 +3808,7 @@ function render() {
   // Selection highlight
   if (G.sel) {
     const s = G.sel;
-    ctx.strokeStyle = G.mode === 'mine' ? '#fabd2f' : G.mode === 'build' ? '#83a598' : G.mode === 'road' ? '#d5c4a1' : '#8ec07c';
+    ctx.strokeStyle = G.mode === 'mine' ? '#fabd2f' : G.mode === 'road' ? '#d5c4a1' : '#8ec07c';
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(
@@ -4940,11 +4938,10 @@ function setMode(m) {
   G.mode = m;
   document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active'));
   if (m === 'mine') document.getElementById('btn-mine').classList.add('active');
-  if (m === 'build') document.getElementById('btn-room').classList.add('active');
   if (m === 'farm') document.getElementById('btn-farm').classList.add('active');
   if (m === 'road') document.getElementById('btn-road').classList.add('active');
   if (isMobile) {
-    canvas.classList.remove('mode-border', 'build', 'farm', 'road');
+    canvas.classList.remove('mode-border', 'farm', 'road');
     const cancelBtn = document.getElementById('mobile-cancel-btn');
     if (m !== 'normal') {
       canvas.classList.add('mode-border');
@@ -4959,7 +4956,6 @@ function setMode(m) {
 }
 
 document.getElementById('btn-mine').onclick = () => setMode(G.mode === 'mine' ? 'normal' : 'mine');
-document.getElementById('btn-room').onclick = () => setMode(G.mode === 'build' ? 'normal' : 'build');
 document.getElementById('btn-farm').onclick = () => setMode(G.mode === 'farm' ? 'normal' : 'farm');
 document.getElementById('btn-road').onclick = () => setMode(G.mode === 'road' ? 'normal' : 'road');
 
