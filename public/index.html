@@ -445,8 +445,8 @@
       <h4>Crafting</h4>
       <p>Dwarves collect items from terrain (Water, Earth, Fire, Wind) and combine them at workshops. Any two items can be combined &mdash; AI generates new results and caches them forever. 296 seed recipes included.</p>
 
-      <h4>Trading &amp; Ships</h4>
-      <p>Dwarves from different cities trade when they meet. Smarter dwarves (higher INT) get better deals. Ambitious dwarves build ships and sail across oceans to trade with distant cities.</p>
+      <h4>Trading &amp; Travel</h4>
+      <p>Dwarves from different cities trade when they meet. Smarter dwarves (higher INT) get better deals. Dwarves travel between cities using roads, trains, and ships.</p>
 
       <h4>Infrastructure</h4>
       <p>Roads connect cities automatically. Dwarves upgrade roads to railroads (3 iron + 2 wood) for ultra-fast travel. Cities auto-expand when population and resources allow.</p>
@@ -553,7 +553,7 @@ const TERRAIN_PROPS = {
   [T.CRAB]:      { speed: 1, desc: 'Crabs on the shore' },
   [T.RAILROAD]:  { speed: 0.2, desc: 'Railroad, extremely fast travel' },
   [T.GRAVE]:     { speed: 1, desc: 'A grave marker' },
-  [T.FACTORY]:   { speed: 1, desc: 'Factory, produces vehicles' },
+  [T.FACTORY]:   { speed: 1, desc: 'Factory, industrial production' },
   [T.DIRT]:      { speed: 1.2, desc: 'Bare dirt, will regrow to plains' },
 };
 
@@ -562,36 +562,6 @@ const SEASON_EMOJIS = ['\u{1F331}','\u2600\uFE0F','\u{1F342}','\u2744\uFE0F'];
 
 const RES_NAMES = { food:'Food', wood:'Wood', stone:'Stone', iron:'Iron', gold:'Gold', cloth:'Cloth', ale:'Ale', herbs:'Herbs', beds:'Beds', tables:'Workshops' };
 const RES_ICONS = [['🍖','food'],['🪵','wood'],['🪨','stone'],['⚔️','iron'],['🌕','gold'],['🧵','cloth'],['🍺','ale'],['🌿','herbs'],['🛏️','beds'],['⚒️','tables']];
-
-const SHIP_NAMES = {
-  american:['Liberty','Frontier','Pioneer','Eagle','Destiny'], british:['Endeavour','Sovereign','Tempest','Valiant','Drake'],
-  french:['Lumiere','Triomphe','Mistral','Etoile','Vendee'], japanese:['Yamato','Kaze','Sakura Maru','Tsunami','Asahi'],
-  egyptian:['Nile Star','Pharaoh','Sphinx','Cleopatra','Anubis'], australian:['Boomerang','Coral Wind','Kookaburra','Outback','Reef Runner'],
-  brazilian:['Esperanca','Carnival','Amazonia','Samba','Ipanema'], chinese:['Dragon Pearl','Jade Wind','Phoenix','Lotus','Great Wall'],
-  indian:['Ganges Star','Monsoon','Lotus Bloom','Dharma','Sindhu'], kenyan:['Simba','Safari Wind','Kilimanjaro','Uhuru','Savanna'],
-  mexican:['Azteca','Sol de Oro','Quetzal','Mariposa','Oaxaca'], argentinian:['Pampero','Tango','Patagonia','Gaucho','La Plata'],
-  turkish:['Bosphorus','Crescent','Anatolia','Sultan Wind','Cappadocia'], nigerian:['Sahara Wind','Lagos Star','Baobab','Harmattan','Calabar'],
-  emirati:['Desert Pearl','Falcon','Oasis','Palm Wind','Burj'], singaporean:['Merlion','Marina','Orchid','Straits Runner','Temasek'],
-  korean:['Halla','Arirang','Tiger Wave','Hangang','Mugunghwa'], thai:['Chao Phraya','Lotus Wind','Siam Star','Monsoon Pearl','Orchid'],
-  peruvian:['Condor','Inca Star','Nazca','Machu Picchu','Andina'], italian:['Gondola','Vesuvio','Stella del Mare','Tramontana','Adriatica'],
-  german:['Nordwind','Loreley','Sturm','Rhein Gold','Elbe'], icelandic:['Frost Wind','Geyser','Saga','Ragnarok','Aurora'],
-  south_african:['Table Wind','Karoo','Madiba','Springbok','Drakensberg'], hawaiian:['Aloha Star','Moana','Hoku','Maui Wind','Kai'],
-  alaskan:['Glacier','Kodiak Bear','Denali Star','Tundra Wind','Borealis'], polish:['Orzeł','Wawel','Vistula Star','Hussar','Gdansk Wind'],
-  spanish:['Armada','Flamenco','Iberia','Zephyr','Estrella'], portuguese:['Descoberta','Lusitania','Algarve','Vasco','Fado'],
-  dutch:['Windmill','Tulip','Oranje','Polder Star','Zeeland'], austrian:['Danube Pearl','Alpenwind','Vienna Star','Mozart','Edelweiss'],
-  greek:['Odyssey','Poseidon','Aegean Star','Trireme','Olympus'], swedish:['Viking Star','Nordlicht','Uppsala','Valhalla','Birka'],
-  norwegian:['Fjord Wind','Norseman','Tromsø','Midgard','Freya'], finnish:['Sisu','Sauna Wind','Suomi Star','Lapland','Karelia'],
-  czech:['Moldau','Bohemia','Golem','Prague Star','Pilsner'], ukrainian:['Cossack','Dnipro Star','Tryzub','Sunflower','Kyiv Wind'],
-  iranian:['Persian Star','Shiraz','Zagros','Isfahan','Cyrus'], vietnamese:['Mekong Star','Lotus Sail','Phoenix','Bamboo Wind','Halong'],
-  filipino:['Bayanihan','Pearl of Orient','Magellan','Sampaguita','Manila Star'], indonesian:['Nusantara','Garuda','Krakatoa','Spice Wind','Bali Star'],
-  ethiopian:['Blue Nile','Habesha','Rift Valley','Lalibela','Axum'], colombian:['El Dorado','Cumbia','Andina','Cartagena Star','Emerald'],
-  chilean:['Patagonia Wind','Atacama','Mapuche','Santiago Star','Andes'], canadian:['Voyageur','Northern Light','Maple','Huron','Chinook'],
-  kiwi:['Aotearoa','Silver Fern','Kiwi Wind','Tangaroa','Waka'], moroccan:['Sahara Star','Marrakech','Atlas Wind','Berber','Casablanca'],
-  irish:['Shamrock','Celtic Wind','Claddagh','Erin','Galway Star'], cuban:['Havana Star','Revolucion','Caribe','Mojito','Guantanamo'],
-  saudi:['Desert Falcon','Riyadh Star','Hajj Wind','Oasis Pearl','Bedouin'], iraqi:['Mesopotamia','Tigris Star','Babylon','Ur Wind','Basra'],
-  syrian:['Damascus Star','Palmyra','Silk Wind','Aleppo','Euphrates'], jordanian:['Petra','Dead Sea Pearl','Amman Star','Bedouin Wind','Jerash'],
-  lebanese:['Cedar','Phoenicia','Beirut Star','Byblos','Tyre'], _default:['Wavecutter','Stormchaser','Sea Forge','Tidecaller','Iron Hull']
-};
 
 const EMOJI = {
   [T.TUNDRA]: '❄️', [T.TAIGA]: '🌲', [T.FOREST]: '🌳',
@@ -2583,132 +2553,29 @@ function aiCraft(d) {
   }
 }
 
-// ---- Ships ----
-const SHIP_COST = { wood: 10, cloth: 3, iron: 2 };
-const SHIP_CARGO_MAX = 20;
+// ---- Travel (fallback single-thread) ----
 const TRAVEL_EMOJIS = { walk:'🚶', cart:'🐴', car:'🚗', train:'🚂', ship:'⛵' };
+const TRAVEL_MODES = {
+  walk:  { emoji:'🚶', speed:1,  cargoBonus:0,  label:'Walking' },
+  cart:  { emoji:'🐴', speed:2,  cargoBonus:8,  label:'Horse Cart',  requires:'path' },
+  car:   { emoji:'🚗', speed:4,  cargoBonus:15, label:'Car',          requires:'asphalt' },
+  train: { emoji:'🚂', speed:6,  cargoBonus:40, label:'Train',        requires:'railroad' },
+  ship:  { emoji:'⛵', speed:3,  cargoBonus:10, label:'Ship',         requires:'coastal' },
+};
 
-function shipNameForCity(cityId) {
-  const city = cityById(cityId);
-  const culture = city ? city.culture : null;
-  const names = SHIP_NAMES[culture] || SHIP_NAMES._default;
-  const used = new Set(G.ships.map(s => s.name));
-  const available = names.filter(n => !used.has(n));
-  if (available.length > 0) return available[Math.floor(Math.random() * available.length)];
-  let num = 2;
-  const toRoman = n => { const vals = [[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']]; let r = ''; for (const [v,s] of vals) { while (n >= v) { r += s; n -= v; } } return r; };
-  while (true) {
-    const candidate = names[Math.floor(Math.random() * names.length)] + ' ' + toRoman(num);
-    if (!used.has(candidate)) return candidate;
-    num++;
+function aiTravel(d) {
+  if (!d.path || d.path.length === 0) {
+    const dest = CITIES.find(c => c.id === d.target?.destCityId);
+    if (dest) { d.cityId = dest.id; d.x = dest.mx; d.y = dest.my; }
+    d.state = 'idle'; d.target = null; d.travelMode = null;
+    return;
   }
-}
-function createShip(x, y, captainId, cityId) {
-  return {
-    id: 's_' + Math.random().toString(36).slice(2, 8),
-    name: shipNameForCity(cityId),
-    x, y, captainId, cityId,
-    cargo: {},
-    cargoTotal: 0,
-    state: 'docked',
-    target: null,
-    path: [],
-  };
-}
-
-function shipCargo(ship) {
-  return Object.values(ship.cargo).reduce((s, v) => s + v, 0);
-}
-
-function isWater(x, y) {
-  if (y < 0 || y >= MAP_H) return false;
-  const t = G.map[y][wrapX(x)];
-  return t === T.OCEAN || t === T.FISH_SPOT || t === T.CORAL;
-}
-
-function isCoastal(x, y) {
-  // Land tile adjacent to water
-  if (!isWalkable(x, y)) return false;
-  for (const [dx, dy] of [[0,-1],[1,0],[0,1],[-1,0]]) {
-    if (isWater(wrapX(x + dx), y + dy)) return true;
+  const mode = TRAVEL_MODES[d.travelMode] || TRAVEL_MODES.walk;
+  const steps = Math.min(mode.speed, d.path.length);
+  for (let i = 0; i < steps; i++) {
+    const [nx, ny] = d.path.shift();
+    d.x = nx; d.y = ny;
   }
-  return false;
-}
-
-function bfsWater(sx, sy, goalFn) {
-  const key = (x, y) => wrapX(x) + y * MAP_W;
-  const queue = [[sx, sy]];
-  const visited = new Set([key(sx, sy)]);
-  const par = new Map();
-  const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
-  let steps = 0;
-  while (queue.length > 0 && steps < 6000) {
-    const [cx, cy] = queue.shift(); steps++;
-    if (goalFn(wrapX(cx), cy) && !(cx === sx && cy === sy)) {
-      const path = []; let cur = [cx, cy];
-      while (cur[0] !== sx || cur[1] !== sy) { path.unshift([wrapX(cur[0]), cur[1]]); cur = par.get(key(cur[0], cur[1])); }
-      return path;
-    }
-    for (const [dx, dy] of dirs) {
-      const nx = cx + dx, ny = cy + dy;
-      const nk = key(nx, ny);
-      if (visited.has(nk)) continue;
-      if (!isWater(nx, ny) && !goalFn(wrapX(nx), ny)) continue;
-      visited.add(nk);
-      par.set(nk, [cx, cy]);
-      queue.push([nx, ny]);
-    }
-  }
-  return null;
-}
-
-function tryBuildShip(city) {
-  if (!city || !city.res) return null;
-  const r = city.res;
-  if (r.wood < SHIP_COST.wood || r.cloth < SHIP_COST.cloth || r.iron < SHIP_COST.iron) return null;
-  // Find coastal tile near city
-  let launchX = null, launchY = null;
-  for (let dy = -3; dy <= 3 && launchX === null; dy++) {
-    for (let dx = -3; dx <= 3 && launchX === null; dx++) {
-      const x = wrapX(city.mx + dx), y = city.my + dy;
-      if (y >= 0 && y < MAP_H && isWater(x, y)) {
-        // Check adjacent to land
-        for (const [ddx, ddy] of [[0,-1],[1,0],[0,1],[-1,0]]) {
-          const lx = wrapX(x + ddx), ly = y + ddy;
-          if (ly >= 0 && ly < MAP_H && isWalkable(lx, ly)) {
-            launchX = x; launchY = y; break;
-          }
-        }
-      }
-    }
-  }
-  if (launchX === null) return null;
-  r.wood -= SHIP_COST.wood; r.cloth -= SHIP_COST.cloth; r.iron -= SHIP_COST.iron;
-  const ship = createShip(launchX, launchY, null, city.id);
-  G.ships.push(ship);
-  log(`${city.name} ⛵ built a ship!`, 'city');
-  return ship;
-}
-
-function tickShip(ship) {
-  if (ship.state === 'docked' || ship.state === 'waiting') return;
-  if (ship.state === 'sailing' && ship.path.length > 0) {
-    const [nx, ny] = ship.path.shift();
-    ship.x = nx; ship.y = ny;
-    // Auto-fish from fish spots
-    if (G.map[ny][nx] === T.FISH_SPOT && Math.random() < 0.3) {
-      ship.cargo.food = (ship.cargo.food || 0) + 2;
-      ship.cargoTotal = shipCargo(ship);
-    }
-    if (ship.path.length === 0) {
-      ship.state = 'docked';
-      ship.target = null;
-    }
-  }
-}
-
-function tickShips() {
-  for (const ship of G.ships) tickShip(ship);
 }
 
 // ---- Animals (fallback single-thread) ----
@@ -2855,89 +2722,6 @@ function spawnAnimalsFB() {
   }
 }
 
-// Captain boards ship, sails to destination coastal city, disembarks
-function boardShip(d, ship, destCity) {
-  if (!destCity || destCity.mx === undefined) return false;
-  // Find water tile adjacent to destination city
-  let destWX = null, destWY = null;
-  for (let dy = -3; dy <= 3 && destWX === null; dy++) {
-    for (let dx = -3; dx <= 3 && destWX === null; dx++) {
-      const x = wrapX(destCity.mx + dx), y = destCity.my + dy;
-      if (y >= 0 && y < MAP_H && isWater(x, y)) { destWX = x; destWY = y; }
-    }
-  }
-  if (destWX === null) return false;
-  const path = bfsWater(ship.x, ship.y, (x, y) => x === destWX && y === destWY);
-  if (!path || path.length === 0) return false;
-  ship.captainId = d.id;
-  ship.state = 'sailing';
-  ship.path = path;
-  ship.target = { x: destWX, y: destWY, cityId: destCity.id };
-  // Transfer dwarf carry to ship cargo
-  if (d.carryItems) {
-    for (const [k, v] of Object.entries(d.carryItems)) {
-      ship.cargo[k] = (ship.cargo[k] || 0) + v;
-    }
-    d.carryItems = {}; d.carrying = 0;
-  }
-  d.state = 'sailing';
-  d.target = { type: 'sail', shipId: ship.id };
-  log(`${d.name} ⛵ set sail from ${cityOf(d).name} to ${destCity.name}!`, 'system');
-  addEvent(d, 'sail', `Boarded ship to ${destCity.name}`);
-  return true;
-}
-
-function aiSail(d) {
-  const ship = G.ships.find(s => s.id === d.target?.shipId);
-  if (!ship) { d.state = 'idle'; d.target = null; return; }
-  // Follow ship position
-  d.x = ship.x; d.y = ship.y;
-  if (ship.state === 'docked' && ship.target) {
-    // Arrived! Disembark near destination city
-    const destCity = cityById(ship.target.cityId);
-    if (destCity) {
-      // Find walkable tile adjacent to ship
-      let disembarkX = null, disembarkY = null;
-      for (const [dx, dy] of [[0,-1],[1,0],[0,1],[-1,0]]) {
-        const nx = wrapX(ship.x + dx), ny = ship.y + dy;
-        if (ny >= 0 && ny < MAP_H && isWalkable(nx, ny)) {
-          disembarkX = nx; disembarkY = ny; break;
-        }
-      }
-      if (disembarkX !== null) {
-        d.x = disembarkX; d.y = disembarkY;
-      } else if (destCity.mx !== undefined) {
-        // Fallback: teleport to city center if no adjacent walkable tile
-        d.x = destCity.mx; d.y = destCity.my;
-      }
-      // Transfer cargo to city
-      for (const [k, v] of Object.entries(ship.cargo)) {
-        if (destCity.res && destCity.res[k] !== undefined) destCity.res[k] += v;
-      }
-      const cargoAmt = shipCargo(ship);
-      ship.cargo = {}; ship.cargoTotal = 0;
-      d.cityId = destCity.id; // Transfer allegiance
-      ship.captainId = null;
-      log(`${d.name} ⚓ arrived at ${destCity.name}${cargoAmt > 0 ? ` with ${cargoAmt} goods` : ''}!`, 'system');
-      addEvent(d, 'sail', `Arrived at ${destCity.name}`);
-    }
-    d.state = 'idle'; d.target = null;
-  } else if (ship.state === 'docked' && !ship.target) {
-    // Ship lost its way
-    d.state = 'idle'; d.target = null;
-    ship.captainId = null;
-  }
-  // Feed captain from ship cargo while sailing
-  if (d.hunger < 30 && (ship.cargo.food || 0) > 0) {
-    ship.cargo.food--; ship.cargoTotal = shipCargo(ship);
-    d.hunger = Math.min(100, d.hunger + 30);
-  }
-  // Sleep aboard
-  if (d.energy < 20) {
-    d.energy = Math.min(100, d.energy + 1.5);
-  }
-}
-
 // Found a new city: 2 ambitious dwarves from same city, both at max carry, far from cities
 function tryFoundCity(d) {
   if (CITIES.length >= 60) return false; // global city cap
@@ -3011,54 +2795,6 @@ function tryFoundCity(d) {
   addEvent(d, 'found', `Founded ${newCity.name}`);
   addEvent(partner, 'found', `Founded ${newCity.name}`);
   return true;
-}
-
-// Idle dwarves near coast with excess resources may build/board ships
-function trySeaSailing(d) {
-  if (G.ships.length >= 50) return false; // global ship cap
-  const city = cityOf(d);
-  if (!city || !city.res) return false;
-  // Only sail if city is coastal
-  if (!isCoastal(city.mx, city.my)) {
-    // Check nearby tiles
-    let coastal = false;
-    for (let dy = -4; dy <= 4 && !coastal; dy++)
-      for (let dx = -4; dx <= 4 && !coastal; dx++) {
-        const x = wrapX(city.mx + dx), y = city.my + dy;
-        if (y >= 0 && y < MAP_H && isCoastal(x, y)) coastal = true;
-      }
-    if (!coastal) return false;
-  }
-  // Find an available ship at this city
-  let ship = G.ships.find(s => s.cityId === city.id && !s.captainId && s.state === 'docked');
-  // Build one if resources allow and none available
-  if (!ship && city.res.wood >= SHIP_COST.wood && city.res.cloth >= SHIP_COST.cloth && city.res.iron >= SHIP_COST.iron) {
-    ship = tryBuildShip(city);
-  }
-  if (!ship) return false;
-  // Pick a random distant coastal city to sail to
-  const otherCities = CITIES.filter(c => c.id !== city.id && c.mx !== undefined);
-  const coastalCities = otherCities.filter(c => {
-    for (let dy = -3; dy <= 3; dy++)
-      for (let dx = -3; dx <= 3; dx++) {
-        const x = wrapX(c.mx + dx), y = c.my + dy;
-        if (y >= 0 && y < MAP_H && isWater(x, y)) return true;
-      }
-    return false;
-  });
-  if (!coastalCities.length) return false;
-  const dest = coastalCities[Math.floor(Math.random() * coastalCities.length)];
-  // Walk to coast first
-  const coastPath = bfs(d.x, d.y, (x, y) => {
-    for (const [dx, dy] of [[0,-1],[1,0],[0,1],[-1,0]]) {
-      if (isWater(wrapX(x + dx), y + dy)) return true;
-    }
-    return false;
-  }, false);
-  if (coastPath && coastPath.length < 20) {
-    return boardShip(d, ship, dest);
-  }
-  return false;
 }
 
 function aiSeekFood(d) {
@@ -6165,7 +5901,6 @@ function initWorker() {
     map: flat.buffer,
     cities: CITIES.map(c => ({ ...c, discoveries: undefined })),
     cultures: CULTURES,
-    shipNames: SHIP_NAMES,
     dwarfNames: DWARF_NAMES,
     surnames: SURNAMES,
     apiBase: AI.apiBase,
