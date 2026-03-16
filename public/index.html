@@ -325,6 +325,7 @@
     <div id="city-dropdown" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);background:rgba(29,32,33,0.97);border:1px solid #504945;border-radius:6px;max-height:300px;overflow-y:auto;z-index:30;min-width:180px;scrollbar-width:thin;scrollbar-color:#504945 transparent"></div>
   </div>
   <div class="hud-stat" id="hud-res-wrap"><div class="label">Resources</div><div class="value" id="h-res">-</div></div>
+  <div class="hud-stat" id="hud-ships-wrap" title="Click to see ships"><div class="label">Ships</div><div class="value" id="h-ships">⛵ 0</div></div>
   <div class="hud-stat" id="hud-year-wrap"><div class="label">Year</div><div class="value" id="h-year">1</div></div>
   <div class="hud-stat" id="hud-sponsored-wrap" title="Click to see sponsored dwarves"><div class="label">Sponsored</div><div class="value" id="h-sponsored" style="color:#fabd2f">$0</div></div>
 </div>
@@ -333,6 +334,7 @@
 <div class="site-logo">
   <span class="logo-text">🧔 dwarf<span class="logo-dot">.</span>land</span>
   <button class="info-btn" onclick="DAUB.openModal('about-modal')" title="Info">i</button>
+  <a class="info-btn" id="gh-link" href="https://github.com/sliday/dwarf-land" target="_blank" rel="noopener noreferrer" title="GitHub" style="text-decoration:none;font-size:11px"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg> <span id="gh-stars"></span></a>
 </div>
 <canvas class="minimap" id="minimap" width="250" height="125"></canvas>
 <div class="event-log">
@@ -349,20 +351,19 @@
 </div>
 <div class="cost-overlay" id="cost-overlay" style="display:none"></div>
 <div class="controls">
-  <div class="section-label" id="tool-label">Tools:</div>
+  <div class="section-label" id="tool-label" style="display:none"></div>
   <div class="action-row">
     <button class="action-btn tool-btn" id="btn-mine" title="Toggle mining mode — click and drag to designate">&#x26cf; Mine</button>
     <button class="action-btn tool-btn" id="btn-farm" title="Toggle farm mode — click and drag to designate">&#x1f33e; Farm</button>
     <button class="action-btn tool-btn" id="btn-road" title="Toggle road mode — click and drag to designate (on roads = upgrade)">&#x1f6e4;&#xfe0f; Road</button>
-    <button class="action-btn" id="btn-search" title="Search for a dwarf by name">&#x1f50d;</button>
-    <a class="action-btn" href="https://github.com/sliday/dwarf-land" target="_blank" rel="noopener noreferrer" title="GitHub" style="text-decoration:none;display:inline-flex;align-items:center"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+    <button class="action-btn" id="btn-search" title="Search dwarves, cities, ships (Ctrl+F)">&#x1f50d;</button>
   </div>
 </div>
 
 <div id="search-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:50;align-items:flex-start;justify-content:center;padding-top:80px">
   <div style="background:#282828;border:1px solid #504945;border-radius:8px;width:90%;max-width:400px;max-height:60vh;display:flex;flex-direction:column;overflow:hidden">
     <div style="padding:12px;border-bottom:1px solid #3c3836;display:flex;gap:8px;align-items:center">
-      <input id="search-input" type="text" placeholder="Search dwarf by name..." style="flex:1;background:#3c3836;border:1px solid #504945;border-radius:4px;padding:8px 12px;color:#ebdbb2;font-family:inherit;font-size:14px;outline:none" autocomplete="off">
+      <input id="search-input" type="text" placeholder="Search dwarves, cities, ships..." style="flex:1;background:#3c3836;border:1px solid #504945;border-radius:4px;padding:8px 12px;color:#ebdbb2;font-family:inherit;font-size:14px;outline:none" autocomplete="off">
       <button id="search-close" style="background:none;border:none;color:#a89984;font-size:20px;cursor:pointer;padding:4px">&times;</button>
     </div>
     <div id="search-results" style="overflow-y:auto;padding:4px 0;scrollbar-width:thin;scrollbar-color:#504945 transparent"></div>
@@ -4074,6 +4075,7 @@ function getTemperature(lat, season) {
 function updateHUD() {
   document.getElementById('h-pop').textContent = fmtN(G.dwarves.length);
   document.getElementById('h-year').textContent = G.year;
+  document.getElementById('h-ships').textContent = '⛵ ' + G.ships.length;
   document.getElementById('sb-season').textContent = SEASONS[G.season] + ', Year ' + G.year;
 
   // Temperature-based UI tinting
@@ -5109,10 +5111,10 @@ function setMode(m) {
   const toolLabel = document.getElementById('tool-label');
   document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active'));
   canvas.classList.toggle('tool-active', m !== 'normal');
-  if (m === 'mine') { document.getElementById('btn-mine').classList.add('active'); toolLabel.textContent = '⛏️ Mining — drag to designate'; }
-  else if (m === 'farm') { document.getElementById('btn-farm').classList.add('active'); toolLabel.textContent = '🌾 Farming — drag to designate'; }
-  else if (m === 'road') { document.getElementById('btn-road').classList.add('active'); toolLabel.textContent = '🛤️ Road — drag to designate'; }
-  else { toolLabel.textContent = 'Tools:'; }
+  if (m === 'mine') { document.getElementById('btn-mine').classList.add('active'); toolLabel.textContent = '⛏️ Mining — drag to designate'; toolLabel.style.display = ''; }
+  else if (m === 'farm') { document.getElementById('btn-farm').classList.add('active'); toolLabel.textContent = '🌾 Farming — drag to designate'; toolLabel.style.display = ''; }
+  else if (m === 'road') { document.getElementById('btn-road').classList.add('active'); toolLabel.textContent = '🛤️ Road — drag to designate'; toolLabel.style.display = ''; }
+  else { toolLabel.style.display = 'none'; }
   if (isMobile) {
     canvas.classList.remove('mode-border', 'farm', 'road');
     const cancelBtn = document.getElementById('mobile-cancel-btn');
@@ -5238,42 +5240,75 @@ if (!isMobile) {
     }
   }, true);
 
+  function makeRow(emoji, name, detail, color, onClick) {
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;border-bottom:1px solid #3c3836';
+    row.onmouseenter = () => row.style.background = '#3c3836';
+    row.onmouseleave = () => row.style.background = '';
+    const nameSpan = document.createElement('span');
+    nameSpan.style.color = color || '#ebdbb2';
+    nameSpan.textContent = emoji + ' ' + name;
+    const detailSpan = document.createElement('span');
+    detailSpan.style.cssText = 'color:#665c54;font-size:10px';
+    detailSpan.textContent = detail;
+    row.append(nameSpan, detailSpan);
+    row.onclick = onClick;
+    return row;
+  }
+
   input.addEventListener('input', () => {
     const q = input.value.trim().toLowerCase();
     results.textContent = '';
     if (q.length < 2) return;
-    const matches = G.dwarves.filter(d => d.name && d.name.toLowerCase().includes(q)).slice(0, 20);
-    if (!matches.length) {
-      const empty = document.createElement('div');
-      empty.style.cssText = 'padding:12px;color:#665c54;font-size:12px;text-align:center';
-      empty.textContent = 'No dwarves found';
-      results.appendChild(empty);
-      return;
+    let found = false;
+
+    // Cities
+    const cityMatches = CITIES.filter(c => c.name && c.name.toLowerCase().includes(q)).slice(0, 5);
+    for (const c of cityMatches) {
+      found = true;
+      results.appendChild(makeRow(c.emoji || '🏘️', c.name, 'City', '#fabd2f', () => {
+        closeSearch();
+        G.cam.x = c.mx * TILE - canvas.width / 2;
+        G.cam.y = c.my * TILE - canvas.height / 2;
+        showCityInspector(c);
+        if (isMobile) inspPanel.classList.add('open'); else inspPanel.style.display = 'block';
+      }));
     }
-    for (const d of matches) {
-      const row = document.createElement('div');
-      row.style.cssText = 'padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;border-bottom:1px solid #3c3836';
-      row.onmouseenter = () => row.style.background = '#3c3836';
-      row.onmouseleave = () => row.style.background = '';
+
+    // Ships
+    const shipMatches = G.ships.filter(s => (s.name || s.id).toLowerCase().includes(q)).slice(0, 5);
+    for (const s of shipMatches) {
+      found = true;
+      const city = cityById(s.cityId);
+      results.appendChild(makeRow('⛵', s.name || 'Ship ' + s.id.slice(2), city ? city.name + ' · ' + s.state : s.state, '#83a598', () => {
+        closeSearch();
+        G.cam.x = s.x * TILE - canvas.width / 2;
+        G.cam.y = s.y * TILE - canvas.height / 2;
+        showShipInspector(s);
+        if (isMobile) inspPanel.classList.add('open'); else inspPanel.style.display = 'block';
+      }));
+    }
+
+    // Dwarves
+    const dwarfMatches = G.dwarves.filter(d => d.name && d.name.toLowerCase().includes(q)).slice(0, 15);
+    for (const d of dwarfMatches) {
+      found = true;
       const city = cityOf(d);
-      const stateEmoji = d.hunger > STARVE_IMMOBILE ? '\u{1F480}' : d.state === 'sleep' ? '\u{1F634}' : d.state === 'eat' ? '\u{1F372}' : d.state === 'mine' ? '\u26CF' : '\u{1F9D4}';
-      const nameSpan = document.createElement('span');
-      nameSpan.style.color = d.color || '#ebdbb2';
-      nameSpan.textContent = stateEmoji + ' ' + d.name + (d.sponsored ? ' \u2B50' : '');
-      const citySpan = document.createElement('span');
-      citySpan.style.cssText = 'color:#665c54;font-size:10px';
-      citySpan.textContent = city ? city.name : '';
-      row.appendChild(nameSpan);
-      row.appendChild(citySpan);
-      row.onclick = () => {
+      const stateEmoji = d.hunger > STARVE_IMMOBILE ? '💀' : d.state === 'sleep' ? '😴' : d.state === 'eat' ? '🍲' : d.state === 'mine' ? '⛏' : '🧔';
+      results.appendChild(makeRow(stateEmoji, d.name + (d.sponsored ? ' ⭐' : ''), city ? city.name : '', d.color || '#ebdbb2', () => {
         closeSearch();
         G.followDwarf = d.id;
         G.cam.x = d.x * TILE - canvas.width / 2;
         G.cam.y = d.y * TILE - canvas.height / 2;
-            const tile = { x: d.x, y: d.y, gx: d.x };
-        openInspector(tile);
-      };
-      results.appendChild(row);
+        openInspector({ x: d.x, y: d.y, gx: d.x });
+      }));
+    }
+
+    if (!found) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding:12px;color:#665c54;font-size:12px;text-align:center';
+      empty.textContent = 'No results found';
+      results.appendChild(empty);
     }
   });
 })();
@@ -5682,6 +5717,43 @@ function showPopulationPanel() {
   inspCurrent = { type: 'population' };
 }
 document.getElementById('hud-pop-wrap').onclick = () => { popFilter = ''; positionInspectorBelow(document.getElementById('hud-pop-wrap')); showPopulationPanel(); };
+
+// Ships panel
+document.getElementById('hud-ships-wrap').onclick = () => {
+  positionInspectorBelow(document.getElementById('hud-ships-wrap'));
+  inspTitle.textContent = '⛵ Ships (' + G.ships.length + ')';
+  const frag = document.createDocumentFragment();
+  if (G.ships.length === 0) {
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:#a89984;font-size:12px';
+    msg.textContent = 'No ships yet. Cities build ships when they have enough wood and iron.';
+    frag.appendChild(msg);
+  } else {
+    const byState = {};
+    for (const s of G.ships) { byState[s.state] = (byState[s.state] || 0) + 1; }
+    const summary = document.createElement('div');
+    summary.style.cssText = 'font-size:11px;color:#928374;margin-bottom:6px';
+    summary.textContent = Object.entries(byState).map(([k,v]) => v + ' ' + k).join(' · ');
+    frag.appendChild(summary);
+    const sorted = [...G.ships].sort((a,b) => (a.name || a.id).localeCompare(b.name || b.id));
+    for (const s of sorted) {
+      const city = cityById(s.cityId);
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:3px 0;border-bottom:1px solid #3c3836;cursor:pointer;font-size:11px';
+      const name = document.createElement('strong');
+      name.textContent = '⛵ ' + (s.name || 'Ship ' + s.id.slice(2));
+      const info = document.createElement('span');
+      info.style.cssText = 'color:#928374;margin-left:6px';
+      info.textContent = s.state + (city ? ' · ' + city.name : '');
+      row.append(name, info);
+      row.onclick = () => { G.cam.x = s.x * TILE - canvas.width / 2; G.cam.y = s.y * TILE - canvas.height / 2; showShipInspector(s); };
+      frag.appendChild(row);
+    }
+  }
+  inspBody.textContent = '';
+  inspBody.appendChild(frag);
+  if (isMobile) { inspPanel.classList.add('open'); } else inspPanel.style.display = 'block';
+};
 
 // Timeline panel
 document.getElementById('hud-year-wrap').onclick = () => {
@@ -6282,6 +6354,11 @@ async function init() {
     setTimeout(() => DAUB.openModal('splash-modal'), 500);
   }
 }
+
+// Fetch GitHub stars
+fetch('https://api.github.com/repos/sliday/dwarf-land').then(r => r.json()).then(d => {
+  if (d.stargazers_count !== undefined) document.getElementById('gh-stars').textContent = d.stargazers_count;
+}).catch(() => {});
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
 else init();

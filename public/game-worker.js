@@ -94,7 +94,7 @@ const ANIMAL_TYPES = {
   whale:   {emoji:'\uD83D\uDC0B',hp:40,ac:10,atk:0,dmg:0,       speed:0.5,food:0, danger:false,pet:false,terrain:[T.OCEAN],water:true},
   dolphin: {emoji:'\uD83D\uDC2C',hp:12,ac:13,atk:0,dmg:0,       speed:0.9,food:0, danger:false,pet:false,terrain:[T.OCEAN],water:true},
 };
-const MAX_ANIMALS = 400;
+const MAX_ANIMALS = 800;
 
 function rollD(n) { return 1 + Math.floor(Math.random() * n); }
 function rollDmg(str) {
@@ -2148,6 +2148,9 @@ function tickAnimals() {
   }
   G.animals = G.animals.filter(a => !a.dead);
 
+  // Periodically spawn new animals
+  if (G.tick % 200 === 0) spawnAnimals();
+
   // Dwarf-animal combat check: dwarves on same tile as dangerous animals
   for (const d of G.dwarves) {
     if (d.dead || d.state === 'sailing' || d.state === 'riding') continue;
@@ -2445,7 +2448,7 @@ function tickSeason() {
 function spawnAnimals() {
   if (G.animals.length >= MAX_ANIMALS) return;
   const types = Object.keys(ANIMAL_TYPES);
-  const toSpawn = Math.min(MAX_ANIMALS - G.animals.length, 5 + Math.floor(Math.random() * 8));
+  const toSpawn = Math.min(MAX_ANIMALS - G.animals.length, 10 + Math.floor(Math.random() * 15));
   for (let i = 0; i < toSpawn; i++) {
     const type = types[Math.floor(Math.random() * types.length)];
     const t = ANIMAL_TYPES[type];
@@ -2469,7 +2472,7 @@ function spawnAnimals() {
 }
 
 function seedAnimals() {
-  const count = 80 + Math.floor(Math.random() * 40);
+  const count = 150 + Math.floor(Math.random() * 60);
   for (let i = 0; i < count; i++) spawnAnimals();
 }
 
