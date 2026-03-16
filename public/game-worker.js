@@ -35,23 +35,120 @@ const TERRAIN_PROPS = {
   [T.FACTORY]:{speed:1},
   [T.DIRT]:{speed:1.2},
 };
-const SHIP_COST = { wood:10, cloth:3, iron:2 }, SHIP_CARGO_MAX = 20;
-const VEHICLE_TYPES = {
-  cart:  { emoji:'\uD83D\uDC34', capacity:8,  minRoad:T.PATH,     name:'Horse Cart' },
-  car:   { emoji:'\uD83D\uDE97', capacity:15, minRoad:T.ASPHALT,  name:'Car' },
-  train: { emoji:'\uD83D\uDE82', capacity:40, minRoad:T.RAILROAD, name:'Train' },
+const TRAVEL_MODES = {
+  walk:  { emoji:'\uD83D\uDEB6', speed:1,  cargoBonus:0,  label:'Walking' },
+  cart:  { emoji:'\uD83D\uDC34', speed:2,  cargoBonus:8,  label:'Horse Cart',  requires:'path' },
+  car:   { emoji:'\uD83D\uDE97', speed:4,  cargoBonus:15, label:'Car',          requires:'asphalt' },
+  train: { emoji:'\uD83D\uDE82', speed:6,  cargoBonus:40, label:'Train',        requires:'railroad' },
+  ship:  { emoji:'\u26F5',       speed:3,  cargoBonus:10, label:'Ship',         requires:'coastal' },
 };
-const MAX_VEHICLES = 50;
-function createVehicle(type, x, y, cityId) {
-  return {
-    id:'v_'+Math.random().toString(36).slice(2,8),
-    type, x, y, cityId,
-    driverId:null,
-    cargo:{}, cargoTotal:0,
-    passengers:[], mode:'idle',
-    state:'parked',
-    target:null, path:[],
-  };
+
+function isCityCoastal(city) {
+  if (!city || city.mx === undefined) return false;
+  for (let dy = -4; dy <= 4; dy++)
+    for (let dx = -4; dx <= 4; dx++) {
+      const x = wrapX(city.mx+dx), y = city.my+dy;
+      if (y >= 0 && y < MAP_H && isWater(x, y)) return true;
+    }
+  return false;
+}
+
+function bestTravelMode(origin, dest) {
+  const pairKey = [origin.id, dest.id].sort().join('-');
+  const tiers = G.roadGraph?.[pairKey];
+  if (tiers?.railroad) return 'train';
+  if (tiers?.asphalt) return 'car';
+  if (tiers?.gravel || tiers?.path) return 'cart';
+  if (isCityCoastal(origin) && isCityCoastal(dest)) return 'ship';
+  return 'walk';
+}
+
+function tryTravel(d) {
+  const city = cityOf(d);
+  if (!city || !city.res) return false;
+  if (d.hunger < 30 || d.energy < 25) return false;
+  const others = CITIES.filter(c => c.id !== city.id && c.mx !== undefined);
+  if (!others.length) return false;
+  others.sort((a,b) => {
+    const da = Math.min(Math.abs(a.mx-city.mx), MAP_W-Math.abs(a.mx-city.mx)) + Math.abs(a.my-city.my);
+    const db = Math.min(Math.abs(b.mx-city.mx), MAP_W-Math.abs(b.mx-city.mx)) + Math.abs(b.my-city.my);
+    return da - db;
+  });
+  const pool = others.slice(0, 5);
+  const dest = pool[Math.floor(Math.random() * pool.length)];
+  const mode = bestTravelMode(city, dest);
+  const tm = TRAVEL_MODES[mode];
+  if (mode === 'ship') {
+    let originW = null, destW = null;
+    for (let dy = -4; dy <= 4 && !originW; dy++)
+      for (let dx = -4; dx <= 4 && !originW; dx++) {
+        const x = wrapX(city.mx+dx), y = city.my+dy;
+        if (y >= 0 && y < MAP_H && isWater(x, y)) originW = {x, y};
+      }
+    for (let dy = -4; dy <= 4 && !destW; dy++)
+      for (let dx = -4; dx <= 4 && !destW; dx++) {
+        const x = wrapX(dest.mx+dx), y = dest.my+dy;
+        if (y >= 0 && y < MAP_H && isWater(x, y)) destW = {x, y};
+      }
+    if (!originW || !destW) return false;
+    const waterPath = bfsWater(originW.x, originW.y, (x,y) => x === destW.x && y === destW.y);
+    if (!waterPath || waterPath.length === 0) return false;
+    d.path = waterPath;
+  } else if (mode !== 'walk') {
+    const minRoad = mode === 'train' ? T.RAILROAD : mode === 'car' ? T.ASPHALT : T.PATH;
+    const vPath = findVehicleRoute(city, dest, minRoad);
+    if (!vPath || vPath.length === 0) return false;
+    d.path = vPath;
+  } else {
+    const wp = bfs(d.x, d.y, (x,y) => Math.abs(x-dest.mx) <= 2 && Math.abs(y-dest.my) <= 2 && isWalkable(x,y), false);
+    if (!wp || wp.length > 200) return false;
+    d.path = wp;
+  }
+  d.state = 'traveling';
+  d.travelMode = mode;
+  d.target = { type:'travel', destCityId:dest.id };
+  log(`${d.name} ${tm.emoji} traveling to ${dest.name} by ${tm.label}`, 'system', 2, null, d.x, d.y);
+  addEvent(d, 'travel', `${tm.label} to ${dest.name}`);
+  return true;
+}
+
+function aiTravel(d) {
+  if (!d.path || d.path.length === 0) {
+    const dest = CITIES.find(c => c.id === d.target?.destCityId);
+    if (dest) {
+      d.cityId = dest.id;
+      if (d.travelMode === 'ship') {
+        const dirs = [[0,-1],[1,0],[0,1],[-1,0],[1,-1],[-1,-1],[1,1],[-1,1]];
+        for (const [ddx,ddy] of dirs) {
+          const lx = wrapX(dest.mx+ddx), ly = dest.my+ddy;
+          if (ly >= 0 && ly < MAP_H && isWalkable(lx, ly)) { d.x = lx; d.y = ly; break; }
+        }
+      }
+      if (d.carryItems && dest.res) {
+        for (const [k,v] of Object.entries(d.carryItems)) {
+          if (dest.res[k] !== undefined) dest.res[k] += v;
+        }
+        const amt = d.carrying || 0;
+        if (amt > 0) log(`${d.name} delivered ${amt} goods to ${dest.name}`, 'trade', 2, null, d.x, d.y);
+        d.carryItems = {}; d.carrying = 0;
+      }
+      log(`${d.name} arrived at ${dest.name}`, 'system', 2, null, d.x, d.y);
+      addEvent(d, 'travel', `Arrived at ${dest.name}`);
+    }
+    d.state = 'idle'; d.target = null; d.travelMode = null;
+    return;
+  }
+  const mode = TRAVEL_MODES[d.travelMode] || TRAVEL_MODES.walk;
+  const steps = Math.min(mode.speed, d.path.length);
+  for (let i = 0; i < steps; i++) {
+    const [nx, ny] = d.path.shift();
+    d.x = nx; d.y = ny;
+  }
+  if (d.hunger < 30 && d.carryItems?.food > 0) {
+    d.carryItems.food--; d.carrying = Math.max(0, (d.carrying||0)-1);
+    d.hunger = Math.min(100, d.hunger + 30);
+  }
+  if (d.energy < 20) d.energy = Math.min(100, d.energy + 1);
 }
 const MAX_INVENTORY = 6;
 const TERRAIN_CRAFT_ITEMS = {
@@ -120,7 +217,7 @@ function createAnimal(type, x, y) {
 }
 
 // Populated from init message
-let CITIES = [], CULTURES = {}, DWARF_NAMES = [], SURNAMES = [], SHIP_NAMES = {_default:['Wavecutter','Stormchaser','Sea Forge','Tidecaller','Iron Hull']};
+let CITIES = [], CULTURES = {}, DWARF_NAMES = [], SURNAMES = [];
 let AI_API_BASE = '';
 
 // Worker state
@@ -129,7 +226,7 @@ const G = {
   year:1, season:0,
   dwarves:[], usedNames:new Set(),
   animals:[], animalGrid:{},
-  ships:[], vehicles:[], stats:{mined:0,built:0,farmed:0},
+  stats:{mined:0,built:0,farmed:0},
   graves:{}, yearResolutions:[], suburbs:[], dirtTiles:[], upgradeFrom:{},
   homeCity:null, aiCityIndex:0, dwarfGrid:{},
   mapDeltas:{},
@@ -487,7 +584,7 @@ function addEvent(d, type, desc) {
 
 // Dwarf AI
 function tickDwarf(d) {
-  if (d.state !== 'sailing' && !isWalkable(d.x, d.y)) {
+  if (d.state !== 'traveling' && !isWalkable(d.x, d.y)) {
     const city = cityOf(d);
     if (city.mx !== undefined) {
       const land = findNearbyLand(city.mx, city.my) || findNearbyLand(d.x, d.y);
@@ -505,7 +602,7 @@ function tickDwarf(d) {
   if (d.hp < d.maxHp && d.hunger > 20 && d.energy > 30 && G.tick % 50 === 0) d.hp = Math.min(d.maxHp, d.hp + 1);
 
   // Flee from dangerous animals (low HP or weak STR)
-  if (d.state !== 'fleeing' && d.state !== 'sailing' && d.hp <= d.maxHp * 0.6) {
+  if (d.state !== 'fleeing' && d.state !== 'traveling' && d.hp <= d.maxHp * 0.6) {
     const nearby = nearbyAnimals(d.x, d.y);
     for (const a of nearby) {
       if (a.dead) continue;
@@ -549,10 +646,10 @@ function tickDwarf(d) {
   } else { d.starveTicks = 0; }
   if (d.state === 'starving') { tryShareFood(d); return; }
   if (d.hunger < 20 && d.state !== 'eating' && d.state !== 'going_eat'
-      && d.state !== 'wander' && d.state !== 'seek_food' && d.state !== 'driving') {
+      && d.state !== 'wander' && d.state !== 'seek_food' && d.state !== 'traveling') {
     d.state = 'seek_food'; d.target = null; d.path = [];
   } else if (d.energy < 15 && d.state !== 'sleeping' && d.state !== 'going_sleep'
-      && d.state !== 'wander' && d.state !== 'seek_sleep' && d.state !== 'driving') {
+      && d.state !== 'wander' && d.state !== 'seek_sleep' && d.state !== 'traveling') {
     d.state = 'seek_sleep'; d.target = null; d.path = [];
   }
   switch (d.state) {
@@ -572,10 +669,8 @@ function tickDwarf(d) {
     case 'hauling': aiWalk(d); break;
     case 'seek_craft': aiSeekCraft(d); break;
     case 'crafting': aiCraft(d); break;
-    case 'sailing': aiSail(d); break;
-    case 'riding': aiRide(d); break;
     case 'going_rescue': aiWalk(d); break;
-    case 'driving': aiDrive(d); break;
+    case 'traveling': aiTravel(d); break;
   }
 }
 
@@ -711,81 +806,6 @@ function findVehicleRoute(fromCity, toCity, minRoad) {
   return null;
 }
 
-function tryTradeCaravan(d) {
-  const home = cityOf(d);
-  if (!home || !home.res) return false;
-  if (d.hunger < 30 || d.energy < 25) return false;
-  // Find a different city reachable by road (BFS limited to road/asphalt/railroad tiles)
-  const roadTiles = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD, T.CITY]);
-  const target = bfs(d.x, d.y, (x, y) => {
-    const t = G.map[wrapY(y)][wrapX(x)];
-    if (t !== T.CITY) return false;
-    const c = CITIES.find(c => c.mx === wrapX(x) && c.my === wrapY(y));
-    return c && c.id !== home.id;
-  }, false);
-  if (!target || target.length < 5 || target.length > 200) return false;
-  const dest = target[target.length - 1];
-  const destCity = CITIES.find(c => c.mx === dest[0] && c.my === dest[1]);
-  if (!destCity || !destCity.res) return false;
-  // Find what home has surplus and dest needs
-  const tradeGoods = [];
-  const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs'];
-  for (const k of keys) {
-    const homeAmt = home.res[k] || 0;
-    const destAmt = destCity.res[k] || 0;
-    if (homeAmt > 20 && destAmt < 10) tradeGoods.push(k);
-  }
-  if (tradeGoods.length === 0) return false;
-  const good = tradeGoods[Math.floor(Math.random() * tradeGoods.length)];
-
-  // Try to use a vehicle first
-  const vehicle = G.vehicles.find(v =>
-    v.cityId === home.id && !v.driverId && v.state === 'parked'
-  );
-  if (vehicle) {
-    const vt = VEHICLE_TYPES[vehicle.type];
-    const pairKey = [home.id, destCity.id].sort().join('-');
-    const tiers = G.roadGraph?.[pairKey];
-    const tierOk = vt.minRoad === T.PATH ? tiers?.path
-      : vt.minRoad === T.ROAD ? tiers?.gravel
-      : vt.minRoad === T.ASPHALT ? tiers?.asphalt
-      : tiers?.railroad;
-    if (tierOk) {
-      const vPath = findVehicleRoute(home, destCity, vt.minRoad);
-      if (vPath && vPath.length > 0) {
-        const amt = Math.min(Math.floor(home.res[good] / 3), vt.capacity);
-        if (amt >= 2) {
-          home.res[good] -= amt;
-          vehicle.cargo = { [good]: amt };
-          vehicle.cargoTotal = amt;
-          vehicle.driverId = d.id;
-          vehicle.state = 'en_route'; vehicle.mode = 'trade';
-          vehicle.target = { cityId: destCity.id, good, amt };
-          vehicle.path = vPath;
-          d.state = 'driving';
-          d.target = { type: 'drive_vehicle', vehicleId: vehicle.id, cityId: destCity.id, good, amt };
-          d.path = [];
-          log(`${d.name} ${vt.emoji} loaded ${amt} ${good} onto ${vt.name} for ${destCity.name}`, 'trade', 3, null, d.x, d.y);
-          addEvent(d, 'trade', `Driving ${vt.name} to ${destCity.name} with ${amt} ${good}`);
-          return true;
-        }
-      }
-    }
-  }
-
-  // Fallback: walk on foot
-  const amt = Math.min(Math.floor(home.res[good] / 3), carryCapacity(d));
-  if (amt < 2) return false;
-  home.res[good] -= amt;
-  d.carrying = amt;
-  d.carryItems = { [good]: amt };
-  d.target = { type: 'trade_caravan', cityId: destCity.id, good, amt };
-  d.path = target;
-  d.state = 'walk';
-  log(`${d.name} \uD83D\uDC2A set out as merchant from ${home.name} to ${destCity.name} with ${amt} ${good}`, 'trade', 2, null, d.x, d.y);
-  addEvent(d, 'trade', `Departed as merchant to ${destCity.name} with ${amt} ${good}`);
-  return true;
-}
 
 function findRoadGap(dx, dy, radius) {
   const ROAD_SET = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD]);
@@ -879,60 +899,6 @@ function isOrphanRoad(x, y) {
   return true;
 }
 
-function tryBoardVehicle(d) {
-  if (d.hunger < 25 || d.energy < 20) return false;
-  // Try hopping on a passing vehicle
-  const passing = G.vehicles.find(v =>
-    v.state === 'en_route' && v.x === d.x && v.y === d.y &&
-    (v.passengers?.length || 0) + (v.cargoTotal || 0) + 1 < VEHICLE_TYPES[v.type].capacity
-  );
-  if (passing && passing.target?.cityId) {
-    const destCity = cityById(passing.target.cityId);
-    if (destCity && destCity.id !== d.cityId) {
-      if (!passing.passengers) passing.passengers = [];
-      passing.passengers.push(d.id);
-      d.state = 'riding';
-      d.target = { type:'ride_vehicle', vehicleId:passing.id, destCityId:destCity.id };
-      d.path = [];
-      log(`${d.name} boarded ${VEHICLE_TYPES[passing.type].name} to ${destCity.name}`, 'trade', 2, null, d.x, d.y);
-      addEvent(d, 'travel', `Boarded ${VEHICLE_TYPES[passing.type].name} to ${destCity.name}`);
-      return true;
-    }
-  }
-  // Try driving a parked vehicle to another city
-  const home = cityOf(d);
-  if (!home || !home.res) return false;
-  const parked = G.vehicles.find(v =>
-    v.cityId === home.id && !v.driverId && v.state === 'parked' &&
-    Math.min(Math.abs(v.x - d.x), MAP_W - Math.abs(v.x - d.x)) + Math.abs(v.y - d.y) < 15
-  );
-  if (!parked) return false;
-  const vt = VEHICLE_TYPES[parked.type];
-  // Find a connected city via road
-  const otherCities = CITIES.filter(c => c.id !== home.id && c.mx !== undefined);
-  for (const dest of otherCities) {
-    const pairKey = [home.id, dest.id].sort().join('-');
-    const tiers = G.roadGraph?.[pairKey];
-    const tierOk = vt.minRoad === T.PATH ? tiers?.path
-      : vt.minRoad === T.ROAD ? tiers?.gravel
-      : vt.minRoad === T.ASPHALT ? tiers?.asphalt
-      : tiers?.railroad;
-    if (!tierOk) continue;
-    const vPath = findVehicleRoute(home, dest, vt.minRoad);
-    if (!vPath || vPath.length === 0) continue;
-    parked.driverId = d.id;
-    parked.state = 'en_route'; parked.mode = 'travel';
-    parked.target = { cityId: dest.id };
-    parked.path = vPath;
-    d.state = 'driving';
-    d.target = { type: 'drive_vehicle', vehicleId: parked.id, cityId: dest.id };
-    d.path = [];
-    log(`${d.name} ${vt.emoji} driving ${vt.name} to ${dest.name}`, 'system', 2, null, d.x, d.y);
-    addEvent(d, 'travel', `Driving ${vt.name} to ${dest.name}`);
-    return true;
-  }
-  return false;
-}
 
 function aiIdle(d) {
   if (d._tickSlot === undefined) d._tickSlot = G.dwarves.indexOf(d) % 4;
@@ -1055,68 +1021,8 @@ function aiIdle(d) {
   }
   if (Math.random() < 0.01 && tryFoundSuburb(d)) return;
   if (Math.random() < 0.02 && tryRelocateToSuburb(d)) return;
-  if (Math.random() < 0.15) {
-    if (trySeaSailing(d)) return;
-  }
-  if (Math.random() < 0.04 && tryBoardVehicle(d)) return;
-  if (Math.random() < 0.03 && tryTradeCaravan(d)) return;
+  if (Math.random() < 0.12 && tryTravel(d)) return;
   d.state = 'wander'; d.timer = 20 + Math.floor(Math.random() * 40);
-}
-
-function aiDrive(d) {
-  if (!d.target || d.target.type !== 'drive_vehicle') { d.state = 'idle'; return; }
-  const v = G.vehicles.find(veh => veh.id === d.target.vehicleId);
-  if (!v) { d.state = 'idle'; d.target = null; return; }
-  // Vehicle moves the dwarf (handled in tickVehicle). Check if arrived.
-  if (v.state === 'parked' && v.path.length === 0) {
-    const destCity = CITIES.find(c => c.id === d.target.cityId);
-    const vt = VEHICLE_TYPES[v.type];
-    if (destCity && destCity.res) {
-      const good = v.target?.good || d.target.good;
-      const amt = v.cargo[good] || 0;
-      if (amt > 0) {
-        destCity.res[good] = (destCity.res[good] || 0) + amt;
-        const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs'];
-        let returnGood = null, returnAmt = 0;
-        for (const k of keys) {
-          if (k === good) continue;
-          if ((destCity.res[k] || 0) > 15) { returnGood = k; returnAmt = Math.min(Math.floor(destCity.res[k] / 3), amt); break; }
-        }
-        if (returnGood && returnAmt > 0) {
-          destCity.res[returnGood] -= returnAmt;
-          v.cargo = { [returnGood]: returnAmt }; v.cargoTotal = returnAmt;
-          log(`${d.name} ${vt.emoji} delivered ${amt} ${good} to ${destCity.name}, returning with ${returnAmt} ${returnGood}`, 'trade', 3, null, d.x, d.y);
-          addEvent(d, 'trade', `${vt.name}: traded ${amt} ${good} at ${destCity.name} for ${returnAmt} ${returnGood}`);
-        } else {
-          v.cargo = {}; v.cargoTotal = 0;
-          log(`${d.name} ${vt.emoji} delivered ${amt} ${good} to ${destCity.name}`, 'trade', 2, null, d.x, d.y);
-          addEvent(d, 'trade', `${vt.name}: delivered ${amt} ${good} to ${destCity.name}`);
-        }
-        d.happiness = Math.min(100, d.happiness + 12);
-      }
-    }
-    // Release vehicle and driver
-    v.driverId = null; v.target = null; v.mode = 'idle';
-    d.target = null; d.state = 'idle'; d.carrying = 0; d.carryItems = {};
-  }
-}
-
-function aiRide(d) {
-  const v = G.vehicles.find(veh => veh.id === d.target?.vehicleId);
-  if (!v) { d.state = 'idle'; d.target = null; return; }
-  d.x = v.x; d.y = v.y;
-  if (v.state === 'parked' && v.path.length === 0) {
-    v.passengers = (v.passengers || []).filter(id => id !== d.id);
-    const destCity = CITIES.find(c => Math.abs(c.mx - v.x) <= 2 && Math.abs(c.my - v.y) <= 2);
-    if (destCity) d.cityId = destCity.id;
-    d.state = 'idle'; d.target = null;
-    addEvent(d, 'travel', `Disembarked at ${destCity ? destCity.name : 'unknown'}`);
-  }
-  if (d.hunger < 30 && v.cargo?.food > 0) {
-    v.cargo.food--; v.cargoTotal = Object.values(v.cargo).reduce((a,b) => a+b, 0);
-    d.hunger = Math.min(100, d.hunger + 30);
-  }
-  if (d.energy < 20) d.energy = Math.min(100, d.energy + 1.5);
 }
 
 function aiWalk(d) {
@@ -1408,68 +1314,6 @@ function aiCraft(d) {
   }
 }
 
-// Ships
-function shipNameForCity(cityId) {
-  const city = cityById(cityId);
-  const culture = city ? city.culture : null;
-  const names = SHIP_NAMES[culture] || SHIP_NAMES._default;
-  const used = new Set(G.ships.map(s => s.name));
-  const available = names.filter(n => !used.has(n));
-  if (available.length > 0) return available[Math.floor(Math.random() * available.length)];
-  // All culture names taken — append roman numeral
-  let num = 2;
-  while (true) {
-    const candidate = names[Math.floor(Math.random() * names.length)] + ' ' + toRoman(num);
-    if (!used.has(candidate)) return candidate;
-    num++;
-  }
-}
-function toRoman(n) {
-  const vals = [[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];
-  let r = '';
-  for (const [v,s] of vals) { while (n >= v) { r += s; n -= v; } }
-  return r;
-}
-function createShip(x, y, captainId, cityId) {
-  return { id:'s_'+Math.random().toString(36).slice(2,8), name:shipNameForCity(cityId), x, y, captainId, cityId, cargo:{}, cargoTotal:0, state:'docked', target:null, path:[] };
-}
-function shipCargo(ship) { return Object.values(ship.cargo).reduce((s,v) => s+v, 0); }
-function tickShip(ship) {
-  if (ship.state === 'docked' || ship.state === 'waiting') return;
-  if (ship.state === 'sailing' && ship.path.length > 0) {
-    const [nx,ny] = ship.path.shift();
-    ship.x = nx; ship.y = ny;
-    if (G.map[ny][nx] === T.FISH_SPOT && Math.random() < 0.3) {
-      ship.cargo.food = (ship.cargo.food||0)+2;
-      ship.cargoTotal = shipCargo(ship);
-    }
-    if (ship.path.length === 0) {
-      ship.state = 'docked';
-      const shore = findShoreSpot(ship.x, ship.y);
-      if (shore) { ship.x = shore.x; ship.y = shore.y; }
-    }
-  }
-}
-function tickShips() { for (const ship of G.ships) tickShip(ship); }
-function findShoreSpot(x, y, radius) {
-  radius = radius || 5;
-  let best = null, bestDist = Infinity;
-  for (let dy = -radius; dy <= radius; dy++)
-    for (let dx = -radius; dx <= radius; dx++) {
-      const nx = wrapX(x+dx), ny = y+dy;
-      if (ny < 0 || ny >= MAP_H || !isWater(nx, ny)) continue;
-      const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
-      let adjLand = false;
-      for (const [ddx,ddy] of dirs) {
-        const lx = wrapX(nx+ddx), ly = ny+ddy;
-        if (ly >= 0 && ly < MAP_H && isWalkable(lx, ly)) { adjLand = true; break; }
-      }
-      if (!adjLand) continue;
-      const dist = Math.abs(dx) + Math.abs(dy);
-      if (dist < bestDist) { bestDist = dist; best = {x:nx, y:ny}; }
-    }
-  return best;
-}
 
 // ---- Auto-connect cities with roads ----
 function autoConnectCities() {
@@ -1600,220 +1444,12 @@ function rebuildRoadGraph() {
   G.roadGraphDirty = false;
 }
 
-function vehicleCargo(v) { return Object.values(v.cargo).reduce((s,n) => s+n, 0); }
 
-function tickVehicle(v) {
-  if (v.state !== 'en_route' || v.path.length === 0) return;
-  const [nx,ny] = v.path.shift();
-  v.x = nx; v.y = ny;
-  // Move driver along with vehicle
-  const driver = v.driverId ? G.dwarves.find(d => d.id === v.driverId) : null;
-  if (driver) { driver.x = nx; driver.y = ny; }
-  // Sync passengers
-  if (v.passengers?.length) {
-    for (const pid of v.passengers) {
-      const p = G.dwarves.find(d => d.id === pid);
-      if (p) { p.x = nx; p.y = ny; }
-    }
-    // Mid-route disembark: passengers whose destination matches a nearby city
-    const nearCity = CITIES.find(c => Math.abs(c.mx - v.x) <= 1 && Math.abs(c.my - v.y) <= 1);
-    if (nearCity) {
-      v.passengers = v.passengers.filter(pid => {
-        const p = G.dwarves.find(d => d.id === pid);
-        if (p && p.target?.destCityId === nearCity.id) {
-          p.cityId = nearCity.id; p.state = 'idle'; p.target = null;
-          addEvent(p, 'travel', `Arrived at ${nearCity.name} by ${VEHICLE_TYPES[v.type].name}`);
-          return false;
-        }
-        return true;
-      });
-    }
-  }
-  if (v.path.length === 0) {
-    v.state = 'parked';
-    const destCity = CITIES.find(c => Math.abs(c.mx - v.x) <= 2 && Math.abs(c.my - v.y) <= 2);
-    if (destCity) v.cityId = destCity.id;
-    // Auto-unload freight
-    if (v.mode === 'freight' && v.cargoTotal > 0 && destCity) {
-      for (const [good, amt] of Object.entries(v.cargo)) {
-        if (destCity.res) destCity.res[good] = (destCity.res[good] || 0) + amt;
-      }
-      log(`📦 ${VEHICLE_TYPES[v.type].name} delivered ${v.cargoTotal} goods to ${destCity.name}`, 'trade', 2, null, v.x, v.y);
-      v.cargo = {}; v.cargoTotal = 0; v.mode = 'idle'; v.target = null;
-    }
-    // Disembark all remaining passengers
-    if (v.passengers?.length) {
-      for (const pid of v.passengers) {
-        const p = G.dwarves.find(d => d.id === pid);
-        if (p) { p.state = 'idle'; p.target = null; if (destCity) p.cityId = destCity.id; }
-      }
-      v.passengers = [];
-    }
-  }
-}
 
-function tickVehicles() { for (const v of G.vehicles) tickVehicle(v); }
 
-function spawnVehicles() {
-  if (G.vehicles.length >= MAX_VEHICLES) return;
-  for (const [pairKey, tiers] of Object.entries(G.roadGraph)) {
-    const [idA, idB] = pairKey.split('-');
-    const cityA = cityById(idA), cityB = cityById(idB);
-    if (!cityA || !cityB) continue;
-    const pairVehicles = G.vehicles.filter(v => {
-      const ids = [v.cityId, v.target?.cityId].filter(Boolean);
-      return (ids.includes(idA) && ids.includes(idB)) ||
-             (v.cityId === idA || v.cityId === idB);
-    });
-    if (tiers.gravel) {
-      const carts = pairVehicles.filter(v => v.type === 'cart');
-      if (carts.length < 1 && G.vehicles.length < MAX_VEHICLES) {
-        G.vehicles.push(createVehicle('cart', cityA.mx, cityA.my, cityA.id));
-        log(`${cityA.name} \uD83D\uDC34 built a horse cart for trade with ${cityB.name}`, 'city', 3, null, cityA.mx, cityA.my);
-      }
-    }
-    if (tiers.asphalt) {
-      const cars = pairVehicles.filter(v => v.type === 'car');
-      if (cars.length < 2 && G.vehicles.length < MAX_VEHICLES) {
-        G.vehicles.push(createVehicle('car', cityA.mx, cityA.my, cityA.id));
-        log(`${cityA.name} \uD83D\uDE97 manufactured a car for trade with ${cityB.name}`, 'city', 3, null, cityA.mx, cityA.my);
-      }
-    }
-    if (tiers.railroad) {
-      const trains = pairVehicles.filter(v => v.type === 'train');
-      if (trains.length < 1 && G.vehicles.length < MAX_VEHICLES) {
-        G.vehicles.push(createVehicle('train', cityA.mx, cityA.my, cityA.id));
-        log(`${cityA.name} \uD83D\uDE82 commissioned a train for the ${cityB.name} line`, 'city', 4, null, cityA.mx, cityA.my);
-      }
-    }
-  }
-}
 
-function tickFreight() {
-  const GOODS = ['food','wood','stone','iron','gold','cloth','ale','herbs'];
-  for (const v of G.vehicles) {
-    if (v.state !== 'parked' || v.driverId || (v.passengers?.length > 0)) continue;
-    const homeCity = cityById(v.cityId);
-    if (!homeCity?.res) continue;
-    const vt = VEHICLE_TYPES[v.type];
-    let bestScore = 0, bestGood = null, bestDest = null;
-    for (const [pairKey, tiers] of Object.entries(G.roadGraph || {})) {
-      const [idA, idB] = pairKey.split('-');
-      const otherId = idA === homeCity.id ? idB : idB === homeCity.id ? idA : null;
-      if (!otherId) continue;
-      const tierOk = vt.minRoad === T.PATH ? tiers.path
-        : vt.minRoad === T.ROAD ? tiers.gravel
-        : vt.minRoad === T.ASPHALT ? tiers.asphalt : tiers.railroad;
-      if (!tierOk) continue;
-      const dest = cityById(otherId);
-      if (!dest?.res) continue;
-      for (const good of GOODS) {
-        const surplus = (homeCity.res[good] || 0) - 20;
-        const deficit = 8 - (dest.res[good] || 0);
-        if (surplus < 5 || deficit < 3) continue;
-        const score = surplus + deficit * 2;
-        if (score > bestScore) { bestScore = score; bestGood = good; bestDest = dest; }
-      }
-    }
-    if (!bestGood || !bestDest) continue;
-    const route = findVehicleRoute(homeCity, bestDest, vt.minRoad);
-    if (!route || route.length === 0) continue;
-    const amt = Math.min(Math.floor(homeCity.res[bestGood] / 3), vt.capacity);
-    if (amt < 2) continue;
-    homeCity.res[bestGood] -= amt;
-    v.cargo = { [bestGood]: amt }; v.cargoTotal = amt;
-    v.path = route; v.state = 'en_route'; v.mode = 'freight';
-    v.target = { cityId: bestDest.id, good: bestGood };
-    log(`📦 ${vt.name} shipping ${amt} ${bestGood} from ${homeCity.name} to ${bestDest.name}`, 'trade', 2, null, v.x, v.y);
-  }
-}
 
-function tryBuildShip(city) {
-  if (!city || !city.res) return null;
-  const r = city.res;
-  if (r.wood < SHIP_COST.wood || r.cloth < SHIP_COST.cloth || r.iron < SHIP_COST.iron) return null;
-  let launchX = null, launchY = null;
-  for (let dy = -3; dy <= 3 && launchX === null; dy++)
-    for (let dx = -3; dx <= 3 && launchX === null; dx++) {
-      const x = wrapX(city.mx+dx), y = city.my+dy;
-      if (y >= 0 && y < MAP_H && isWater(x, y)) {
-        for (const [ddx,ddy] of [[0,-1],[1,0],[0,1],[-1,0]]) {
-          const lx = wrapX(x+ddx), ly = y+ddy;
-          if (ly >= 0 && ly < MAP_H && isWalkable(lx, ly)) { launchX = x; launchY = y; break; }
-        }
-      }
-    }
-  if (launchX === null) return null;
-  r.wood -= SHIP_COST.wood; r.cloth -= SHIP_COST.cloth; r.iron -= SHIP_COST.iron;
-  const ship = createShip(launchX, launchY, null, city.id);
-  G.ships.push(ship);
-  log(`${city.name} ⛵ built a ship!`, 'city', 5, null, city.mx, city.my);
-  return ship;
-}
 
-function boardShip(d, ship, destCity) {
-  if (!destCity || destCity.mx === undefined) return false;
-  let destWX = null, destWY = null;
-  for (let dy = -3; dy <= 3 && destWX === null; dy++)
-    for (let dx = -3; dx <= 3 && destWX === null; dx++) {
-      const x = wrapX(destCity.mx+dx), y = destCity.my+dy;
-      if (y >= 0 && y < MAP_H && isWater(x, y)) { destWX = x; destWY = y; }
-    }
-  if (destWX === null) return false;
-  const path = bfsWater(ship.x, ship.y, (x,y) => x === destWX && y === destWY);
-  if (!path || path.length === 0) return false;
-  ship.captainId = d.id; ship.state = 'sailing'; ship.path = path;
-  ship.target = {x:destWX,y:destWY,cityId:destCity.id};
-  if (d.carryItems) {
-    for (const [k,v] of Object.entries(d.carryItems)) ship.cargo[k] = (ship.cargo[k]||0)+v;
-    d.carryItems = {}; d.carrying = 0;
-  }
-  d.state = 'sailing'; d.target = {type:'sail',shipId:ship.id};
-  log(`${d.name} ⛵ set sail from ${cityOf(d).name} to ${destCity.name}!`, 'system', 3, null, d.x, d.y);
-  addEvent(d, 'sail', `Boarded ship to ${destCity.name}`);
-  return true;
-}
-
-function aiSail(d) {
-  const ship = G.ships.find(s => s.id === d.target?.shipId);
-  if (!ship) { d.state = 'idle'; d.target = null; return; }
-  if (ship.state === 'sailing') { d.x = ship.x; d.y = ship.y; }
-  if (ship.state === 'docked' && ship.target) {
-    const destCity = cityById(ship.target.cityId);
-    if (destCity) {
-      // Place dwarf on adjacent walkable land tile
-      const dirs = [[0,-1],[1,0],[0,1],[-1,0],[1,-1],[-1,-1],[1,1],[-1,1]];
-      let placed = false;
-      for (const [ddx,ddy] of dirs) {
-        const lx = wrapX(ship.x+ddx), ly = ship.y+ddy;
-        if (ly >= 0 && ly < MAP_H && isWalkable(lx, ly)) { d.x = lx; d.y = ly; placed = true; break; }
-      }
-      if (!placed) { d.x = destCity.mx; d.y = destCity.my; }
-      for (const [k,v] of Object.entries(ship.cargo)) {
-        if (destCity.res && destCity.res[k] !== undefined) destCity.res[k] += v;
-      }
-      const cargoAmt = shipCargo(ship);
-      ship.cargo = {}; ship.cargoTotal = 0;
-      d.cityId = destCity.id; ship.captainId = null;
-      log(`${d.name} ⚓ arrived at ${destCity.name}${cargoAmt > 0 ? ` with ${cargoAmt} goods` : ''}!`, 'system', 3, null, d.x, d.y);
-      addEvent(d, 'sail', `Arrived at ${destCity.name}`);
-    }
-    ship.target = null; d.state = 'idle'; d.target = null;
-  } else if (ship.state === 'docked' && !ship.target) {
-    // Place dwarf on land before releasing
-    const dirs = [[0,-1],[1,0],[0,1],[-1,0],[1,-1],[-1,-1],[1,1],[-1,1]];
-    for (const [ddx,ddy] of dirs) {
-      const lx = wrapX(ship.x+ddx), ly = ship.y+ddy;
-      if (ly >= 0 && ly < MAP_H && isWalkable(lx, ly)) { d.x = lx; d.y = ly; break; }
-    }
-    d.state = 'idle'; d.target = null; ship.captainId = null;
-  }
-  if (d.hunger < 30 && (ship.cargo.food||0) > 0) {
-    ship.cargo.food--; ship.cargoTotal = shipCargo(ship);
-    d.hunger = Math.min(100, d.hunger + 30);
-  }
-  if (d.energy < 20) d.energy = Math.min(100, d.energy + 1.5);
-}
 
 function tryFoundCity(d) {
   if (CITIES.length >= 60) return false;
@@ -1956,66 +1592,6 @@ function tryRelocateToSuburb(d) {
     return true;
   }
   return false;
-}
-
-function findNearbyShip(d, city) {
-  // Find any docked ship at this city or nearby cities
-  let ship = G.ships.find(s => s.cityId === city.id && !s.captainId && s.state === 'docked');
-  if (ship) return ship;
-  // Check ships at nearby cities within ~50 tiles
-  for (const s of G.ships) {
-    if (s.captainId || s.state !== 'docked') continue;
-    const dist = Math.min(Math.abs(s.x - d.x), MAP_W - Math.abs(s.x - d.x)) + Math.abs(s.y - d.y);
-    if (dist < 50) return s;
-  }
-  return null;
-}
-
-function trySeaSailing(d) {
-  if (G.ships.length >= 50) return false;
-  const city = cityOf(d);
-  if (!city || !city.res) return false;
-  // Find available ship nearby
-  let ship = findNearbyShip(d, city);
-  if (!ship && city.res.wood >= SHIP_COST.wood && city.res.cloth >= SHIP_COST.cloth && city.res.iron >= SHIP_COST.iron) {
-    // Check if city is near coast before trying to build
-    let nearCoast = false;
-    for (let dy = -4; dy <= 4 && !nearCoast; dy++)
-      for (let dx = -4; dx <= 4 && !nearCoast; dx++) {
-        const x = wrapX(city.mx+dx), y = city.my+dy;
-        if (y >= 0 && y < MAP_H && isWater(x, y)) nearCoast = true;
-      }
-    if (nearCoast) ship = tryBuildShip(city);
-  }
-  if (!ship) return false;
-  // Pick destination — prefer closer coastal cities
-  const otherCities = CITIES.filter(c => c.id !== city.id && c.mx !== undefined);
-  const coastalCities = otherCities.filter(c => {
-    for (let dy = -3; dy <= 3; dy++)
-      for (let dx = -3; dx <= 3; dx++) {
-        const x = wrapX(c.mx+dx), y = c.my+dy;
-        if (y >= 0 && y < MAP_H && isWater(x, y)) return true;
-      }
-    return false;
-  });
-  if (!coastalCities.length) return false;
-  coastalCities.sort((a,b) => {
-    const da = Math.min(Math.abs(a.mx-city.mx), MAP_W-Math.abs(a.mx-city.mx)) + Math.abs(a.my-city.my);
-    const db = Math.min(Math.abs(b.mx-city.mx), MAP_W-Math.abs(b.mx-city.mx)) + Math.abs(b.my-city.my);
-    return da - db;
-  });
-  const pool = coastalCities.slice(0, Math.min(8, coastalCities.length));
-  const dest = pool[Math.floor(Math.random()*pool.length)];
-  // Dwarf walks to walkable tile adjacent to ship (ship is on water/shore)
-  const adjToShip = (x,y) => {
-    const dx = Math.min(Math.abs(x-ship.x), MAP_W-Math.abs(x-ship.x));
-    return dx <= 1 && Math.abs(y-ship.y) <= 1 && isWalkable(x,y);
-  };
-  // Fast-path: already adjacent to ship
-  if (adjToShip(d.x, d.y)) return boardShip(d, ship, dest);
-  const shipPath = bfs(d.x, d.y, adjToShip, false);
-  if (!shipPath || shipPath.length > 50) return false;
-  return boardShip(d, ship, dest);
 }
 
 function aiSeekFood(d) {
@@ -2236,7 +1812,7 @@ function tickAnimals() {
 
   // Dwarf-animal combat check: dwarves on same tile as dangerous animals
   for (const d of G.dwarves) {
-    if (d.dead || d.state === 'sailing' || d.state === 'riding') continue;
+    if (d.dead || d.state === 'traveling') continue;
     const nearby = nearbyAnimals(d.x, d.y);
     for (const a of nearby) {
       if (a.dead || a.owner) continue;
@@ -2315,23 +1891,6 @@ function tickSeason() {
         }
         return true;
       });
-      // Factory car manufacturing (once per year)
-      for (const city of CITIES) {
-        if (!city.res || city.mx === undefined) continue;
-        if (G.vehicles.length >= MAX_VEHICLES) break;
-        const r = city.res;
-        let factoryCount = 0;
-        for (let dy = -6; dy <= 6; dy++)
-          for (let dx = -6; dx <= 6; dx++) {
-            const fx = wrapX(city.mx+dx), fy = city.my+dy;
-            if (fy >= 0 && fy < MAP_H && G.map[fy][fx] === T.FACTORY) factoryCount++;
-          }
-        if (factoryCount > 0 && r.iron >= 5 && r.wood >= 3) {
-          r.iron -= 5; r.wood -= 3;
-          G.vehicles.push(createVehicle('car', city.mx, city.my, city.id));
-          log(`${city.name} \uD83C\uDFED factory produced a \uD83D\uDE97 car!`, 'city', 3, null, city.mx, city.my);
-        }
-      }
       // Generate per-city year resolutions
       const resolutions = [];
       for (const city of CITIES) {
@@ -2518,10 +2077,8 @@ function tickSeason() {
     // Auto-build roads between nearby cities
     autoConnectCities();
 
-    // Rebuild road graph and spawn vehicles
+    // Rebuild road graph
     if (!G.roadGraph || G.roadGraphDirty) rebuildRoadGraph();
-    spawnVehicles();
-    tickFreight();
 
     // Spawn animals
     spawnAnimals();
@@ -2709,15 +2266,6 @@ function getSerializableState() {
     })),
     stats:G.stats,
     homeCity:G.homeCity?{name:G.homeCity.name,mx:G.homeCity.mx,my:G.homeCity.my}:null,
-    ships:G.ships.map(s => ({
-      id:s.id,name:s.name,x:s.x,y:s.y,captainId:s.captainId,cityId:s.cityId,
-      cargo:s.cargo,state:s.state,
-    })),
-    vehicles:G.vehicles.map(v => ({
-      id:v.id,type:v.type,x:v.x,y:v.y,cityId:v.cityId,
-      driverId:v.driverId,cargo:v.cargo,state:v.state,
-      passengers:v.passengers||[],mode:v.mode||'idle',
-    })),
     mapDeltas:G.mapDeltas,
     graves:G.graves,
     yearResolutions:G.yearResolutions,
@@ -2736,13 +2284,10 @@ self.onmessage = function(e) {
       for (let y = 0; y < MAP_H; y++) G.map.push(flat.slice(y * MAP_W, (y+1) * MAP_W));
       CITIES = data.cities;
       CULTURES = data.cultures;
-      SHIP_NAMES = data.shipNames || SHIP_NAMES;
       DWARF_NAMES = data.dwarfNames;
       SURNAMES = data.surnames;
       AI_API_BASE = data.apiBase || '';
       G.dwarves = data.dwarves || [];
-      G.ships = (data.ships || []).map(s => ({...s, path:s.path||[], target:s.target||null}));
-      G.vehicles = (data.vehicles || []).map(v => ({...v, path:v.path||[], target:v.target||null}));
       G.tick = data.state?.tick || 0;
       G.year = data.state?.year || 1;
       G.season = data.state?.season || 0;
@@ -2824,31 +2369,6 @@ self.onmessage = function(e) {
         G.animals = saved.animals.map(a => ({...createAnimal(a.type, a.x, a.y), ...a, path:[], target:null}));
       }
       if (G.animals.length === 0) seedAnimals();
-      if (saved.ships?.length) {
-        G.ships = saved.ships.map(s => {
-          const ship = {
-            ...createShip(s.x, s.y, s.captainId, s.cityId),
-            id:s.id, name:s.name||shipNameForCity(s.cityId), cargo:s.cargo||{}, state:s.state||'docked',
-            cargoTotal:Object.values(s.cargo||{}).reduce((a,b)=>a+b,0),
-            path:[], target:null,
-          };
-          // Migrate beached ships back to shore water tiles
-          if (ship.state === 'docked' && !isWater(ship.x, ship.y)) {
-            const shore = findShoreSpot(ship.x, ship.y);
-            if (shore) { ship.x = shore.x; ship.y = shore.y; }
-          }
-          return ship;
-        });
-      }
-      if (saved.vehicles?.length) {
-        G.vehicles = saved.vehicles.map(v => ({
-          ...createVehicle(v.type, v.x, v.y, v.cityId),
-          id:v.id, driverId:v.driverId||null, cargo:v.cargo||{}, state:v.state||'parked',
-          cargoTotal:Object.values(v.cargo||{}).reduce((a,b)=>a+b,0),
-          passengers:v.passengers||[], mode:v.mode||'idle',
-          path:[], target:null,
-        }));
-      }
       // Restore map deltas
       if (saved.mapDeltas) {
         G.mapDeltas = saved.mapDeltas;
@@ -2888,12 +2408,6 @@ function startTickLoop() {
       }
       for (const d of G.dwarves) tickDwarf(d);
       G.dwarves = G.dwarves.filter(d => !d.dead);
-      { const alive = new Set(G.dwarves.map(d => d.id));
-        for (const v of G.vehicles) { if (v.passengers?.length) v.passengers = v.passengers.filter(id => alive.has(id)); }
-        for (const s of G.ships) { if (s.captainId && !alive.has(s.captainId)) s.captainId = null; }
-      }
-      tickShips();
-      tickVehicles();
       tickAnimals();
       tickSeason();
     }
@@ -2921,19 +2435,6 @@ function startTickLoop() {
       animals:G.animals.map(a => ({
         id:a.id,type:a.type,x:a.x,y:a.y,hp:a.hp,maxHp:a.maxHp,
         state:a.state,owner:a.owner,
-      })),
-      ships:G.ships.map(s => ({
-        id:s.id,name:s.name,x:s.x,y:s.y,captainId:s.captainId,cityId:s.cityId,
-        cargo:s.cargo,cargoTotal:s.cargoTotal||0,state:s.state,
-        target:s.target?{cityId:s.target.cityId}:null,
-        pathLength:s.path?.length||0,
-      })),
-      vehicles:G.vehicles.map(v => ({
-        id:v.id,type:v.type,x:v.x,y:v.y,cityId:v.cityId,
-        driverId:v.driverId,cargo:v.cargo,cargoTotal:v.cargoTotal||0,
-        state:v.state,target:v.target?{cityId:v.target.cityId}:null,
-        pathLength:v.path?.length||0,
-        passengers:v.passengers||[],mode:v.mode||'idle',
       })),
       cities:CITIES.filter(c => c.res).map(c => ({id:c.id,res:{...c.res},mx:c.mx,my:c.my,name:c.name,emoji:c.emoji})),
       suburbs:G.suburbs.map(s => ({id:s.id,name:s.name,emoji:s.emoji,mx:s.mx,my:s.my,parentCityId:s.parentCityId,culture:s.culture,res:{...s.res}})),

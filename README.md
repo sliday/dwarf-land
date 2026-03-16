@@ -80,19 +80,20 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - **Autonomous freight**: parked vehicles without drivers autonomously shuttle surplus resources from cities with abundance to cities with shortages, balancing the economy
 - Vehicle inspector shows mode (Trade/Freight/Idle) and clickable passenger list
 
-### Ships & Sea Travel
-- Coastal cities start with 2 ships; up to 50 ships globally
-- Ships built at coastal cities (10 wood + 3 cloth + 2 iron)
-- **Shore docking**: docked ships stay on shore water tiles (water adjacent to land) — always visible on the coastline; dwarves walk to shore to board
+### Travel Modes
+- Dwarves travel between cities using the best available transport
+- **Walking** (default): speed 1x, no cargo bonus
+- **Horse Cart** 🐴: requires PATH/gravel road, speed 2x, +8 cargo capacity
+- **Car** 🚗: requires ASPHALT road, speed 4x, +15 cargo capacity
+- **Train** 🚂: requires RAILROAD, speed 6x, +40 cargo capacity
+- **Ship** ⛵: requires both cities coastal (no land route), speed 3x, +10 cargo capacity
+- Land routes always preferred over sea routes
+- Dwarf emoji changes to match travel mode while in transit
+- Goods carried are delivered to destination city on arrival
 - **Ocean wildlife**: sharks, whales, and dolphins swim in the ocean (up to 400 animals total)
-- 1 captain per ship — sails across ocean to other coastal cities
-- Captain sleeps and eats aboard; ship auto-fishes from fish spots
-- Cargo system: resources transfer to destination city on arrival
-- Ambitious dwarves spontaneously embark on voyages
-- Click ships on map to inspect cargo, captain, destination
 
 ### UI
-- Click inspector for dwarves (stats, inventory, carry, events), cities (ideology), terrain, ships
+- Click inspector for dwarves (stats, inventory, carry, events), cities (ideology), terrain
 - **Live inspector**: open panels auto-refresh every 30 ticks — watch stats change in real time
 - Follow/lock camera on a specific dwarf with pulsing ring indicator
 - **Clickable HUD stats**: all top bar stats are interactive — Dwarves (sortable/filterable population list), City (dropdown switcher), Resources (per-resource city rankings), Year (timeline with past resolutions), Sponsored (sponsored dwarves list)
