@@ -50,6 +50,7 @@
   }
 
   #game-canvas { position: absolute; top: 0; left: 0; image-rendering: pixelated; touch-action: none; }
+  #game-canvas.tool-active { cursor: crosshair; }
 
   .hud-top {
     position: absolute; top: 0; left: 0; right: 0;
@@ -66,10 +67,23 @@
   .hud-stat .value { font-size: 20px; font-weight: bold; color: #ebdbb2; font-variant-numeric: tabular-nums; }
 
   .minimap {
-    position: absolute; top: 8px; right: 8px;
+    position: absolute; top: 52px; right: 8px;
     border: 1px solid #504945; background: rgba(29,32,33,0.9);
     z-index: 10; cursor: crosshair;
   }
+  .site-logo {
+    position: absolute; top: 8px; left: 12px; z-index: 11;
+    display: flex; align-items: center; gap: 8px; pointer-events: auto;
+  }
+  .site-logo .logo-text { font-size: 15px; font-weight: 800; color: #ebdbb2; letter-spacing: 0.02em; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+  .site-logo .logo-dot { color: #fabd2f; }
+  .site-logo .info-btn {
+    font-size: 13px; color: #a89984; cursor: pointer; background: rgba(60,56,54,0.8);
+    border: 1px solid #504945; border-radius: 50%; width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center; transition: color 0.15s;
+  }
+  .site-logo .info-btn:hover { color: #ebdbb2; }
+  .mobile .site-logo .logo-text, .mobile .site-logo .logo-dot { display: none; }
 
   .event-log {
     position: absolute; bottom: 24px; left: 0;
@@ -136,9 +150,12 @@
   .action-btn {
     padding: 6px 16px; font-size: 13px; border: 1px solid #504945; background: #3c3836;
     color: #ebdbb2; cursor: pointer; border-radius: 4px; font-family: inherit;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
   }
   .action-btn:hover { background: #504945; }
-  .action-btn.active { background: #458588; color: #1d2021; border-color: #458588; }
+  .action-btn.active { background: #458588; color: #1d2021; border-color: #83a598; box-shadow: 0 0 6px rgba(131,165,152,0.4); }
+  .action-btn.tool-btn { border-left: 3px solid transparent; }
+  .action-btn.tool-btn.active { border-left-color: #fabd2f; }
 
   .status-bar {
     position: absolute; bottom: 0; left: 0; right: 0; height: 24px;
@@ -305,6 +322,10 @@
 </div>
 
 <div id="year-banner" class="hidden"></div>
+<div class="site-logo">
+  <span class="logo-text">dwarf<span class="logo-dot">.</span>land</span>
+  <button class="info-btn" onclick="DAUB.openModal('about-modal')" title="Info">i</button>
+</div>
 <canvas class="minimap" id="minimap" width="250" height="125"></canvas>
 <div class="event-log">
   <div class="log-header">
@@ -324,13 +345,12 @@
     <input type="range" id="speed-slider" min="0" max="3" value="1" class="ctrl-slider">
     <span class="speed-label" id="speed-val">1x</span>
   </div>
-  <div class="section-label">Click and draw to create:</div>
+  <div class="section-label" id="tool-label">Tools:</div>
   <div class="action-row">
-    <button class="action-btn" id="btn-mine" title="Drag on map to mark mountains/hills for mining">&#x26cf; Mine</button>
-    <button class="action-btn" id="btn-farm" title="Drag on map to mark areas for farm plots">&#x1f33e; Farm</button>
-    <button class="action-btn" id="btn-road" title="Drag on map to mark areas for road construction">&#x1f6e4;&#xfe0f; Road</button>
+    <button class="action-btn tool-btn" id="btn-mine" title="Toggle mining mode — click and drag to designate">&#x26cf; Mine</button>
+    <button class="action-btn tool-btn" id="btn-farm" title="Toggle farm mode — click and drag to designate">&#x1f33e; Farm</button>
+    <button class="action-btn tool-btn" id="btn-road" title="Toggle road mode — click and drag to designate (on roads = upgrade)">&#x1f6e4;&#xfe0f; Road</button>
     <button class="action-btn" id="btn-search" title="Search for a dwarf by name">&#x1f50d;</button>
-    <button class="action-btn" id="btn-about" onclick="DAUB.openModal('about-modal')">?</button>
     <a class="action-btn" href="https://github.com/sliday/dwarf-land" target="_blank" rel="noopener noreferrer" title="GitHub" style="text-decoration:none;display:inline-flex;align-items:center"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
   </div>
 </div>
@@ -4794,7 +4814,6 @@ function finalizeDesignation() {
     }
   }
   G.drag = null; G.sel = null;
-  setMode('normal');
   updateHUD();
 }
 
@@ -4936,17 +4955,19 @@ canvas.addEventListener('touchcancel', e => {
 // ---- Buttons ----
 function setMode(m) {
   G.mode = m;
+  const toolLabel = document.getElementById('tool-label');
   document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active'));
-  if (m === 'mine') document.getElementById('btn-mine').classList.add('active');
-  if (m === 'farm') document.getElementById('btn-farm').classList.add('active');
-  if (m === 'road') document.getElementById('btn-road').classList.add('active');
+  canvas.classList.toggle('tool-active', m !== 'normal');
+  if (m === 'mine') { document.getElementById('btn-mine').classList.add('active'); toolLabel.textContent = '⛏️ Mining — drag to designate'; }
+  else if (m === 'farm') { document.getElementById('btn-farm').classList.add('active'); toolLabel.textContent = '🌾 Farming — drag to designate'; }
+  else if (m === 'road') { document.getElementById('btn-road').classList.add('active'); toolLabel.textContent = '🛤️ Road — drag to designate'; }
+  else { toolLabel.textContent = 'Tools:'; }
   if (isMobile) {
     canvas.classList.remove('mode-border', 'farm', 'road');
     const cancelBtn = document.getElementById('mobile-cancel-btn');
     if (m !== 'normal') {
       canvas.classList.add('mode-border');
-      if (m === 'build') canvas.classList.add('build');
-      else if (m === 'farm') canvas.classList.add('farm');
+      if (m === 'farm') canvas.classList.add('farm');
       else if (m === 'road') canvas.classList.add('road');
       cancelBtn.classList.add('visible');
     } else {
