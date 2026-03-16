@@ -64,7 +64,9 @@
   .hud-stat { text-align: center; pointer-events: auto; cursor: pointer; border-radius: 6px; padding: 2px 8px; transition: background 0.15s; }
   .hud-stat:hover { background: rgba(255,255,255,0.07); }
   .hud-stat .label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #a89984; font-weight: 700; }
-  .hud-stat .value { font-size: 20px; font-weight: bold; color: #ebdbb2; font-variant-numeric: tabular-nums; }
+  .hud-stat .value { font-size: 13px; font-weight: bold; color: #ebdbb2; font-variant-numeric: tabular-nums; }
+  .hud-stat .value .res-item { cursor: pointer; padding: 1px 3px; border-radius: 3px; transition: background 0.15s; }
+  .hud-stat .value .res-item:hover { background: rgba(255,255,255,0.12); }
 
   .minimap {
     position: absolute; top: 52px; right: 8px;
@@ -215,7 +217,7 @@
 
   /* ---- Mobile ---- */
   .mobile .hud-top { gap: 8px; padding: 6px 8px; }
-  .mobile .hud-stat .value { font-size: 14px; }
+  .mobile .hud-stat .value { font-size: 12px; }
   .mobile .hud-stat .label { font-size: 8px; }
   @media (max-width: 430px) {
     .mobile #hud-sponsored-wrap { display: none; }
@@ -316,7 +318,7 @@
     <div class="value" id="h-city">-</div>
     <div id="city-dropdown" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);background:rgba(29,32,33,0.97);border:1px solid #504945;border-radius:6px;max-height:300px;overflow-y:auto;z-index:30;min-width:180px;scrollbar-width:thin;scrollbar-color:#504945 transparent"></div>
   </div>
-  <div class="hud-stat" id="hud-res-wrap"><div class="label">Resources</div><div class="value" id="h-res" style="font-size:13px">-</div></div>
+  <div class="hud-stat" id="hud-res-wrap"><div class="label">Resources</div><div class="value" id="h-res">-</div></div>
   <div class="hud-stat" id="hud-year-wrap"><div class="label">Year</div><div class="value" id="h-year">1</div></div>
   <div class="hud-stat" id="hud-sponsored-wrap" title="Click to see sponsored dwarves"><div class="label">Sponsored</div><div class="value" id="h-sponsored" style="color:#fabd2f">$0</div></div>
 </div>
@@ -4082,9 +4084,9 @@ function updateHUD() {
     resEl.textContent = '';
     for (const [icon, key] of RES_ICONS) {
       const span = document.createElement('span');
-      span.title = RES_NAMES[key];
-      span.textContent = icon + fmtN(r[key] ?? 0) + ' ';
-      span.style.cursor = 'pointer';
+      span.className = 'res-item';
+      span.title = RES_NAMES[key] + ' — click to rank cities';
+      span.textContent = icon + fmtN(r[key] ?? 0);
       span.onclick = (e) => { e.stopPropagation(); showResourceRanking(key); };
       resEl.appendChild(span);
     }
