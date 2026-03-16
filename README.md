@@ -83,7 +83,7 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 ### Ships & Sea Travel
 - Coastal cities start with 2 ships; up to 50 ships globally
 - Ships built at coastal cities (10 wood + 3 cloth + 2 iron)
-- **Ship beaching**: docked ships move onto adjacent land tiles so dwarves can walk to them; ships launch back to water when sailing begins
+- **Shore docking**: docked ships stay on shore water tiles (water adjacent to land) — always visible on the coastline; dwarves walk to shore to board
 - **Ocean wildlife**: sharks, whales, and dolphins swim in the ocean (up to 400 animals total)
 - 1 captain per ship — sails across ocean to other coastal cities
 - Captain sleeps and eats aboard; ship auto-fishes from fish spots
