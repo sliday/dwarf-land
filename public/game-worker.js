@@ -63,19 +63,7 @@ function bestTravelMode(origin, dest) {
   return 'walk';
 }
 
-function tryTravel(d) {
-  const city = cityOf(d);
-  if (!city || !city.res) return false;
-  if (d.hunger < 30 || d.energy < 25) return false;
-  const others = CITIES.filter(c => c.id !== city.id && c.mx !== undefined);
-  if (!others.length) return false;
-  others.sort((a,b) => {
-    const da = Math.min(Math.abs(a.mx-city.mx), MAP_W-Math.abs(a.mx-city.mx)) + Math.abs(a.my-city.my);
-    const db = Math.min(Math.abs(b.mx-city.mx), MAP_W-Math.abs(b.mx-city.mx)) + Math.abs(b.my-city.my);
-    return da - db;
-  });
-  const pool = others.slice(0, 5);
-  const dest = pool[Math.floor(Math.random() * pool.length)];
+function tryTravelTo(d, city, dest) {
   const mode = bestTravelMode(city, dest);
   const tm = TRAVEL_MODES[mode];
   if (mode === 'ship') {
@@ -110,6 +98,38 @@ function tryTravel(d) {
   log(`${d.name} ${tm.emoji} traveling to ${dest.name} by ${tm.label}`, 'system', 2, null, d.x, d.y);
   addEvent(d, 'travel', `${tm.label} to ${dest.name}`);
   return true;
+}
+
+function tryTravel(d) {
+  const city = cityOf(d);
+  if (!city || !city.res) return false;
+  if (d.hunger < 30 || d.energy < 25) return false;
+  // Ensure road graph exists
+  if (!G.roadGraph) rebuildRoadGraph();
+  const others = CITIES.filter(c => c.id !== city.id && c.mx !== undefined);
+  if (!others.length) return false;
+  // Sort by distance, prefer connected cities
+  others.sort((a,b) => {
+    const pairA = [city.id, a.id].sort().join('-');
+    const pairB = [city.id, b.id].sort().join('-');
+    const hasRoadA = G.roadGraph?.[pairA] ? 1 : 0;
+    const hasRoadB = G.roadGraph?.[pairB] ? 1 : 0;
+    if (hasRoadA !== hasRoadB) return hasRoadB - hasRoadA; // connected first
+    const da = Math.min(Math.abs(a.mx-city.mx), MAP_W-Math.abs(a.mx-city.mx)) + Math.abs(a.my-city.my);
+    const db = Math.min(Math.abs(b.mx-city.mx), MAP_W-Math.abs(b.mx-city.mx)) + Math.abs(b.my-city.my);
+    return da - db;
+  });
+  // Try up to 5 candidates — prefer non-walk modes
+  const pool = others.slice(0, 8);
+  // Shuffle pool for variety
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  for (const dest of pool) {
+    if (tryTravelTo(d, city, dest)) return true;
+  }
+  return false;
 }
 
 function aiTravel(d) {
