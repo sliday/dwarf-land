@@ -560,8 +560,8 @@ const TERRAIN_PROPS = {
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
 const SEASON_EMOJIS = ['\u{1F331}','\u2600\uFE0F','\u{1F342}','\u2744\uFE0F'];
 
-const RES_NAMES = { food:'Food', wood:'Wood', stone:'Stone', iron:'Iron', gold:'Gold', cloth:'Cloth', ale:'Ale', herbs:'Herbs', beds:'Beds', tables:'Workshops' };
-const RES_ICONS = [['🍖','food'],['🪵','wood'],['🪨','stone'],['⚔️','iron'],['🌕','gold'],['🧵','cloth'],['🍺','ale'],['🌿','herbs'],['🛏️','beds'],['⚒️','tables']];
+const RES_NAMES = { food:'Food', wood:'Wood', stone:'Stone', iron:'Iron', gold:'Gold', cloth:'Cloth', ale:'Ale', herbs:'Herbs', tools:'Tools', relics:'Relics', beds:'Beds', tables:'Workshops' };
+const RES_ICONS = [['🍖','food'],['🪵','wood'],['🪨','stone'],['⚔️','iron'],['🌕','gold'],['🧵','cloth'],['🍺','ale'],['🌿','herbs'],['🛠️','tools'],['💎','relics'],['🛏️','beds'],['⚒️','tables']];
 
 const EMOJI = {
   [T.TUNDRA]: '❄️', [T.TAIGA]: '🌲', [T.FOREST]: '🌳',
@@ -899,24 +899,93 @@ const SURNAMES = [
 
 // ---- Per-city resource template ----
 function defaultRes() {
-  return { stone: 0, wood: 0, food: 50, iron: 0, gold: 0, cloth: 0, ale: 0, herbs: 0, beds: 0, tables: 0 };
+  return { stone: 0, wood: 0, food: 50, iron: 0, gold: 0, cloth: 0, ale: 0, herbs: 0, tools: 0, relics: 0, beds: 0, tables: 0 };
+}
+
+const INDUSTRY_RECIPES = [
+  { out: 'ale', amount: 1, cost: { food: 32, herbs: 4 } },
+  { out: 'cloth', amount: 1, cost: { food: 64, herbs: 8 } },
+  { out: 'iron', amount: 1, cost: { stone: 128, wood: 32 } },
+  { out: 'gold', amount: 1, cost: { iron: 64, ale: 32 } },
+  { out: 'tools', amount: 1, cost: { iron: 128, wood: 64, cloth: 16 } },
+  { out: 'relics', amount: 1, cost: { gold: 16, tools: 8, ale: 128, stone: 256 } },
+];
+
+function industryReserve(key, cityPop) {
+  if (key === 'food') return 50 + cityPop * 8;
+  if (key === 'wood' || key === 'stone') return 8;
+  if (key === 'iron' || key === 'cloth' || key === 'ale' || key === 'herbs') return 4;
+  if (key === 'gold' || key === 'tools') return 1;
+  return 0;
+}
+
+function industryCapacity(counts) {
+  return Math.max(0, Math.min(8, (counts.tableCount || 0) + (counts.factoryCount || 0) * 4));
+}
+
+function industryScale(owned, produced) {
+  const ownedTier = Math.max(0, Math.floor(Math.log2((owned || 0) + 1)) - 4);
+  return 2 ** Math.min(6, ownedTier + produced);
+}
+
+function scaleIndustryCost(cost, owned, produced) {
+  const scale = industryScale(owned, produced);
+  const scaled = {};
+  for (const [key, amount] of Object.entries(cost)) scaled[key] = amount * scale;
+  return scaled;
+}
+
+function canPayIndustry(res, cost, cityPop) {
+  for (const [key, amount] of Object.entries(cost)) {
+    if ((res[key] || 0) - amount < industryReserve(key, cityPop)) return false;
+  }
+  return true;
+}
+
+function payIndustry(res, cost) {
+  for (const [key, amount] of Object.entries(cost)) res[key] = (res[key] || 0) - amount;
+}
+
+function runCityIndustry(city, counts, cityPop) {
+  const res = city.res;
+  const capacity = industryCapacity(counts);
+  if (!res || capacity <= 0) return null;
+  const made = {};
+  let total = 0;
+  for (const recipe of INDUSTRY_RECIPES) {
+    let batches = 0;
+    while (batches < capacity) {
+      const cost = scaleIndustryCost(recipe.cost, res[recipe.out] || 0, made[recipe.out] || 0);
+      if (!canPayIndustry(res, cost, cityPop)) break;
+      payIndustry(res, cost);
+      res[recipe.out] = (res[recipe.out] || 0) + recipe.amount;
+      made[recipe.out] = (made[recipe.out] || 0) + recipe.amount;
+      batches++;
+      total++;
+    }
+  }
+  return total > 0 ? made : null;
+}
+
+function formatIndustry(made) {
+  return Object.entries(made).map(([key, amount]) => `+${amount} ${RES_NAMES[key] || key}`).join(', ');
 }
 
 function biomeStartRes(city) {
   const absLat = Math.abs(city.lat);
   // Arctic (>58°) — sparse but mineral-rich
-  if (absLat > 58) return { stone: 60, wood: 15, food: 30, iron: 15, gold: 2, cloth: 5, ale: 5, herbs: 0, beds: 0, tables: 0 };
+  if (absLat > 58) return { stone: 60, wood: 15, food: 30, iron: 15, gold: 2, cloth: 5, ale: 5, herbs: 0, tools: 0, relics: 0, beds: 0, tables: 0 };
   // Desert belt (lat 15-35, arid longitudes: Middle East, North Africa, SW US)
   const isDesert = absLat > 15 && absLat < 35 && (
     (city.lon > 20 && city.lon < 60) || // Middle East / North Africa
     (city.lon > -10 && city.lon < 35 && absLat < 32) || // Sahara
     (city.lon < -100 && city.lat > 25 && city.lat < 40) // SW USA
   );
-  if (isDesert) return { stone: 120, wood: 10, food: 40, iron: 5, gold: 3, cloth: 5, ale: 0, herbs: 0, beds: 0, tables: 0 };
+  if (isDesert) return { stone: 120, wood: 10, food: 40, iron: 5, gold: 3, cloth: 5, ale: 0, herbs: 0, tools: 0, relics: 0, beds: 0, tables: 0 };
   // Tropical (within 20° of equator) — abundant food and wood
-  if (absLat < 20) return { stone: 20, wood: 80, food: 100, iron: 0, gold: 0, cloth: 5, ale: 0, herbs: 15, beds: 0, tables: 0 };
+  if (absLat < 20) return { stone: 20, wood: 80, food: 100, iron: 0, gold: 0, cloth: 5, ale: 0, herbs: 15, tools: 0, relics: 0, beds: 0, tables: 0 };
   // Temperate (default) — balanced
-  return { stone: 40, wood: 50, food: 70, iron: 5, gold: 0, cloth: 5, ale: 5, herbs: 5, beds: 0, tables: 0 };
+  return { stone: 40, wood: 50, food: 70, iron: 5, gold: 0, cloth: 5, ale: 5, herbs: 5, tools: 0, relics: 0, beds: 0, tables: 0 };
 }
 
 // ---- State ----
@@ -962,6 +1031,7 @@ function setWorldTile(x, y, tile, opts = {}) {
   if (y < 0 || y >= MAP_H) return;
   G.map[y][wx] = tile;
   if (opts.trackDelta !== false) G.mapDeltas[`${wx},${y}`] = tile;
+  if (opts.patchMinimap !== false) pendingMmPatches.push({ x: wx, y, tile });
   if (opts.markDirty !== false) G.mapDirty = true;
 }
 function nearestCity(x, y) {
@@ -1104,6 +1174,7 @@ let tileBufferSeason = -1;
 const TILE_PAD = 2;
 let mmDirty = true; // separate dirty flag for minimap (throttled)
 const pendingTilePatches = []; // individual tile changes to paint without full re-render
+const pendingMmPatches = [];
 
 // Minimap buffer
 let mmBuffer = null;
@@ -1116,26 +1187,57 @@ function createMmBuffer() {
   mmBufferCtx = mmBuffer.getContext('2d');
 }
 
+const mmColorCache = {};
+function mmColorForTile(t) {
+  const key = t === T.OCEAN ? 'ocean' : t;
+  if (mmColorCache[key]) return mmColorCache[key];
+  const hex = t === T.OCEAN ? '#305e8f' : (BG_COLORS[t] || '#4a6c2f');
+  const value = hex.startsWith('#') ? hex.slice(1) : '4a6c2f';
+  return (mmColorCache[key] = [
+    parseInt(value.slice(0, 2), 16),
+    parseInt(value.slice(2, 4), 16),
+    parseInt(value.slice(4, 6), 16),
+  ]);
+}
+
 function renderMmBuffer() {
   const mw = mmBuffer.width, mh = mmBuffer.height;
   const sx = mw / MAP_W, sy = mh / MAP_H;
-  mmBufferCtx.fillStyle = '#305e8f';
-  mmBufferCtx.fillRect(0, 0, mw, mh);
-  for (let y = 0; y < MAP_H; y++) {
-    for (let x = 0; x < MAP_W; x++) {
-      const t = G.map[y][x];
-      if (t === T.OCEAN) continue;
-      mmBufferCtx.fillStyle = BG_COLORS[t] || '#4a6c2f';
-      mmBufferCtx.fillRect(Math.floor(x * sx), Math.floor(y * sy), Math.ceil(sx), Math.ceil(sy));
+  const img = mmBufferCtx.createImageData(mw, mh);
+  const data = img.data;
+  for (let py = 0; py < mh; py++) {
+    const row = G.map[Math.min(MAP_H - 1, Math.floor(py / sy))];
+    for (let px = 0; px < mw; px++) {
+      const [r, g, b] = mmColorForTile(row[Math.min(MAP_W - 1, Math.floor(px / sx))]);
+      const i = (py * mw + px) * 4;
+      data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255;
     }
   }
-  // City dots
+  mmBufferCtx.putImageData(img, 0, 0);
+  drawMmCities(sx, sy);
+}
+
+function drawMmCities(sx, sy) {
   mmBufferCtx.fillStyle = '#fabd2f';
   for (const c of CITIES) {
     if (c.mx !== undefined) {
       mmBufferCtx.fillRect(Math.floor(c.mx * sx) - 1, Math.floor(c.my * sy) - 1, 3, 3);
     }
   }
+}
+
+function patchMmBuffer() {
+  if (!pendingMmPatches.length || !mmBufferCtx) return;
+  const mw = mmBuffer.width, mh = mmBuffer.height;
+  const sx = mw / MAP_W, sy = mh / MAP_H;
+  const pw = Math.max(1, Math.ceil(sx));
+  const ph = Math.max(1, Math.ceil(sy));
+  for (const ch of pendingMmPatches) {
+    mmBufferCtx.fillStyle = ch.tile === T.OCEAN ? '#305e8f' : (BG_COLORS[ch.tile] || '#4a6c2f');
+    mmBufferCtx.fillRect(Math.floor(ch.x * sx), Math.floor(ch.y * sy), pw, ph);
+  }
+  pendingMmPatches.length = 0;
+  drawMmCities(sx, sy);
 }
 
 // ---- Coordinate conversion ----
@@ -2102,7 +2204,7 @@ function tryTradeCaravan(d) {
   const destCity = CITIES.find(c => c.mx === dest[0] && c.my === dest[1]);
   if (!destCity || !destCity.res) return false;
   const tradeGoods = [];
-  const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs'];
+  const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs','tools','relics'];
   for (const k of keys) {
     const homeAmt = home.res[k] || 0;
     const destAmt = destCity.res[k] || 0;
@@ -2297,7 +2399,7 @@ function aiWalk(d) {
         const good = d.target.good;
         const amt = d.carryItems[good] || d.carrying;
         destCity.res[good] = (destCity.res[good] || 0) + amt;
-        const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs'];
+        const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs','tools','relics'];
         let returnGood = null, returnAmt = 0;
         for (const k of keys) {
           if (k === good) continue;
@@ -2799,7 +2901,7 @@ function tryFoundCity(d) {
     lon: 0, lat: 0, emoji: '🏕️',
     culture: parentCity.culture || 'american',
     mx: d.x, my: d.y,
-    res: { stone: 0, wood: 0, food: 20, iron: 0, gold: 0, cloth: 0, ale: 0, herbs: 0, beds: 0, tables: 0 },
+    res: { stone: 0, wood: 0, food: 20, iron: 0, gold: 0, cloth: 0, ale: 0, herbs: 0, tools: 0, relics: 0, beds: 0, tables: 0 },
   };
   // Add pooled resources
   for (const [k, v] of Object.entries(pooled)) {
@@ -2979,7 +3081,7 @@ function tickSeason() {
       // Per-city harvest based on nearby farms and resource tiles
       for (const city of CITIES) {
         if (!city.res || city.mx === undefined) continue;
-        let farmCount = 0, fishCount = 0, berryCount = 0, herbCount = 0, bedCount = 0, tableCount = 0;
+        let farmCount = 0, fishCount = 0, berryCount = 0, herbCount = 0, bedCount = 0, tableCount = 0, factoryCount = 0;
         const r = 15;
         for (let dy = -r; dy <= r; dy++) {
           for (let dx = -r; dx <= r; dx++) {
@@ -2992,6 +3094,7 @@ function tickSeason() {
             else if (t === T.HERB_PATCH) herbCount++;
             else if (t === T.BED) bedCount++;
             else if (t === T.TABLE) tableCount++;
+            else if (t === T.FACTORY) factoryCount++;
           }
         }
         city.res.beds = bedCount;
@@ -3001,8 +3104,8 @@ function tickSeason() {
         city.res.food += harvest;
         if (herbCount > 0) city.res.herbs += Math.ceil(herbCount / 2);
         if (farmCount >= 3) city.res.cloth += Math.floor(farmCount / 3);
-        // Passive ale from excess food
-        if (city.res.food > 50 + cityPop * 5) city.res.ale += Math.min(5, Math.floor((city.res.food - 50) / 20));
+        const made = runCityIndustry(city, { tableCount, factoryCount }, cityPop);
+        if (made) log(`${city.name} industry produced ${formatIndustry(made)}`, 'city', 4, undefined, city.emoji, city.mx, city.my);
       }
       log(`🌾 Harvest season! Cities gather from farms, fisheries, and foraging.`, 'farm');
 
@@ -3467,7 +3570,7 @@ function render() {
   if (camMoved || G.mapDirty) {
     renderTileBuffer(startGX, startGY, endGX, endGY);
     pendingTilePatches.length = 0;
-    if (G.mapDirty) mmDirty = true;
+    if (G.mapDirty && pendingMmPatches.length === 0) mmDirty = true;
     G.mapDirty = false;
   } else if (pendingTilePatches.length) {
     for (const ch of pendingTilePatches) patchTile(ch.x, ch.y);
@@ -3767,7 +3870,8 @@ function render() {
 }
 
 function renderMinimap() {
-  if (mmDirty) { renderMmBuffer(); mmDirty = false; }
+  if (mmDirty) { renderMmBuffer(); mmDirty = false; pendingMmPatches.length = 0; }
+  else if (pendingMmPatches.length) patchMmBuffer();
   mmCtx.drawImage(mmBuffer, 0, 0);
 
   // Viewport rect
@@ -5777,7 +5881,7 @@ async function restoreState() {
     for (const [key, tile] of Object.entries(saved.mapDeltas)) {
       const [x, y] = key.split(',').map(Number);
       if (y >= 0 && y < MAP_H && x >= 0 && x < MAP_W) {
-        setWorldTile(x, y, tile, { trackDelta: false, markDirty: false });
+        setWorldTile(x, y, tile, { trackDelta: false, markDirty: false, patchMinimap: false });
       }
     }
     tileBuffer = null; // Force re-render of tile cache
@@ -5815,17 +5919,20 @@ window.addEventListener('beforeunload', () => {
 
 // ---- Game Loop ----
 let lastTime = 0, tickAccum = 0, frames = 0, fpsTimer = 0;
-const FRAME_MS = 1000 / 30; // cap at 30fps
+const TARGET_FPS = isMobile ? 30 : 60;
+const FRAME_MS = 1000 / TARGET_FPS;
 
 function gameLoop(ts) {
   requestAnimationFrame(gameLoop);
-  const dt = ts - lastTime;
-  if (dt < FRAME_MS) return;
-  lastTime = ts;
-  frames++; fpsTimer += dt;
-  if (fpsTimer >= 1000) {
-    document.getElementById('sb-fps').textContent = frames + ' fps';
-    frames = 0; fpsTimer = 0;
+  if (!lastTime) { lastTime = ts; fpsTimer = ts; return; }
+  const elapsed = ts - lastTime;
+  if (elapsed < FRAME_MS - 1) return;
+  const dt = Math.min(elapsed, 250);
+  lastTime = ts - (elapsed % FRAME_MS);
+  frames++;
+  if (ts - fpsTimer >= 1000) {
+    document.getElementById('sb-fps').textContent = Math.round(frames * 1000 / (ts - fpsTimer)) + ' fps';
+    frames = 0; fpsTimer = ts;
   }
 
   handleKeys();
@@ -5890,7 +5997,8 @@ function initWorker() {
     const data = e.data;
     switch (data.type) {
       case 'snapshot':
-        G.dwarves = data.dwarves;
+        const previousDwarves = new Map(G.dwarves.map(d => [d.id, d]));
+        G.dwarves = data.dwarves.map(d => ({ ...previousDwarves.get(d.id), ...d }));
         if (Object.keys(G.sponsorMap).length) applySponsorships();
         G.animals = data.animals || [];
         G.tick = data.tick;
@@ -5903,7 +6011,7 @@ function initWorker() {
             setWorldTile(ch.x, ch.y, ch.tile, { markDirty: false });
             pendingTilePatches.push(ch);
           }
-          mmDirty = true;
+          if (!mmBufferCtx) mmDirty = true;
         }
         // Apply new graves
         if (data.newGraves) {

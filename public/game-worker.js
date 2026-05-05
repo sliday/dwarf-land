@@ -368,7 +368,77 @@ function nearestCity(x, y) {
   }
   return best;
 }
-function defaultRes() { return {stone:0,wood:0,food:50,iron:0,gold:0,cloth:0,ale:0,herbs:0,beds:0,tables:0}; }
+function defaultRes() { return {stone:0,wood:0,food:50,iron:0,gold:0,cloth:0,ale:0,herbs:0,tools:0,relics:0,beds:0,tables:0}; }
+
+const INDUSTRY_NAMES = { ale:'ale', cloth:'cloth', iron:'iron', gold:'gold', tools:'tools', relics:'relics' };
+const INDUSTRY_RECIPES = [
+  { out: 'ale', amount: 1, cost: { food: 32, herbs: 4 } },
+  { out: 'cloth', amount: 1, cost: { food: 64, herbs: 8 } },
+  { out: 'iron', amount: 1, cost: { stone: 128, wood: 32 } },
+  { out: 'gold', amount: 1, cost: { iron: 64, ale: 32 } },
+  { out: 'tools', amount: 1, cost: { iron: 128, wood: 64, cloth: 16 } },
+  { out: 'relics', amount: 1, cost: { gold: 16, tools: 8, ale: 128, stone: 256 } },
+];
+
+function industryReserve(key, cityPop) {
+  if (key === 'food') return 50 + cityPop * 8;
+  if (key === 'wood' || key === 'stone') return 8;
+  if (key === 'iron' || key === 'cloth' || key === 'ale' || key === 'herbs') return 4;
+  if (key === 'gold' || key === 'tools') return 1;
+  return 0;
+}
+
+function industryCapacity(counts) {
+  return Math.max(0, Math.min(8, (counts.tableCount || 0) + (counts.factoryCount || 0) * 4));
+}
+
+function industryScale(owned, produced) {
+  const ownedTier = Math.max(0, Math.floor(Math.log2((owned || 0) + 1)) - 4);
+  return 2 ** Math.min(6, ownedTier + produced);
+}
+
+function scaleIndustryCost(cost, owned, produced) {
+  const scale = industryScale(owned, produced);
+  const scaled = {};
+  for (const [key, amount] of Object.entries(cost)) scaled[key] = amount * scale;
+  return scaled;
+}
+
+function canPayIndustry(res, cost, cityPop) {
+  for (const [key, amount] of Object.entries(cost)) {
+    if ((res[key] || 0) - amount < industryReserve(key, cityPop)) return false;
+  }
+  return true;
+}
+
+function payIndustry(res, cost) {
+  for (const [key, amount] of Object.entries(cost)) res[key] = (res[key] || 0) - amount;
+}
+
+function runCityIndustry(city, counts, cityPop) {
+  const res = city.res;
+  const capacity = industryCapacity(counts);
+  if (!res || capacity <= 0) return null;
+  const made = {};
+  let total = 0;
+  for (const recipe of INDUSTRY_RECIPES) {
+    let batches = 0;
+    while (batches < capacity) {
+      const cost = scaleIndustryCost(recipe.cost, res[recipe.out] || 0, made[recipe.out] || 0);
+      if (!canPayIndustry(res, cost, cityPop)) break;
+      payIndustry(res, cost);
+      res[recipe.out] = (res[recipe.out] || 0) + recipe.amount;
+      made[recipe.out] = (made[recipe.out] || 0) + recipe.amount;
+      batches++;
+      total++;
+    }
+  }
+  return total > 0 ? made : null;
+}
+
+function formatIndustry(made) {
+  return Object.entries(made).map(([key, amount]) => `+${amount} ${INDUSTRY_NAMES[key] || key}`).join(', ');
+}
 
 function createSuburb(x, y, parentCityId, founderName) {
   const parent = cityById(parentCityId);
@@ -1165,7 +1235,7 @@ function aiWalk(d) {
         const amt = d.carryItems[good] || d.carrying;
         destCity.res[good] = (destCity.res[good] || 0) + amt;
         // Get something back that dest has surplus of
-        const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs'];
+        const keys = ['food','wood','stone','iron','gold','cloth','ale','herbs','tools','relics'];
         let returnGood = null, returnAmt = 0;
         for (const k of keys) {
           if (k === good) continue;
@@ -1595,7 +1665,7 @@ function tryFoundCity(d) {
     lon:0, lat:0, emoji:'🏕️',
     culture:parentCity.culture||'american',
     mx:d.x, my:d.y,
-    res:{stone:0,wood:0,food:20,iron:0,gold:0,cloth:0,ale:0,herbs:0,beds:0,tables:0},
+    res:{stone:0,wood:0,food:20,iron:0,gold:0,cloth:0,ale:0,herbs:0,tools:0,relics:0,beds:0,tables:0},
   };
   for (const [k,v] of Object.entries(pooled)) {
     if (newCity.res[k] !== undefined) newCity.res[k] += v;
@@ -2048,7 +2118,7 @@ function tickSeason() {
     if (G.season === 0 || G.season === 1) {
       for (const city of [...CITIES, ...G.suburbs]) {
         if (!city.res || city.mx === undefined) continue;
-        let farmCount=0, fishCount=0, berryCount=0, herbCount=0, bedCount=0, tableCount=0;
+        let farmCount=0, fishCount=0, berryCount=0, herbCount=0, bedCount=0, tableCount=0, factoryCount=0;
         const r = 15;
         for (let dy = -r; dy <= r; dy++)
           for (let dx = -r; dx <= r; dx++) {
@@ -2060,6 +2130,7 @@ function tickSeason() {
             else if (t === T.HERB_PATCH) herbCount++;
             else if (t === T.BED) bedCount++;
             else if (t === T.TABLE) tableCount++;
+            else if (t === T.FACTORY) factoryCount++;
           }
         city.res.beds = bedCount;
         city.res.tables = tableCount;
@@ -2068,7 +2139,8 @@ function tickSeason() {
         city.res.food += harvest;
         if (herbCount > 0) city.res.herbs += Math.ceil(herbCount/2);
         if (farmCount >= 3) city.res.cloth += Math.floor(farmCount/3);
-        if (city.res.food > 50 + cityPop*5) city.res.ale += Math.min(5, Math.floor((city.res.food-50)/20));
+        const made = runCityIndustry(city, { tableCount, factoryCount }, cityPop);
+        if (made) log(`${city.name} industry produced ${formatIndustry(made)}`, 'city', 4, city.emoji, city.mx, city.my);
       }
       log(`🌾 Harvest season! Cities gather from farms, fisheries, and foraging.`, 'farm', 3);
 
@@ -2524,6 +2596,8 @@ function startTickLoop() {
     }
     aiTickAll();
 
+    const includeDetails = G.tick % 30 === 0;
+
     // Post snapshot to main thread
     self.postMessage({
       type:'snapshot',
@@ -2535,14 +2609,15 @@ function startTickLoop() {
         state:d.state, target:d.target?{type:d.target.type}:null,
         travelMode:d.travelMode||null,
         stats:d.stats,faith:d.faith,morality:d.morality,ambition:d.ambition,age:d.age,
-        traits:d.traits,backstory:d.backstory,eventLog:d.eventLog?.slice(-50),
         carrying:d.carrying||0,carryItems:d.carryItems||{},
         carryMax:carryCapacity(d),
-        inventory:d.inventory||[],
         sponsored:d.sponsored,sponsorTier:d.sponsorTier,sponsorCallsRemaining:d.sponsorCallsRemaining,
         starveTicks:d.starveTicks||0,
-        relationships:d.relationships,
         hp:d.hp,maxHp:d.maxHp,ac:d.ac,poisonTicks:d.poisonTicks||0,pet:d.pet||null,sex:d.sex||'M',
+        ...(includeDetails ? {
+          traits:d.traits,backstory:d.backstory,eventLog:d.eventLog?.slice(-50),
+          inventory:d.inventory||[],relationships:d.relationships,
+        } : {}),
       })),
       animals:G.animals.map(a => ({
         id:a.id,type:a.type,x:a.x,y:a.y,hp:a.hp,maxHp:a.maxHp,

@@ -6,6 +6,10 @@ const indexHtml = readFileSync(
   join(process.cwd(), 'public/index.html'),
   'utf8'
 );
+const gameWorker = readFileSync(
+  join(process.cwd(), 'public/game-worker.js'),
+  'utf8'
+);
 
 describe('client state contract', () => {
   it('serializes extended world state for local saves', () => {
@@ -36,10 +40,47 @@ describe('client state contract', () => {
     expect(indexHtml).toContain("dirtTiles: G.dirtTiles || []");
   });
 
+  it('preserves dwarf detail fields across lightweight worker snapshots', () => {
+    expect(indexHtml).toContain('const previousDwarves = new Map(G.dwarves.map(d => [d.id, d]))');
+    expect(indexHtml).toContain('G.dwarves = data.dwarves.map(d => ({ ...previousDwarves.get(d.id), ...d }))');
+    expect(gameWorker).toContain('const includeDetails = G.tick % 30 === 0');
+    expect(gameWorker).toContain('...(includeDetails ? {');
+    expect(gameWorker).toContain('eventLog:d.eventLog?.slice(-50)');
+  });
+
   it('keeps terrain updates tracked in fallback and worker snapshot paths', () => {
     expect(indexHtml).toContain("setWorldTile(ch.x, ch.y, ch.tile, { markDirty: false })");
     expect(indexHtml).toContain("setWorldTile(x, y, T.D_MINE)");
     expect(indexHtml).toContain("setWorldTile(x, y, T.D_FARM)");
+  });
+
+  it('patches minimap tile changes instead of rebuilding the full minimap', () => {
+    expect(indexHtml).toContain('const pendingMmPatches = []');
+    expect(indexHtml).toContain('mmBufferCtx.createImageData(mw, mh)');
+    expect(indexHtml).toContain('pendingMmPatches.push({ x: wx, y, tile })');
+    expect(indexHtml).toContain('else if (pendingMmPatches.length) patchMmBuffer()');
+    expect(indexHtml).toContain('if (!mmBufferCtx) mmDirty = true');
+  });
+
+  it('uses a higher desktop frame cap while keeping mobile capped lower', () => {
+    expect(indexHtml).toContain('const TARGET_FPS = isMobile ? 30 : 60');
+    expect(indexHtml).toContain('const FRAME_MS = 1000 / TARGET_FPS');
+    expect(indexHtml).toContain('lastTime = ts - (elapsed % FRAME_MS)');
+    expect(indexHtml).toContain("Math.round(frames * 1000 / (ts - fpsTimer)) + ' fps'");
+  });
+
+  it('keeps geometric industry recipes aligned between fallback and worker', () => {
+    const indexRecipes = indexHtml.match(/const INDUSTRY_RECIPES = \[[\s\S]*?\];/)?.[0].replace(/\s+/g, '');
+    const workerRecipes = gameWorker.match(/const INDUSTRY_RECIPES = \[[\s\S]*?\];/)?.[0].replace(/\s+/g, '');
+    expect(indexRecipes).toBe(workerRecipes);
+    expect(indexHtml).toContain("tools:'Tools'");
+    expect(indexHtml).toContain("relics:'Relics'");
+    expect(indexHtml).toContain("['🛠️','tools']");
+    expect(indexHtml).toContain("['💎','relics']");
+    expect(indexHtml).toContain('runCityIndustry(city, { tableCount, factoryCount }, cityPop)');
+    expect(gameWorker).toContain('runCityIndustry(city, { tableCount, factoryCount }, cityPop)');
+    expect(indexHtml).not.toContain('city.res.ale += Math.min(5');
+    expect(gameWorker).not.toContain('city.res.ale += Math.min(5');
   });
 
   it('preserves travel intents in fallback mode', () => {
