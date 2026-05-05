@@ -73,7 +73,7 @@
   .minimap {
     position: absolute; top: 52px; right: 8px;
     border: 1px solid #504945; background: rgba(29,32,33,0.9);
-    z-index: 10; cursor: crosshair;
+    z-index: 10; cursor: crosshair; touch-action: none;
   }
   .site-logo {
     display: flex; align-items: center; gap: 6px; pointer-events: auto; margin-right: auto;
@@ -507,7 +507,7 @@ const WALKABLE = new Set([
   T.TUNDRA, T.TAIGA, T.FOREST, T.PLAINS, T.DESERT, T.JUNGLE, T.HILL, T.BEACH,
   T.MOUNTAIN,
   T.FLOOR, T.STOCKPILE, T.BED, T.TABLE, T.DOOR, T.MUSHROOM, T.FARM, T.CITY,
-  T.D_MINE, T.D_FARM, T.D_ROAD, T.D_UPGRADE, T.PATH, T.ROAD, T.RAILROAD,
+  T.D_MINE, T.D_FARM, T.D_ROAD, T.D_UPGRADE, T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD,
   T.BERRY_BUSH, T.HERB_PATCH, T.CLAY, T.DEER, T.CRAB,
   T.GRAVE,T.FACTORY,T.DIRT
 ]);
@@ -1003,7 +1003,7 @@ const G = {
   animals: [],
   stats: { mined: 0, built: 0, farmed: 0 },
   mapDeltas: {},
-  graves: {}, yearResolutions: [], suburbs: [], dirtTiles: [],
+  graves: {}, yearResolutions: [], suburbs: [], dirtTiles: [], upgradeFrom: {},
   cam: { x: 0, y: 0 },
   mode: 'normal', drag: null, sel: null,
   hovTile: null, mapDirty: true,
@@ -1043,6 +1043,9 @@ function cityPopulationCounts() {
   for (const d of G.dwarves) if (!d.dead) counts.set(d.cityId, (counts.get(d.cityId) || 0) + 1);
   return counts;
 }
+function canRebalanceDonor(d) {
+  return !d.dead && (d.age ?? 20) >= 20 && (d.state === 'idle' || d.state === 'wander') && !d.travelMode && !d.target && (!d.path || d.path.length === 0);
+}
 function rebalanceEmptyCities() {
   const counts = cityPopulationCounts();
   let fixed = 0;
@@ -1058,7 +1061,7 @@ function rebalanceEmptyCities() {
       }
     }
     const donor = G.dwarves
-      .filter(d => !d.dead && (d.age ?? 20) >= 20 && d.cityId !== city.id && (counts.get(d.cityId) || 0) > 1)
+      .filter(d => canRebalanceDonor(d) && d.cityId !== city.id && (counts.get(d.cityId) || 0) > 1)
       .sort((a, b) => (counts.get(b.cityId) || 0) - (counts.get(a.cityId) || 0))[0];
     if (!donor) continue;
     const oldCityId = donor.cityId;
@@ -1156,7 +1159,9 @@ function syncWorkerRouteDwarf(id) {
 function setWorldTile(x, y, tile, opts = {}) {
   const wx = wrapX(x);
   if (y < 0 || y >= MAP_H) return;
+  const prev = G.map[y][wx];
   G.map[y][wx] = tile;
+  if (ROAD_TYPES.has(prev) || ROAD_TYPES.has(tile)) { G._connectedRoads = null; G._hlRoads = null; }
   if (opts.trackDelta !== false) G.mapDeltas[`${wx},${y}`] = tile;
   if (opts.patchMinimap !== false) pendingMmPatches.push({ x: wx, y, tile });
   if (opts.markDirty !== false) G.mapDirty = true;
@@ -1796,7 +1801,7 @@ function generateMap() {
           const x = wrapX(cur[0]), y = cur[1];
           const t = G.map[y][x];
           // Don't overwrite buildings or city tiles
-          if (t !== T.CITY && t !== T.BED && t !== T.STOCKPILE && t !== T.TABLE && t !== T.FLOOR && t !== T.WALL && t !== T.DOOR && t !== T.FARM && t !== T.ROAD && t !== T.ASPHALT && t !== T.RAILROAD && t !== T.PATH) {
+          if (t !== T.CITY && t !== T.BED && t !== T.STOCKPILE && t !== T.TABLE && t !== T.WALL && t !== T.DOOR && t !== T.FARM && t !== T.ROAD && t !== T.ASPHALT && t !== T.RAILROAD && t !== T.PATH) {
             G.map[y][x] = T.PATH; count++;
           }
           cur = par.get(key(cur[0], cur[1]));
@@ -2192,6 +2197,7 @@ function tickDwarf(d) {
     case 'hauling': aiWalk(d); break;
     case 'seek_craft': aiSeekCraft(d); break;
     case 'crafting': aiCraft(d); break;
+    case 'roadwright': aiRoadwright(d); break;
     case 'traveling': aiWalk(d); break;
     case 'going_rescue': aiWalk(d); break;
   }
@@ -2351,6 +2357,139 @@ function tryTradeCaravan(d) {
   return true;
 }
 
+function findRoadGap(dx, dy, radius) {
+  const ROAD_SET = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD, T.CITY, T.FACTORY]);
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  for (let r = 1; r <= radius; r++) {
+    for (const [ddx, ddy] of dirs) {
+      const x1 = wrapX(dx + ddx * r), y1 = dy + ddy * r;
+      if (y1 < 0 || y1 >= MAP_H) continue;
+      if (!ROAD_SET.has(G.map[y1][x1])) continue;
+      for (let gap = 1; gap <= 2; gap++) {
+        const gx = wrapX(dx + ddx * (r - gap)), gy = dy + ddy * (r - gap);
+        if (gy < 0 || gy >= MAP_H) break;
+        if (ROAD_SET.has(G.map[gy][gx])) break;
+        if (!isWalkable(gx, gy)) break;
+        const bx = wrapX(dx + ddx * (r - gap - 1)), by = dy + ddy * (r - gap - 1);
+        if (by >= 0 && by < MAP_H && ROAD_SET.has(G.map[by][bx])) return { x: gx, y: gy };
+      }
+    }
+  }
+  return null;
+}
+
+function chainLen(x, y, type) {
+  let total = 0;
+  for (const [ddx, ddy] of [[0,-1],[0,1],[1,0],[-1,0]]) {
+    for (let i = 1; i <= 20; i++) {
+      const nx = wrapX(x + ddx * i), ny = y + ddy * i;
+      if (ny < 0 || ny >= MAP_H || G.map[ny][nx] !== type) break;
+      total++;
+    }
+  }
+  return total;
+}
+
+function bestUpgradeTarget(dx, dy, res) {
+  let toType, fromType;
+  if (res.iron >= 3 && res.wood >= 2) { fromType = T.ASPHALT; toType = T.RAILROAD; }
+  else if (res.stone >= 2 && res.iron >= 1) { fromType = T.ROAD; toType = T.ASPHALT; }
+  else if (res.stone >= 1) { fromType = T.PATH; toType = T.ROAD; }
+  else return null;
+  let best = null, bestScore = -1, bestDist = Infinity;
+  for (let oy = -15; oy <= 15; oy++) {
+    const ny = dy + oy;
+    if (ny < 0 || ny >= MAP_H) continue;
+    for (let ox = -15; ox <= 15; ox++) {
+      const nx = wrapX(dx + ox);
+      if (G.map[ny][nx] !== fromType) continue;
+      const score = chainLen(nx, ny, toType);
+      const dist = Math.abs(ox) + Math.abs(oy);
+      if (score > bestScore || (score === bestScore && dist < bestDist)) {
+        best = { x: nx, y: ny, fromType, toType };
+        bestScore = score;
+        bestDist = dist;
+      }
+    }
+  }
+  return best;
+}
+
+function isOrphanRoad(x, y) {
+  const ROAD_LIKE = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD, T.CITY, T.FACTORY]);
+  const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
+  let neighbors = 0;
+  for (const [ddx, ddy] of dirs) {
+    const nx = wrapX(x + ddx), ny = y + ddy;
+    if (ny >= 0 && ny < MAP_H && ROAD_LIKE.has(G.map[ny][nx])) neighbors++;
+  }
+  if (neighbors === 0) return true;
+  const visited = new Set([`${x},${y}`]), queue = [`${x},${y}`];
+  while (queue.length && visited.size <= 8) {
+    const [cx, cy] = queue.shift().split(',').map(Number);
+    if (G.map[cy][cx] === T.CITY || G.map[cy][cx] === T.FACTORY) return false;
+    for (const [ddx, ddy] of dirs) {
+      const nx = wrapX(cx + ddx), ny = cy + ddy, k = `${nx},${ny}`;
+      if (ny >= 0 && ny < MAP_H && !visited.has(k) && ROAD_LIKE.has(G.map[ny][nx])) {
+        visited.add(k); queue.push(k);
+      }
+    }
+  }
+  return true;
+}
+
+function roadwrightPathTo(d, x, y, maxLen) {
+  if (d.x === x && d.y === y) return [];
+  const path = bfs(d.x, d.y, (px, py) => px === x && py === y, false);
+  return path && path.length <= maxLen ? path : null;
+}
+
+function setRoadwrightTarget(d, type, x, y, path) {
+  d.target = { type, x, y, roadwright: true };
+  d.path = path;
+  d.timer = 0;
+  d.state = 'roadwright';
+  return true;
+}
+
+function tryRoadwrightWork(d) {
+  const city = cityOf(d);
+  const res = city?.res;
+  if (!res) return false;
+  const here = G.map[d.y]?.[d.x];
+  if (here === T.D_ROAD) return setRoadwrightTarget(d, 'road', d.x, d.y, []);
+  if (here === T.D_UPGRADE) return setRoadwrightTarget(d, 'upgrade_road', d.x, d.y, []);
+  const rp = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.D_ROAD || G.map[y][x] === T.D_UPGRADE, false);
+  if (rp && rp.length < 80) {
+    const last = rp[rp.length - 1];
+    const tile = G.map[last[1]][last[0]];
+    return setRoadwrightTarget(d, tile === T.D_ROAD ? 'road' : 'upgrade_road', last[0], last[1], rp);
+  }
+  const gap = findRoadGap(d.x, d.y, 18);
+  if (gap) {
+    const gp = roadwrightPathTo(d, gap.x, gap.y, 80);
+    if (gp) return setRoadwrightTarget(d, 'fix_road', gap.x, gap.y, gp);
+  }
+  const SCRAP_ROAD = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD]);
+  const sp = bfs(d.x, d.y, (x, y) => SCRAP_ROAD.has(G.map[y][x]) && isOrphanRoad(x, y), false);
+  if (sp && sp.length < 50) {
+    const last = sp[sp.length - 1];
+    return setRoadwrightTarget(d, 'scrap_road', last[0], last[1], sp);
+  }
+  const best = bestUpgradeTarget(d.x, d.y, res);
+  if (best) {
+    const up = roadwrightPathTo(d, best.x, best.y, 50);
+    if (up) return setRoadwrightTarget(d, 'upgrade_road', best.x, best.y, up);
+  }
+  return false;
+}
+
+function aiRoadwright(d) {
+  if (!d.target && !tryRoadwrightWork(d)) { d.state = 'idle'; return; }
+  if (d.path?.length) { aiWalk(d); return; }
+  aiBuild(d);
+}
+
 function aiIdle(d) {
   if (d._tickSlot === undefined) d._tickSlot = G.dwarves.indexOf(d) % 4;
   if (G.tick % 4 !== d._tickSlot) return;
@@ -2393,6 +2532,11 @@ function aiIdle(d) {
   if (d.hunger < 40 && res.food > 0) { d.state = 'seek_food'; return; }
   if (d.energy < 30) { d.state = 'seek_sleep'; return; }
   if (tryMoveIntoEmptyTown(d)) return;
+  if (Math.random() < 0.12) {
+    d.state = 'roadwright';
+    if (tryRoadwrightWork(d)) return;
+    d.state = 'idle';
+  }
 
   const minePath = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.D_MINE, false);
   if (minePath) {
@@ -2494,7 +2638,7 @@ function aiWalk(d) {
     if (!d.target) { d.state = 'idle'; return; }
     const tt = d.target.type;
     if (tt === 'mine' || tt === 'chop') d.state = 'mining';
-    else if (tt === 'build' || tt === 'road' || tt === 'upgrade_road') d.state = 'building';
+    else if (tt === 'build' || tt === 'road' || tt === 'upgrade_road' || tt === 'fix_road' || tt === 'scrap_road') d.state = d.target.roadwright ? 'roadwright' : 'building';
     else if (tt === 'farm') d.state = 'farming';
     else if (tt === 'gather') d.state = 'gathering';
     else if (tt === 'eat') d.state = 'eating';
@@ -2608,6 +2752,7 @@ function aiBuild(d) {
   d.timer++;
   const dur = Math.round(10 / statMod(effectiveStat(d, 'STR')));
   if (d.timer >= dur) {
+    const keepRoadwright = d.target.roadwright;
     const { x, y } = d.target;
     const res = cityOf(d).res;
     if (!res) { d.state = 'idle'; d.target = null; return; }
@@ -2621,6 +2766,33 @@ function aiBuild(d) {
       log(`${d.name} 👣 cleared a dirt path`, 'build');
       addEvent(d, 'build', 'Cleared a path');
       d.happiness = Math.min(100, d.happiness + 1);
+    } else if (d.target.type === 'fix_road' && isWalkable(x, y) && G.map[y][x] !== T.PATH && G.map[y][x] !== T.ROAD && G.map[y][x] !== T.ASPHALT && G.map[y][x] !== T.RAILROAD) {
+      setWorldTile(x, y, T.PATH); G.stats.built++;
+      log(`${d.name} 🔧 repaired a road gap`, 'build');
+      addEvent(d, 'build', 'Repaired a road gap');
+      d.happiness = Math.min(100, d.happiness + 3);
+    } else if (d.target.type === 'upgrade_road' && G.map[y][x] === T.D_UPGRADE) {
+      const key = `${x},${y}`;
+      const orig = G.upgradeFrom[key] ?? T.PATH;
+      delete G.upgradeFrom[key];
+      if (orig === T.PATH && res.stone >= 1) {
+        res.stone -= 1; setWorldTile(x, y, T.ROAD); G.stats.built++;
+        log(`${d.name} 🟫 upgraded path to gravel road`, 'build');
+        addEvent(d, 'build', 'Upgraded path to gravel');
+        d.happiness = Math.min(100, d.happiness + 2);
+      } else if (orig === T.ROAD && res.stone >= 2 && res.iron >= 1) {
+        res.stone -= 2; res.iron -= 1; setWorldTile(x, y, T.ASPHALT); G.stats.built++;
+        log(`${d.name} ⬛ upgraded road to asphalt!`, 'build');
+        addEvent(d, 'build', 'Upgraded road to asphalt');
+        d.happiness = Math.min(100, d.happiness + 3);
+      } else if (orig === T.ASPHALT && res.iron >= 3 && res.wood >= 2) {
+        res.iron -= 3; res.wood -= 2; setWorldTile(x, y, T.RAILROAD); G.stats.built++;
+        log(`${d.name} 🛤️ upgraded to railroad!`, 'build');
+        addEvent(d, 'build', 'Upgraded to railroad');
+        d.happiness = Math.min(100, d.happiness + 5);
+      } else {
+        setWorldTile(x, y, orig);
+      }
     } else if (d.target.type === 'upgrade_road' && G.map[y][x] === T.PATH && res.stone >= 1) {
       res.stone -= 1; setWorldTile(x, y, T.ROAD); G.stats.built++;
       log(`${d.name} 🟫 paved path to gravel road`, 'build');
@@ -2636,8 +2808,17 @@ function aiBuild(d) {
       log(`${d.name} 🟰 upgraded to railroad!`, 'build');
       addEvent(d, 'build', 'Upgraded to railroad');
       d.happiness = Math.min(100, d.happiness + 5);
+    } else if (d.target.type === 'scrap_road') {
+      const st = G.map[y][x];
+      if (st === T.PATH || st === T.ROAD || st === T.ASPHALT || st === T.RAILROAD) {
+        if (st !== T.PATH) res.stone = (res.stone || 0) + 1;
+        setWorldTile(x, y, T.DIRT);
+        G.dirtTiles.push({ x, y, year: G.year });
+        log(`${d.name} 🧹 scrapped an orphan road`, 'build');
+        addEvent(d, 'build', 'Scrapped orphan road');
+      }
     }
-    d.target = null; d.timer = 0; d.state = 'idle';
+    d.target = null; d.timer = 0; d.state = keepRoadwright ? 'roadwright' : 'idle';
   }
 }
 
@@ -3980,7 +4161,7 @@ function render() {
       const dEmoji = d.state === 'starving' ? '💀' :
                      d.state === 'sleeping' ? '💤' : d.state === 'mining' ? '⛏️' :
                      d.state === 'eating' || d.state === 'going_eat' ? '🍖' :
-                     d.state === 'building' ? '🔨' : d.state === 'farming' ? '🌱' :
+                     d.state === 'building' ? '🔨' : d.state === 'roadwright' ? '🛤️' : d.state === 'farming' ? '🌱' :
                      d.state === 'hauling' ? '📦' : d.state === 'gathering' ? '🧺' :
                      d.state === 'traveling' ? (TRAVEL_EMOJIS[d.travelMode] || '🚶') : '🧔';
       try { ctx.drawImage(getEmojiImg(dEmoji), px, py); } catch (e) {}
@@ -4066,6 +4247,70 @@ function renderMinimap() {
   mmCtx.fillStyle = '#fb4934';
   for (const d of G.dwarves) {
     mmCtx.fillRect(d.x * sx, d.y * sy, 2, 2);
+  }
+}
+
+function clampCamera() {
+  G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
+}
+
+function cancelMinimapToolPreview() {
+  G.drag = null;
+  G.sel = null;
+  const overlay = document.getElementById('cost-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function centerCameraOnMapPoint(mapX, mapY) {
+  G.followDwarf = null;
+  G.cam.x = wrapX(mapX) * TILE - canvas.width / (2 * G.zoom);
+  G.cam.y = Math.max(0, Math.min(MAP_H - 1, mapY)) * TILE - canvas.height / (2 * G.zoom);
+  clampCamera();
+}
+
+function jumpToMinimapEvent(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation?.();
+  cancelMinimapToolPreview();
+  const point = e.touches?.[0] || e.changedTouches?.[0] || e;
+  const rect = mmCanvas.getBoundingClientRect();
+  const nx = Math.max(0, Math.min(1, (point.clientX - rect.left) / rect.width));
+  const ny = Math.max(0, Math.min(1, (point.clientY - rect.top) / rect.height));
+  centerCameraOnMapPoint(nx * MAP_W, ny * MAP_H);
+}
+
+function bindMinimapJump() {
+  let activePointer = null;
+  const stopMinimapEvent = e => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation?.();
+  };
+  mmCanvas.style.touchAction = 'none';
+  mmCanvas.addEventListener('pointerdown', e => {
+    activePointer = e.pointerId;
+    try { mmCanvas.setPointerCapture?.(e.pointerId); } catch (_) {}
+    jumpToMinimapEvent(e);
+  });
+  mmCanvas.addEventListener('pointermove', e => {
+    if (activePointer === e.pointerId) jumpToMinimapEvent(e);
+  });
+  mmCanvas.addEventListener('pointerup', e => {
+    stopMinimapEvent(e);
+    try { mmCanvas.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    if (activePointer === e.pointerId) activePointer = null;
+  });
+  mmCanvas.addEventListener('pointercancel', e => {
+    stopMinimapEvent(e);
+    try { mmCanvas.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    if (activePointer === e.pointerId) activePointer = null;
+  });
+  mmCanvas.addEventListener('click', stopMinimapEvent);
+  if (!window.PointerEvent) {
+    mmCanvas.addEventListener('mousedown', jumpToMinimapEvent);
+    mmCanvas.addEventListener('touchstart', jumpToMinimapEvent, { passive: false });
+    mmCanvas.addEventListener('touchmove', jumpToMinimapEvent, { passive: false });
   }
 }
 
@@ -4345,7 +4590,7 @@ function showDwarfInspector(dw) {
     syncWorkerRouteDwarf(dw.id);
   }
   const stateEmoji = dw.state === 'sleeping' ? '💤' : dw.state === 'mining' ? '⛏️' :
-    dw.state === 'eating' ? '🍖' : dw.state === 'building' ? '🔨' : dw.state === 'farming' ? '🌱' :
+    dw.state === 'eating' ? '🍖' : dw.state === 'building' ? '🔨' : dw.state === 'roadwright' ? '🛤️' : dw.state === 'farming' ? '🌱' :
     dw.state === 'hauling' ? '📦' : dw.state === 'gathering' ? '🧺' :
     dw.state === 'crafting' ? '✨' : dw.state === 'seek_craft' ? '✨' :
     dw.state === 'traveling' ? (TRAVEL_EMOJIS[dw.travelMode] || '🚶') : dw.state === 'wander' ? '🚶' : '🧔';
@@ -4921,7 +5166,7 @@ function finalizeDesignation() {
       for (let gx = s.x1; gx <= s.x2; gx++) {
         const x = wrapX(gx);
         if (roadable.has(G.map[y][x])) { setWorldTile(x, y, T.D_ROAD); count++; }
-        else if (upgradeable.has(G.map[y][x])) { setWorldTile(x, y, T.D_UPGRADE); count++; upgradeCount++; }
+        else if (upgradeable.has(G.map[y][x])) { G.upgradeFrom[`${x},${y}`] = G.map[y][x]; setWorldTile(x, y, T.D_UPGRADE); count++; upgradeCount++; }
       }
     if (count) log(`🛤️ Designated ${count} road tiles (${formatCost(cost)})`, 'build', 2);
   }
@@ -4967,13 +5212,13 @@ function handleKeys() {
   if (keys[' ']) { G.paused = !G.paused; keys[' '] = false; if (gameWorker) gameWorker.postMessage({ type: 'control', paused: G.paused }); updateSpeedUI(); }
   if (keys['Escape']) { setMode('normal'); closeInspector(); G.followDwarf = null; keys['Escape'] = false; }
   // Clamp Y
-  G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
+  clampCamera();
 }
 
 canvas.addEventListener('wheel', e => {
   G.cam.x += e.deltaX / G.zoom;
   G.cam.y += e.deltaY / G.zoom;
-  G.cam.y = Math.max(-TILE * 5, Math.min(MAP_H * TILE - canvas.height + TILE * 5, G.cam.y));
+  clampCamera();
   e.preventDefault();
 }, { passive: false });
 
@@ -5174,18 +5419,6 @@ if (isMobile) {
     }, { passive: false });
     handle.addEventListener('touchend', () => { swiping = false; });
   })();
-
-  // Minimap tap-to-jump
-  const minimap = document.getElementById('minimap');
-  minimap.addEventListener('touchstart', e => {
-    e.preventDefault();
-    const rect = minimap.getBoundingClientRect();
-    const tx = (e.touches[0].clientX - rect.left) / rect.width * MAP_W;
-    const ty = (e.touches[0].clientY - rect.top) / rect.height * MAP_H;
-    G.cam.x = tx * TILE - canvas.width / 2;
-    G.cam.y = ty * TILE - canvas.height / 2;
-  }, { passive: false });
-
   // Update splash text for mobile
   const splashP = document.querySelector('#splash-modal .db-modal__body p:last-of-type');
   if (splashP && splashP.textContent.includes('Pan with WASD')) {
@@ -5193,18 +5426,7 @@ if (isMobile) {
   }
 }
 
-// ---- Minimap click-to-jump (desktop) ----
-if (!isMobile) {
-  const mmEl = document.getElementById('minimap');
-  mmEl.addEventListener('mousedown', e => {
-    e.stopPropagation();
-    const rect = mmEl.getBoundingClientRect();
-    const tx = (e.clientX - rect.left) / rect.width * MAP_W;
-    const ty = (e.clientY - rect.top) / rect.height * MAP_H;
-    G.cam.x = tx * TILE - canvas.width / 2;
-    G.cam.y = ty * TILE - canvas.height / 2;
-  });
-}
+bindMinimapJump();
 
 // ---- Dwarf Search ----
 (function() {
@@ -5630,7 +5852,7 @@ function applySponsorships() {
 }
 
 // Population panel
-const POP_STATE_EMOJIS = {sleeping:'💤',mining:'⛏️',eating:'🍖',building:'🔨',farming:'🌱',hauling:'📦',gathering:'🧺',crafting:'✨',seek_craft:'✨',traveling:'🚶',wander:'🚶',walk:'🚶',idle:'🧔',fleeing:'😰',starving:'💀',seek_food:'🍖',seek_sleep:'💤',dead:'☠️'};
+const POP_STATE_EMOJIS = {sleeping:'💤',mining:'⛏️',eating:'🍖',building:'🔨',roadwright:'🛤️',farming:'🌱',hauling:'📦',gathering:'🧺',crafting:'✨',seek_craft:'✨',traveling:'🚶',wander:'🚶',walk:'🚶',idle:'🧔',fleeing:'😰',starving:'💀',seek_food:'🍖',seek_sleep:'💤',dead:'☠️'};
 let popSort = 'name', popDir = 1, popFilter = '';
 function showPopulationPanel() {
   syncWorkerRouteDwarf(null);

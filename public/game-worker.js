@@ -367,6 +367,9 @@ function cityPopulationCounts() {
   for (const d of G.dwarves) if (!d.dead) counts.set(d.cityId, (counts.get(d.cityId) || 0) + 1);
   return counts;
 }
+function canRebalanceDonor(d) {
+  return !d.dead && (d.age ?? 20) >= 20 && (d.state === 'idle' || d.state === 'wander') && !d.travelMode && !d.target && (!d.path || d.path.length === 0);
+}
 function rebalanceEmptyCities() {
   const counts = cityPopulationCounts();
   let fixed = 0;
@@ -382,7 +385,7 @@ function rebalanceEmptyCities() {
       }
     }
     const donor = G.dwarves
-      .filter(d => !d.dead && (d.age ?? 20) >= 20 && d.cityId !== city.id && (counts.get(d.cityId) || 0) > 1)
+      .filter(d => canRebalanceDonor(d) && d.cityId !== city.id && (counts.get(d.cityId) || 0) > 1)
       .sort((a, b) => (counts.get(b.cityId) || 0) - (counts.get(a.cityId) || 0))[0];
     if (!donor) continue;
     const oldCityId = donor.cityId;
@@ -895,6 +898,7 @@ function tickDwarf(d) {
     case 'hauling': aiWalk(d); break;
     case 'seek_craft': aiSeekCraft(d); break;
     case 'crafting': aiCraft(d); break;
+    case 'roadwright': aiRoadwright(d); break;
     case 'going_rescue': aiWalk(d); break;
     case 'traveling': aiTravel(d); break;
   }
@@ -1034,7 +1038,7 @@ function findVehicleRoute(fromCity, toCity, minRoad) {
 
 
 function findRoadGap(dx, dy, radius) {
-  const ROAD_SET = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD]);
+  const ROAD_SET = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD, T.CITY, T.FACTORY]);
   const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
   for (let r = 1; r <= radius; r++) {
     for (const [ddx, ddy] of dirs) {
@@ -1125,6 +1129,58 @@ function isOrphanRoad(x, y) {
   return true;
 }
 
+function roadwrightPathTo(d, x, y, maxLen) {
+  if (d.x === x && d.y === y) return [];
+  const path = bfs(d.x, d.y, (px, py) => px === x && py === y, false);
+  return path && path.length <= maxLen ? path : null;
+}
+
+function setRoadwrightTarget(d, type, x, y, path) {
+  d.target = {type, x, y, roadwright:true};
+  d.path = path;
+  d.timer = 0;
+  d.state = 'roadwright';
+  return true;
+}
+
+function tryRoadwrightWork(d) {
+  const city = cityOf(d);
+  const res = city?.res;
+  if (!res) return false;
+  const here = G.map[d.y]?.[d.x];
+  if (here === T.D_ROAD) return setRoadwrightTarget(d, 'road', d.x, d.y, []);
+  if (here === T.D_UPGRADE) return setRoadwrightTarget(d, 'upgrade_road', d.x, d.y, []);
+  const rp = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_ROAD || G.map[y][x] === T.D_UPGRADE, false);
+  if (rp && rp.length < 80) {
+    const last = rp[rp.length-1];
+    const tile = G.map[last[1]][last[0]];
+    return setRoadwrightTarget(d, tile === T.D_ROAD ? 'road' : 'upgrade_road', last[0], last[1], rp);
+  }
+  const gap = findRoadGap(d.x, d.y, 18);
+  if (gap) {
+    const gp = roadwrightPathTo(d, gap.x, gap.y, 80);
+    if (gp) return setRoadwrightTarget(d, 'fix_road', gap.x, gap.y, gp);
+  }
+  const SCRAP_ROAD = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD]);
+  const sp = bfs(d.x, d.y, (x,y) => SCRAP_ROAD.has(G.map[y][x]) && isOrphanRoad(x, y), false);
+  if (sp && sp.length < 50) {
+    const last = sp[sp.length-1];
+    return setRoadwrightTarget(d, 'scrap_road', last[0], last[1], sp);
+  }
+  const best = bestUpgradeTarget(d.x, d.y, res);
+  if (best) {
+    const up = roadwrightPathTo(d, best.x, best.y, 50);
+    if (up) return setRoadwrightTarget(d, 'upgrade_road', best.x, best.y, up);
+  }
+  return false;
+}
+
+function aiRoadwright(d) {
+  if (!d.target && !tryRoadwrightWork(d)) { d.state = 'idle'; return; }
+  if (d.path?.length) { aiWalk(d); return; }
+  aiBuild(d);
+}
+
 
 function aiIdle(d) {
   if (d._tickSlot === undefined) d._tickSlot = G.dwarves.indexOf(d) % 4;
@@ -1164,6 +1220,11 @@ function aiIdle(d) {
 
   // Cargo-laden dwarves prefer travel — gets vehicles/ships rolling.
   if ((d.carrying||0) >= carryCapacity(d) * 0.7 && Math.random() < 0.4 && tryTravel(d)) return;
+  if (Math.random() < 0.12) {
+    d.state = 'roadwright';
+    if (tryRoadwrightWork(d)) return;
+    d.state = 'idle';
+  }
 
   const minePath = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_MINE, false);
   if (minePath) {
@@ -1260,7 +1321,7 @@ function aiWalk(d) {
     if (!d.target) { d.state = 'idle'; return; }
     const tt = d.target.type;
     if (tt === 'mine' || tt === 'chop') d.state = 'mining';
-    else if (tt === 'build' || tt === 'road' || tt === 'upgrade_road' || tt === 'fix_road') d.state = 'building';
+    else if (tt === 'build' || tt === 'road' || tt === 'upgrade_road' || tt === 'fix_road' || tt === 'scrap_road') d.state = d.target.roadwright ? 'roadwright' : 'building';
     else if (tt === 'farm') d.state = 'farming';
     else if (tt === 'gather') d.state = 'gathering';
     else if (tt === 'eat') d.state = 'eating';
@@ -1360,6 +1421,7 @@ function aiBuild(d) {
   d.timer++;
   const dur = Math.round(10 / statMod(effectiveStat(d, 'STR')));
   if (d.timer >= dur) {
+    const keepRoadwright = d.target.roadwright;
     const {x,y} = d.target;
     const res = cityOf(d).res;
     if (!res) { d.state = 'idle'; d.target = null; return; }
@@ -1420,7 +1482,7 @@ function aiBuild(d) {
         addEvent(d, 'build', 'Scrapped orphan road');
       }
     }
-    d.target = null; d.timer = 0; d.state = 'idle';
+    d.target = null; d.timer = 0; d.state = keepRoadwright ? 'roadwright' : 'idle';
   }
 }
 
@@ -1628,7 +1690,7 @@ function autoConnectCities() {
   }
 
   let roadsBuilt = 0;
-  const dontOverwrite = new Set([T.PATH,T.ROAD,T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY,T.FLOOR,
+  const dontOverwrite = new Set([T.PATH,T.ROAD,T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY,
     T.BED,T.STOCKPILE,T.TABLE,T.WALL,T.FARM,T.OCEAN,T.GRAVE]);
   for (const [rx, ry] of path) {
     const t = G.map[ry][rx];

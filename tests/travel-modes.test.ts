@@ -66,9 +66,11 @@ function buildMap() {
 type WorkerHooks = {
   tryTravelTo: (d: any, city: any, dest: any) => boolean;
   tryTravel: (d: any) => boolean;
+  autoConnectCities: () => void;
   rebuildRoadGraph: () => void;
   findVehicleRoute: (city: any, dest: any, minRoad: number) => Array<[number, number]> | null;
   tryShipPath: (city: any, dest: any) => Array<[number, number]> | null;
+  rebalanceEmptyCities: () => number;
   bfs: (sx: number, sy: number, goalFn: (x: number, y: number) => boolean, walkToGoal: boolean) => Array<[number, number]> | null;
   bfsWater: (sx: number, sy: number, goalFn: (x: number, y: number) => boolean) => Array<[number, number]> | null;
   terrainCost: (x: number, y: number) => number;
@@ -85,9 +87,11 @@ function loadWorkerHooks(): WorkerHooks {
 self.__testHooks = {
   tryTravelTo,
   tryTravel,
+  autoConnectCities,
   rebuildRoadGraph,
   findVehicleRoute,
   tryShipPath,
+  rebalanceEmptyCities,
   bfs,
   bfsWater,
   terrainCost,
@@ -367,6 +371,27 @@ describe('live worker travel continuity', () => {
     expect(dwarf.travelMode).toBe('car');
   });
 
+  it('auto-connect carves floor connectors so generated roads enter the vehicle graph', () => {
+    const map = buildWorkerMap(worker, worker.T.PLAINS);
+    const cityA = { id:'a', name:'A', mx:100, my:100, res:{} };
+    const cityB = { id:'b', name:'B', mx:110, my:100, res:{} };
+    map[cityA.my][cityA.mx] = worker.T.CITY;
+    map[cityB.my][cityB.mx] = worker.T.CITY;
+    map[cityA.my][cityA.mx + 1] = worker.T.FLOOR;
+    map[cityB.my][cityB.mx - 1] = worker.T.FLOOR;
+    worker.setMap(map);
+    worker.setCities([cityA, cityB]);
+    worker.G.roadGraph = {};
+
+    worker.autoConnectCities();
+    worker.rebuildRoadGraph();
+
+    expect(map[cityA.my][cityA.mx + 1]).toBe(worker.T.PATH);
+    expect(map[cityB.my][cityB.mx - 1]).toBe(worker.T.PATH);
+    expect(worker.G.roadGraph['a-b']?.path).toBe(true);
+    expect(worker.findVehicleRoute(cityA, cityB, worker.T.PATH)).not.toBeNull();
+  });
+
   it('prioritizes a farther railroad route over a nearby path route', () => {
     const map = buildWorkerMap(worker, worker.T.PLAINS);
     const cityA = { id:'a', name:'A', mx:100, my:100, res:{} };
@@ -452,5 +477,72 @@ describe('live worker travel continuity', () => {
     expect(worker.tryTravelTo(dwarf, cityA, cityB)).toBe(true);
     expect(dwarf.travelMode).toBe('ship');
     expect(dwarf.path).toEqual(shipRoute);
+  });
+
+  it('does not use an in-transit ship passenger as an empty-town donor', () => {
+    const map = buildWorkerMap(worker, worker.T.PLAINS);
+    const cityA = { id:'a', name:'A', mx:20, my:7, res:{} };
+    const cityB = { id:'b', name:'B', mx:60, my:7, res:{} };
+    map[cityA.my][cityA.mx] = worker.T.CITY;
+    map[cityB.my][cityB.mx] = worker.T.CITY;
+    worker.setMap(map);
+    worker.setCities([cityA, cityB]);
+    const traveler: any = {
+      id:'traveling',
+      name:'Traveler',
+      age:30,
+      cityId:'a',
+      x:21,
+      y:4,
+      state:'traveling',
+      travelMode:'ship',
+      target:{type:'travel', destCityId:'b'},
+      path:[[22, 4], [23, 4]],
+      eventLog:[],
+      carryItems:{},
+      inventory:[],
+    };
+    const idleDonor: any = {
+      id:'idle',
+      name:'Idle',
+      age:30,
+      cityId:'a',
+      x:22,
+      y:7,
+      state:'idle',
+      travelMode:null,
+      target:null,
+      path:[],
+      eventLog:[],
+      carryItems:{},
+      inventory:[],
+    };
+    worker.G.dwarves = [
+      traveler,
+      idleDonor,
+      ...Array.from({ length: 298 }, (_, i) => ({
+        id:`filler-${i}`,
+        name:`Filler ${i}`,
+        age:30,
+        cityId:'a',
+        x:20,
+        y:7,
+        state:'idle',
+        travelMode:null,
+        target:null,
+        path:[],
+        eventLog:[],
+        carryItems:{},
+        inventory:[],
+      })),
+    ];
+
+    expect(worker.rebalanceEmptyCities()).toBe(1);
+    expect(traveler.cityId).toBe('a');
+    expect(traveler.x).toBe(21);
+    expect(traveler.y).toBe(4);
+    expect(traveler.state).toBe('traveling');
+    expect(traveler.travelMode).toBe('ship');
+    expect(idleDonor.cityId).toBe('b');
   });
 });

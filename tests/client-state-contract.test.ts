@@ -69,12 +69,16 @@ describe('client state contract', () => {
   it('lets dwarves claim empty towns and repairs production zero-pop cities', () => {
     expect(indexHtml).toContain('function tryMoveIntoEmptyTown(d)');
     expect(indexHtml).toContain('function rebalanceEmptyCities()');
+    expect(indexHtml).toContain('function canRebalanceDonor(d)');
+    expect(indexHtml).toContain('.filter(d => canRebalanceDonor(d)');
     expect(indexHtml).toContain("d.target = { type: 'move_town', cityId: town.id, x: town.mx, y: town.my }");
     expect(indexHtml).toContain("else if (tt === 'move_town')");
     expect(indexHtml).toContain('if (G.dwarves.length === 0 && G.homeCity) spawnDwarfAtCity(G.homeCity)');
     expect(indexHtml).toContain('rebalanceEmptyCities();');
     expect(gameWorker).toContain('function tryMoveIntoEmptyTown(d)');
     expect(gameWorker).toContain('function rebalanceEmptyCities()');
+    expect(gameWorker).toContain('function canRebalanceDonor(d)');
+    expect(gameWorker).toContain('.filter(d => canRebalanceDonor(d)');
     expect(gameWorker).toContain("d.target = {type:'move_town', cityId:town.id, x:town.mx, y:town.my}");
     expect(gameWorker).toContain("} else if (tt === 'move_town') {");
     expect(gameWorker).toContain('if (G.dwarves.length === 0 && G.homeCity) spawnDwarfAtCity(G.homeCity)');
@@ -138,6 +142,17 @@ describe('client state contract', () => {
     expect(indexHtml).toContain('if (!mmBufferCtx) mmDirty = true');
   });
 
+  it('centers the camera from minimap pointer input', () => {
+    expect(indexHtml).toContain('function cancelMinimapToolPreview()');
+    expect(indexHtml).toContain('function centerCameraOnMapPoint(mapX, mapY)');
+    expect(indexHtml).toContain('function jumpToMinimapEvent(e)');
+    expect(indexHtml).toContain('cancelMinimapToolPreview()');
+    expect(indexHtml).toContain('e.stopImmediatePropagation?.()');
+    expect(indexHtml).toContain("mmCanvas.addEventListener('pointerdown'");
+    expect(indexHtml).toContain("mmCanvas.addEventListener('pointermove'");
+    expect(indexHtml).toContain('mmCanvas.style.touchAction =');
+  });
+
   it('uses a higher desktop frame cap while keeping mobile capped lower', () => {
     expect(indexHtml).toContain('const TARGET_FPS = isMobile ? 30 : 60');
     expect(indexHtml).toContain('const FRAME_MS = 1000 / TARGET_FPS');
@@ -162,5 +177,13 @@ describe('client state contract', () => {
   it('preserves travel intents in fallback mode', () => {
     expect(indexHtml).toContain("case 'travel':");
     expect(indexHtml).toContain('tryTravelFallback(d)');
+  });
+
+  it('keeps roadwright behavior visible in worker and fallback state machines', () => {
+    expect(gameWorker).toContain("case 'roadwright': aiRoadwright(d); break;");
+    expect(gameWorker).toContain('function tryRoadwrightWork(d)');
+    expect(indexHtml).toContain("case 'roadwright': aiRoadwright(d); break;");
+    expect(indexHtml).toContain('function tryRoadwrightWork(d)');
+    expect(indexHtml).toContain("roadwright:'🛤️'");
   });
 });
