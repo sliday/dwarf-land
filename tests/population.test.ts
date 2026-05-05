@@ -11,12 +11,12 @@ import {
 
 describe('Population Equilibrium', () => {
   describe('constants', () => {
-    it('hard cap is 50', () => {
-      expect(POP_HARD_CAP).toBe(50);
+    it('hard cap is 300', () => {
+      expect(POP_HARD_CAP).toBe(300);
     });
 
-    it('soft cap is 30', () => {
-      expect(POP_SOFT_CAP).toBe(30);
+    it('soft cap is 240', () => {
+      expect(POP_SOFT_CAP).toBe(240);
     });
 
     it('minimum is 3', () => {
@@ -25,21 +25,21 @@ describe('Population Equilibrium', () => {
   });
 
   describe('shouldAllowBirth', () => {
-    it('blocks births at hard cap (50)', () => {
+    it('blocks births at hard cap (300)', () => {
       for (let i = 0; i < 100; i++) {
-        expect(shouldAllowBirth(50)).toBe(false);
+        expect(shouldAllowBirth(300)).toBe(false);
       }
     });
 
     it('blocks births above hard cap', () => {
-      expect(shouldAllowBirth(51)).toBe(false);
-      expect(shouldAllowBirth(100)).toBe(false);
+      expect(shouldAllowBirth(301)).toBe(false);
+      expect(shouldAllowBirth(400)).toBe(false);
     });
 
-    it('always allows births below soft cap (30)', () => {
+    it('always allows births below soft cap (240)', () => {
       for (let i = 0; i < 100; i++) {
         expect(shouldAllowBirth(10)).toBe(true);
-        expect(shouldAllowBirth(29)).toBe(true);
+        expect(shouldAllowBirth(239)).toBe(true);
       }
     });
 
@@ -47,7 +47,7 @@ describe('Population Equilibrium', () => {
       let allowed = 0;
       const trials = 10000;
       for (let i = 0; i < trials; i++) {
-        if (shouldAllowBirth(35)) allowed++;
+        if (shouldAllowBirth(270)) allowed++;
       }
       const rate = allowed / trials;
       // Should be around 0.2 (20%), allow ±5% tolerance

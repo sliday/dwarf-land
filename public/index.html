@@ -8,9 +8,11 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daub-ui@latest/daub.css">
 <script src="https://cdn.jsdelivr.net/npm/daub-ui@latest/daub.js"></script>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+  :root { --ui-mono: 'JetBrains Mono', 'Cascadia Mono', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; overflow: hidden; background: #1d2021; color: #ebdbb2; }
-  body { font-family: 'Courier New', monospace; font-weight: 500; }
+  body { font-family: var(--ui-mono); font-weight: 500; letter-spacing: 0; }
 
   #loader {
     position: fixed; inset: 0; z-index: 9999;
@@ -21,7 +23,7 @@
   #loader.fade-out { opacity: 0; pointer-events: none; }
   #loader .loader-emoji { font-size: 64px; animation: loader-bounce 1.2s ease-in-out infinite; }
   #loader .loader-title {
-    font-family: 'Courier New', monospace; font-size: 28px; font-weight: bold;
+    font-family: var(--ui-mono); font-size: 28px; font-weight: bold;
     color: #fbf1c7; margin-top: 16px; letter-spacing: 3px; text-transform: uppercase;
   }
   #loader .loader-bar-wrap {
@@ -35,7 +37,7 @@
   }
   #loader .loader-hint {
     margin-top: 14px; font-size: 13px; color: #928374;
-    font-family: 'Courier New', monospace; font-style: italic;
+    font-family: var(--ui-mono); font-style: italic;
   }
   @keyframes loader-bounce {
     0%, 100% { transform: translateY(0); }
@@ -63,7 +65,7 @@
   }
   .hud-stat { text-align: center; pointer-events: auto; cursor: pointer; border-radius: 6px; padding: 2px 8px; transition: background 0.15s; }
   .hud-stat:hover { background: rgba(255,255,255,0.07); }
-  .hud-stat .label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #a89984; font-weight: 700; }
+  .hud-stat .label { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: #a89984; font-weight: 700; }
   .hud-stat .value { font-size: 13px; font-weight: bold; color: #ebdbb2; font-variant-numeric: tabular-nums; }
   .hud-stat .value .res-item { cursor: pointer; padding: 1px 3px; border-radius: 3px; transition: background 0.15s; }
   .hud-stat .value .res-item:hover { background: rgba(255,255,255,0.12); }
@@ -96,21 +98,21 @@
   }
   .log-header {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 4px 12px; font-size: 10px; letter-spacing: 0.1em;
+    padding: 4px 12px; font-size: 10px; letter-spacing: 0.06em;
     text-transform: uppercase; color: #a89984; border-bottom: 1px solid #3c3836;
   }
   .log-header button { background: none; border: none; color: #a89984; cursor: pointer; font-size: 14px; }
   .log-rarity-wrap { display: flex; align-items: center; gap: 4px; }
   .log-filter-bar { display: flex; border-top: 1px solid #3c3836; }
   .log-filter-bar button {
-    flex: 1; padding: 4px 0; font-size: 9px; letter-spacing: 0.05em;
-    background: none; border: none; color: #665c54; cursor: pointer;
+    flex: 1; padding: 4px 0; font-size: 10px; line-height: 1.35; letter-spacing: 0.04em;
+    background: none; border: none; color: #928374; cursor: pointer;
     font-family: inherit; text-transform: uppercase; transition: color 0.15s, background 0.15s;
   }
   .log-filter-bar button:not(:last-child) { border-right: 1px solid #3c3836; }
   .log-filter-bar button:hover { color: #a89984; }
   .log-filter-bar button.active { color: #ebdbb2; background: rgba(69,133,136,0.3); }
-  .log-count { font-size: 9px; color: #665c54; margin-left: 2px; }
+  .log-count { font-size: 10px; color: #928374; margin-left: 2px; }
   .log-body {
     overflow-y: auto; padding: 4px 12px; font-size: 12px; font-weight: 600;
     scrollbar-width: thin; scrollbar-color: #504945 transparent;
@@ -118,7 +120,7 @@
   .log-entry { padding: 2px 0; display: flex; gap: 8px; }
   .log-entry[data-lx] { border-radius: 3px; padding: 2px 4px; margin: 0 -4px; }
   .log-entry[data-lx]:hover { background: rgba(255,255,255,0.07); }
-  .log-entry .ts { color: #665c54; min-width: 36px; flex-shrink: 0; }
+  .log-entry .ts { color: #928374; min-width: 36px; flex-shrink: 0; }
   .log-entry.t-mine .msg { color: #fabd2f; }
   .log-entry.t-build .msg { color: #83a598; }
   .log-entry.t-eat .msg { color: #fe8019; }
@@ -138,7 +140,7 @@
     padding: 12px 16px; z-index: 10;
     display: flex; flex-direction: column; gap: 10px;
   }
-  .controls .section-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #a89984; }
+  .controls .section-label { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: #a89984; }
   .pause-bar {
     position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
     z-index: 15; pointer-events: auto;
@@ -199,13 +201,13 @@
   .insp-body .ibar-fill { height: 100%; border-radius: 2px; }
   .insp-body .irow { display: flex; justify-content: space-between; font-size: 10px; color: #a89984; }
   .insp-body .istats { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
-  .insp-body .istat { font-size: 9px; color: #bdae93; background: #3c3836; padding: 1px 4px; border-radius: 2px; }
+  .insp-body .istat { font-size: 10px; line-height: 1.35; color: #bdae93; background: #3c3836; padding: 1px 4px; border-radius: 2px; }
   .insp-body .istat .sv { color: #fabd2f; font-weight: bold; }
-  .insp-body .isoul { display: flex; gap: 6px; margin: 2px 0; font-size: 9px; color: #a89984; }
-  .insp-body .itraits { font-size: 9px; color: #b8bb26; margin: 2px 0; }
-  .insp-body .ibackstory { font-size: 9px; color: #83a598; margin: 2px 0; font-style: italic; }
+  .insp-body .isoul { display: flex; gap: 6px; margin: 2px 0; font-size: 10px; line-height: 1.35; color: #a89984; }
+  .insp-body .itraits { font-size: 10px; line-height: 1.35; color: #b8bb26; margin: 2px 0; }
+  .insp-body .ibackstory { font-size: 10px; line-height: 1.35; color: #83a598; margin: 2px 0; font-style: italic; }
   .insp-body .ievents { margin-top: 4px; border-top: 1px solid #3c3836; padding-top: 3px; }
-  .insp-body .ievent { font-size: 9px; color: #a89984; }
+  .insp-body .ievent { font-size: 10px; line-height: 1.35; color: #a89984; }
   .insp-body .ires { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
   .insp-body .ires-item { font-size: 10px; color: #bdae93; }
   .insp-body .ires-item .rv { color: #fabd2f; font-weight: bold; }
@@ -513,6 +515,11 @@ const WILD_FOOD = new Set([T.MUSHROOM, T.BERRY_BUSH, T.CRAB]);
 const GATHERABLE = new Set([T.BERRY_BUSH, T.HERB_PATCH, T.IRON_ORE, T.GOLD_VEIN, T.GEMS, T.FISH_SPOT, T.CRAB, T.DEER, T.CLAY, T.CORAL]);
 const STARVE_IMMOBILE = 2000;
 const STARVE_DEATH = 2667;
+const WORLD_POP_HARD_CAP = 300;
+const TOWN_POP_CAP = 10;
+const SUBURB_POP_CAP = 4;
+const EMPTY_TOWN_MOVE_RADIUS = 80;
+const WORKER_VERSION = '2026-05-05-pop-rebalance-3';
 
 const TERRAIN_PROPS = {
   [T.OCEAN]:     { speed: 0, desc: 'Deep water, impassable' },
@@ -1002,6 +1009,7 @@ const G = {
   hovTile: null, mapDirty: true,
   homeCity: null, aiCityIndex: 0,
   followDwarf: null,
+  routeDwarfId: null,
   zoom: 1.0,
   sponsorMap: {},
 };
@@ -1028,6 +1036,47 @@ let gameWorker = null, workerActive = false;
 // Helper: find city by id
 function cityById(id) { return CITIES.find(c => c.id === id) || G.suburbs?.find(s => s.id === id); }
 function cityOf(d) { return cityById(d.cityId) || CITIES[0]; }
+function townPopulation(town) { return G.dwarves.filter(d => d.cityId === town.id).length; }
+function settlementPopCap(town) { return town.id?.startsWith('suburb_') ? SUBURB_POP_CAP : TOWN_POP_CAP; }
+function cityPopulationCounts() {
+  const counts = new Map();
+  for (const d of G.dwarves) if (!d.dead) counts.set(d.cityId, (counts.get(d.cityId) || 0) + 1);
+  return counts;
+}
+function rebalanceEmptyCities() {
+  const counts = cityPopulationCounts();
+  let fixed = 0;
+  for (const city of CITIES) {
+    if (!city.res || city.mx === undefined || (counts.get(city.id) || 0) > 0) continue;
+    if (G.dwarves.length < WORLD_POP_HARD_CAP) {
+      const before = G.dwarves.length;
+      spawnDwarfAtCity(city);
+      if (G.dwarves.length > before) {
+        counts.set(city.id, 1);
+        fixed++;
+        continue;
+      }
+    }
+    const donor = G.dwarves
+      .filter(d => !d.dead && (d.age ?? 20) >= 20 && d.cityId !== city.id && (counts.get(d.cityId) || 0) > 1)
+      .sort((a, b) => (counts.get(b.cityId) || 0) - (counts.get(a.cityId) || 0))[0];
+    if (!donor) continue;
+    const oldCityId = donor.cityId;
+    const land = findNearbyLand(city.mx, city.my);
+    if (!land) continue;
+    counts.set(oldCityId, (counts.get(oldCityId) || 1) - 1);
+    donor.cityId = city.id; donor.x = land[0]; donor.y = land[1];
+    donor.target = null; donor.path = []; donor.state = 'idle'; donor.travelMode = null;
+    donor.hunger = Math.max(donor.hunger || 80, 70);
+    donor.energy = Math.max(donor.energy || 80, 70);
+    donor.happiness = Math.min(100, (donor.happiness || 70) + 5);
+    counts.set(city.id, 1);
+    fixed++;
+    log(`🏘️ ${donor.name} resettled ${city.name}`, 'system', 3, undefined, city.emoji, city.mx, city.my);
+    addEvent(donor, 'home', `Resettled ${city.name}`);
+  }
+  return fixed;
+}
 function unwrapRenderX(fromX, rawX) { return rawX + Math.round((fromX - rawX) / MAP_W) * MAP_W; }
 function smoothstep(t) { return t * t * (3 - 2 * t); }
 function currentEntityRenderPosition(r, nowMs) {
@@ -1055,6 +1104,54 @@ function getEntityRenderPosition(entity, nowMs, snapTiles) {
     return currentEntityRenderPosition(r, nowMs);
   }
   return current;
+}
+function drawSelectedDwarfRoute(nowMs) {
+  if (!G.routeDwarfId) return;
+  const d = G.dwarves.find(dw => dw.id === G.routeDwarfId);
+  if (!d || !Array.isArray(d.path) || d.path.length === 0) return;
+  const start = getEntityRenderPosition(d, nowMs, d.state === 'traveling' ? 40 : 8);
+  const points = [{ x: start.x, y: start.y }, ...d.path.map(([x, y]) => ({ x, y }))];
+  if (d.target?.x != null && d.target?.y != null) points.push({ x: d.target.x, y: d.target.y });
+  let lastX = points[0].x;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const x = i === 0 ? p.x : unwrapRenderX(lastX, p.x);
+    const px = x * TILE - G.cam.x + TILE / 2;
+    const py = p.y * TILE - G.cam.y + TILE / 2;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+    lastX = x;
+  }
+  ctx.strokeStyle = 'rgba(29,32,33,0.65)';
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  ctx.setLineDash([10, 7]);
+  ctx.strokeStyle = 'rgba(250,189,47,0.62)';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  const end = points[points.length - 1];
+  const endX = unwrapRenderX(lastX, end.x) * TILE - G.cam.x + TILE / 2;
+  const endY = end.y * TILE - G.cam.y + TILE / 2;
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(250,189,47,0.35)';
+  ctx.beginPath();
+  ctx.arc(endX, endY, TILE * 0.35, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+function syncWorkerRouteDwarf(id) {
+  const nextId = id || null;
+  if (G.routeDwarfId === nextId) return;
+  G.routeDwarfId = nextId;
+  if (nextId && workerActive) {
+    const d = G.dwarves.find(dw => dw.id === nextId);
+    if (d) d.path = [];
+  }
+  if (gameWorker) gameWorker.postMessage({ type: 'route_focus', dwarfId: nextId });
 }
 function setWorldTile(x, y, tile, opts = {}) {
   const wx = wrapX(x);
@@ -1953,11 +2050,9 @@ function createDwarf(x, y, cityId) {
 
 function spawnDwarfAtCity(city) {
   if (!city || city.mx === undefined) return;
-  // Per-city hard cap
   const cityPop = G.dwarves.filter(d => d.cityId === city.id).length;
-  if (cityPop >= 10) return;
-  // Global hard cap
-  if (G.dwarves.length >= 300) return;
+  if (cityPop >= settlementPopCap(city)) return;
+  if (G.dwarves.length >= WORLD_POP_HARD_CAP) return;
 
   const hx = city.mx, hy = city.my;
   let x, y, tries = 0;
@@ -2297,6 +2392,7 @@ function aiIdle(d) {
 
   if (d.hunger < 40 && res.food > 0) { d.state = 'seek_food'; return; }
   if (d.energy < 30) { d.state = 'seek_sleep'; return; }
+  if (tryMoveIntoEmptyTown(d)) return;
 
   const minePath = bfs(d.x, d.y, (x, y) => G.map[y][x] === T.D_MINE, false);
   if (minePath) {
@@ -2447,6 +2543,16 @@ function aiWalk(d) {
           addEvent(d, 'trade', `Delivered ${amt} ${good} to ${destCity.name}`);
         }
         d.happiness = Math.min(100, d.happiness + 10);
+      }
+      d.target = null; d.state = 'idle'; return;
+    }
+    else if (tt === 'move_town') {
+      const town = cityById(d.target.cityId);
+      if (town && town.res) {
+        d.cityId = town.id; d.x = town.mx; d.y = town.my;
+        d.happiness = Math.min(100, d.happiness + 8);
+        log(`🏘️ ${d.name} moved into empty ${town.name}`, 'system', 3, undefined, town.emoji, town.mx, town.my);
+        addEvent(d, 'home', `Moved into ${town.name}`);
       }
       d.target = null; d.state = 'idle'; return;
     }
@@ -2962,6 +3068,40 @@ function tryFoundCity(d) {
   return true;
 }
 
+function tryMoveIntoEmptyTown(d) {
+  const source = cityOf(d);
+  const popByCity = new Map();
+  for (const dw of G.dwarves) popByCity.set(dw.cityId, (popByCity.get(dw.cityId) || 0) + 1);
+  if (!source || (popByCity.get(source.id) || 0) <= 1) return false;
+  const towns = [...CITIES, ...(G.suburbs || [])]
+    .filter(t => t.id !== d.cityId && t.res && t.mx !== undefined && (popByCity.get(t.id) || 0) === 0)
+    .sort((a, b) => {
+      const da = Math.min(Math.abs(a.mx - d.x), MAP_W - Math.abs(a.mx - d.x)) + Math.abs(a.my - d.y);
+      const db = Math.min(Math.abs(b.mx - d.x), MAP_W - Math.abs(b.mx - d.x)) + Math.abs(b.my - d.y);
+      return da - db;
+    });
+  for (const town of towns) {
+    if (G.dwarves.some(o => o !== d && o.target?.type === 'move_town' && o.target.cityId === town.id)) continue;
+    const dist = Math.min(Math.abs(town.mx - d.x), MAP_W - Math.abs(town.mx - d.x)) + Math.abs(town.my - d.y);
+    if (dist > EMPTY_TOWN_MOVE_RADIUS) continue;
+    if (dist === 0) {
+      d.cityId = town.id; d.target = null; d.path = []; d.state = 'idle';
+      d.happiness = Math.min(100, d.happiness + 8);
+      log(`🏘️ ${d.name} moved into empty ${town.name}`, 'system', 3, undefined, town.emoji, town.mx, town.my);
+      addEvent(d, 'home', `Moved into ${town.name}`);
+      return true;
+    }
+    if (Math.random() > 0.04) return false;
+    const p = bfs(d.x, d.y, (x, y) => x === town.mx && y === town.my, false);
+    if (!p || p.length === 0 || p.length > EMPTY_TOWN_MOVE_RADIUS + 20) continue;
+    d.target = { type: 'move_town', cityId: town.id, x: town.mx, y: town.my };
+    d.path = p; d.state = 'walk';
+    log(`🏘️ ${d.name} set out to settle empty ${town.name}`, 'system', 2, undefined, town.emoji, town.mx, town.my);
+    return true;
+  }
+  return false;
+}
+
 function aiSeekFood(d) {
   if (d._tickSlot === undefined) d._tickSlot = G.dwarves.indexOf(d) % 4;
   if (G.tick % 4 !== d._tickSlot) return;
@@ -3093,7 +3233,7 @@ function tickSeason() {
       if (!city.res || city.mx === undefined) continue;
       const cityDwarves = G.dwarves.filter(d => d.cityId === city.id);
       const cityPop = cityDwarves.length;
-      if (cityPop >= 10 || G.dwarves.length >= 300) continue;
+      if (cityPop >= settlementPopCap(city) || G.dwarves.length >= WORLD_POP_HARD_CAP) continue;
       if (city.res.food < cityPop * 3) continue;
       const males = cityDwarves.filter(d => d.sex === 'M' && d.happiness >= 70 && d.age >= 20 && d.age < 55);
       const females = cityDwarves.filter(d => d.sex === 'F' && d.happiness >= 70 && d.age >= 20 && d.age < 55);
@@ -3233,17 +3373,18 @@ function tickSeason() {
     }
 
     // Repopulate cities: cities with food and beds but low pop get new dwarves
-    if (G.dwarves.length < 300) {
+    if (G.dwarves.length < WORLD_POP_HARD_CAP) {
       for (const city of CITIES) {
         if (!city.res || city.mx === undefined) continue;
         const pop = G.dwarves.filter(d => d.cityId === city.id).length;
-        if (pop < 2 && city.res.food >= 5) {
+        if (pop > 0 && pop < 2 && city.res.food >= 5) {
           spawnDwarfAtCity(city);
-        } else if (pop < (city.res.beds || 1) && city.res.food >= pop * 3 && Math.random() < 0.4) {
+        } else if (pop > 0 && pop < (city.res.beds || 1) && city.res.food >= pop * 3 && Math.random() < 0.4) {
           spawnDwarfAtCity(city);
         }
       }
     }
+    rebalanceEmptyCities();
 
     // Spawn animals
     spawnAnimalsFB();
@@ -3774,6 +3915,7 @@ function render() {
     );
     ctx.setLineDash([]);
   }
+  drawSelectedDwarfRoute(renderNowMs);
 
   // Draw city labels
   ctx.font = 'bold 11px sans-serif';
@@ -4092,7 +4234,10 @@ function openInspector(tile) {
 }
 
 function showAnimalInspector(animal) {
-  if (!inspRefreshing) inspCurrent = {type:'animal', id:animal.id};
+  if (!inspRefreshing) {
+    inspCurrent = {type:'animal', id:animal.id};
+    syncWorkerRouteDwarf(null);
+  }
   const emoji = ANIMAL_EMOJIS[animal.type] || '\uD83D\uDC3E';
   const danger = ANIMAL_DANGER[animal.type];
   const pet = ANIMAL_PET[animal.type];
@@ -4135,6 +4280,7 @@ let inspRefreshing = false;
 
 function closeInspector() {
   inspCurrent = null;
+  syncWorkerRouteDwarf(null);
   if (isMobile) inspPanel.classList.remove('open');
   else inspPanel.style.display = 'none';
 }
@@ -4162,6 +4308,7 @@ document.getElementById('btn-close-insp').onclick = closeInspector;
 })();
 
 function showDwarfList(dwarves) {
+  if (!inspRefreshing) syncWorkerRouteDwarf(null);
   inspTitle.textContent = dwarves.length + ' Dwarves Here';
   inspBody.textContent = '';
   for (const dw of dwarves) {
@@ -4175,7 +4322,10 @@ function showDwarfList(dwarves) {
 }
 
 function showDwarfInspector(dw) {
-  if (!inspRefreshing) inspCurrent = {type:'dwarf', id:dw.id};
+  if (!inspRefreshing) {
+    inspCurrent = {type:'dwarf', id:dw.id};
+    syncWorkerRouteDwarf(dw.id);
+  }
   const stateEmoji = dw.state === 'sleeping' ? '💤' : dw.state === 'mining' ? '⛏️' :
     dw.state === 'eating' ? '🍖' : dw.state === 'building' ? '🔨' : dw.state === 'farming' ? '🌱' :
     dw.state === 'hauling' ? '📦' : dw.state === 'gathering' ? '🧺' :
@@ -4343,7 +4493,10 @@ function showDwarfInspector(dw) {
 }
 
 function showCityInspector(city) {
-  if (!inspRefreshing) inspCurrent = {type:'city', id:city.id};
+  if (!inspRefreshing) {
+    inspCurrent = {type:'city', id:city.id};
+    syncWorkerRouteDwarf(null);
+  }
   const culture = CULTURES[city.culture];
   inspTitle.textContent = city.emoji + ' ' + city.name;
   const pop = G.dwarves.filter(dw => dw.cityId === city.id);
@@ -4449,6 +4602,7 @@ function showTerrainInspector(tile) {
   const graveKey = `${tile.x},${tile.y}`;
   const graveData = t === T.GRAVE && G.graves[graveKey] ? G.graves[graveKey] : null;
   if (graveData) { showGraveInspector(tile.x, tile.y, graveData); return; }
+  if (!inspRefreshing) syncWorkerRouteDwarf(null);
   const props = TERRAIN_PROPS[t] || { speed: 0, desc: 'Unknown terrain' };
   inspTitle.textContent = TILE_NAMES[t] || 'Unknown';
   const [lon, lat] = toLonLat(tile.x, tile.y);
@@ -4493,6 +4647,7 @@ function showTerrainInspector(tile) {
 }
 
 function showResourceRanking(resKey) {
+  syncWorkerRouteDwarf(null);
   positionInspectorBelow(document.getElementById('hud-res-wrap'));
   const icon = RES_ICONS.find(([, k]) => k === resKey);
   inspTitle.textContent = (icon ? icon[0] + ' ' : '') + (RES_NAMES[resKey] || resKey);
@@ -5460,6 +5615,7 @@ function applySponsorships() {
 const POP_STATE_EMOJIS = {sleeping:'💤',mining:'⛏️',eating:'🍖',building:'🔨',farming:'🌱',hauling:'📦',gathering:'🧺',crafting:'✨',seek_craft:'✨',traveling:'🚶',wander:'🚶',walk:'🚶',idle:'🧔',fleeing:'😰',starving:'💀',seek_food:'🍖',seek_sleep:'💤',dead:'☠️'};
 let popSort = 'name', popDir = 1, popFilter = '';
 function showPopulationPanel() {
+  syncWorkerRouteDwarf(null);
   let list = G.dwarves.filter(d => !d.dead);
   inspTitle.textContent = '🧔 Population (' + list.length + ' dwarves)';
   const frag = document.createDocumentFragment();
@@ -5563,6 +5719,7 @@ document.getElementById('hud-pop-wrap').onclick = () => { popFilter = ''; positi
 
 // Travel panel
 document.getElementById('hud-travel-wrap').onclick = () => {
+  syncWorkerRouteDwarf(null);
   positionInspectorBelow(document.getElementById('hud-travel-wrap'));
   const travelers = G.dwarves.filter(d => d.state === 'traveling');
   inspTitle.textContent = '🚶 Traveling (' + travelers.length + ')';
@@ -5606,6 +5763,7 @@ document.getElementById('hud-travel-wrap').onclick = () => {
 
 // Timeline panel
 document.getElementById('hud-year-wrap').onclick = () => {
+  syncWorkerRouteDwarf(null);
   positionInspectorBelow(document.getElementById('hud-year-wrap'));
   const seasonEmoji = SEASON_EMOJIS[G.season];
   const seasonName = SEASONS[G.season];
@@ -5700,6 +5858,7 @@ function backfillGraveCause(g) {
 }
 function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0; return h; }
 function showGraveyardPanel() {
+  syncWorkerRouteDwarf(null);
   const graves = G.graves || {};
   const entries = Object.entries(graves);
   for (const [, g] of entries) backfillGraveCause(g);
@@ -5733,6 +5892,7 @@ function showGraveyardPanel() {
 
 // Grave inspector with AI epitaph
 function showGraveInspector(gx, gy, g) {
+  if (!inspRefreshing) syncWorkerRouteDwarf(null);
   backfillGraveCause(g);
   inspTitle.textContent = g.emoji + ' ' + g.name;
   const frag = document.createDocumentFragment();
@@ -5954,15 +6114,8 @@ async function restoreState() {
   if (saved.suburbs) G.suburbs = saved.suburbs;
   if (saved.dirtTiles) G.dirtTiles = saved.dirtTiles;
 
-  // Ensure minimum population: at least 2 dwarves per city
-  for (const city of CITIES) {
-    if (city.mx === undefined) continue;
-    const pop = G.dwarves.filter(d => d.cityId === city.id).length;
-    if (pop < 2) {
-      const needed = 2 + Math.floor(Math.random() * 2) - pop;
-      for (let i = 0; i < needed; i++) spawnDwarfAtCity(city);
-    }
-  }
+  if (G.dwarves.length === 0 && G.homeCity) spawnDwarfAtCity(G.homeCity);
+  rebalanceEmptyCities();
 
   updateHUD();
 }
@@ -6052,7 +6205,7 @@ function gameLoop(ts) {
 function initWorker() {
   if (typeof Worker === 'undefined') return;
   try {
-    gameWorker = new Worker('/game-worker.js');
+    gameWorker = new Worker('/game-worker.js?v=' + WORKER_VERSION);
   } catch (e) { console.warn('Worker init failed, using main thread:', e); return; }
 
   gameWorker.onmessage = function(e) {
@@ -6063,6 +6216,16 @@ function initWorker() {
         const previousAnimals = new Map(G.animals.map(a => [a.id, a]));
         G.dwarves = data.dwarves.map(d => ({ ...previousDwarves.get(d.id), ...d }));
         if (Object.keys(G.sponsorMap).length) applySponsorships();
+        const popFixes = rebalanceEmptyCities();
+        if (popFixes && gameWorker) {
+          gameWorker.postMessage({
+            type: 'population_rebalance',
+            dwarves: G.dwarves.map(d => ({
+              id: d.id, cityId: d.cityId, x: d.x, y: d.y, state: d.state,
+              hunger: d.hunger, energy: d.energy, happiness: d.happiness,
+            })),
+          });
+        }
         G.animals = (data.animals || []).map(a => ({ ...previousAnimals.get(a.id), ...a }));
         G.tick = data.tick;
         G.year = data.year;
@@ -6144,6 +6307,7 @@ function initWorker() {
       yearResolutions: G.yearResolutions || [],
       suburbs: G.suburbs || [],
       dirtTiles: G.dirtTiles || [],
+      routeDwarfId: G.routeDwarfId || null,
     },
   }, [flat.buffer]);
 
@@ -6174,6 +6338,7 @@ async function init() {
 
   // Try to restore saved state
   await restoreState();
+  rebalanceEmptyCities();
   await loadSponsorships();
 
   // Auto-focus on sponsored dwarf from URL param (post-checkout return)

@@ -1,5 +1,5 @@
-export const POP_HARD_CAP = 50;
-export const POP_SOFT_CAP = 30;
+export const POP_HARD_CAP = 300;
+export const POP_SOFT_CAP = 240;
 export const POP_MINIMUM = 3;
 
 export function shouldAllowBirth(currentPop: number): boolean {

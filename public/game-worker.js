@@ -20,6 +20,7 @@ const WALKABLE = new Set([
 const WILD_FOOD = new Set([T.MUSHROOM,T.BERRY_BUSH,T.CRAB]);
 const GATHERABLE = new Set([T.BERRY_BUSH,T.HERB_PATCH,T.IRON_ORE,T.GOLD_VEIN,T.GEMS,T.FISH_SPOT,T.CRAB,T.DEER,T.CLAY,T.CORAL]);
 const STARVE_IMMOBILE = 2000, STARVE_DEATH = 2667;
+const WORLD_POP_HARD_CAP = 300, TOWN_POP_CAP = 10, SUBURB_POP_CAP = 4, EMPTY_TOWN_MOVE_RADIUS = 80;
 const SEASONS = ['Spring','Summer','Autumn','Winter'];
 const TERRAIN_PROPS = {
   [T.OCEAN]:{speed:0},[T.TUNDRA]:{speed:2},[T.TAIGA]:{speed:2},[T.FOREST]:{speed:2},
@@ -61,6 +62,14 @@ function bestTravelMode(origin, dest) {
   if (tiers?.gravel || tiers?.path) return 'cart';
   if (isCityCoastal(origin) && isCityCoastal(dest)) return 'ship';
   return 'walk';
+}
+
+function roadTierScore(tiers) {
+  if (tiers?.railroad) return 4;
+  if (tiers?.asphalt) return 3;
+  if (tiers?.gravel) return 2;
+  if (tiers?.path) return 1;
+  return 0;
 }
 
 function findCityWater(city) {
@@ -189,28 +198,20 @@ function tryTravel(d) {
   const city = cityOf(d);
   if (!city || !city.res) return false;
   if (d.hunger < 30 || d.energy < 25) return false;
-  // Ensure road graph exists
-  if (!G.roadGraph) rebuildRoadGraph();
+  if (!G.roadGraph || G.roadGraphDirty) rebuildRoadGraph();
   const others = CITIES.filter(c => c.id !== city.id && c.mx !== undefined);
   if (!others.length) return false;
-  // Sort by distance, prefer connected cities
   others.sort((a,b) => {
     const pairA = [city.id, a.id].sort().join('-');
     const pairB = [city.id, b.id].sort().join('-');
-    const hasRoadA = G.roadGraph?.[pairA] ? 1 : 0;
-    const hasRoadB = G.roadGraph?.[pairB] ? 1 : 0;
-    if (hasRoadA !== hasRoadB) return hasRoadB - hasRoadA; // connected first
+    const tierA = roadTierScore(G.roadGraph?.[pairA]);
+    const tierB = roadTierScore(G.roadGraph?.[pairB]);
+    if (tierA !== tierB) return tierB - tierA;
     const da = Math.min(Math.abs(a.mx-city.mx), MAP_W-Math.abs(a.mx-city.mx)) + Math.abs(a.my-city.my);
     const db = Math.min(Math.abs(b.mx-city.mx), MAP_W-Math.abs(b.mx-city.mx)) + Math.abs(b.my-city.my);
     return da - db;
   });
-  // Try up to 5 candidates — prefer non-walk modes
-  const pool = others.slice(0, 8);
-  // Shuffle pool for variety
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
+  const pool = others.slice(0, 12);
   for (const dest of pool) {
     if (tryTravelTo(d, city, dest)) return true;
   }
@@ -335,6 +336,8 @@ const G = {
   graves:{}, yearResolutions:[], suburbs:[], dirtTiles:[], upgradeFrom:{},
   homeCity:null, aiCityIndex:0, dwarfGrid:{},
   mapDeltas:{},
+  routeDwarfId:null,
+  popRebalancePending:true,
 };
 
 // Message buffers
@@ -357,6 +360,51 @@ function wrapX(x) { return ((x % MAP_W) + MAP_W) % MAP_W; }
 function wrapY(y) { return ((y % MAP_H) + MAP_H) % MAP_H; }
 function cityById(id) { return CITIES.find(c => c.id === id) || G.suburbs.find(s => s.id === id); }
 function cityOf(d) { return cityById(d.cityId) || CITIES[0]; }
+function townPopulation(town) { return G.dwarves.filter(d => d.cityId === town.id).length; }
+function settlementPopCap(town) { return town.id?.startsWith('suburb_') ? SUBURB_POP_CAP : TOWN_POP_CAP; }
+function cityPopulationCounts() {
+  const counts = new Map();
+  for (const d of G.dwarves) if (!d.dead) counts.set(d.cityId, (counts.get(d.cityId) || 0) + 1);
+  return counts;
+}
+function rebalanceEmptyCities() {
+  const counts = cityPopulationCounts();
+  let fixed = 0;
+  for (const city of CITIES) {
+    if (!city.res || city.mx === undefined || (counts.get(city.id) || 0) > 0) continue;
+    if (G.dwarves.length < WORLD_POP_HARD_CAP) {
+      const before = G.dwarves.length;
+      spawnDwarfAtCity(city);
+      if (G.dwarves.length > before) {
+        counts.set(city.id, 1);
+        fixed++;
+        continue;
+      }
+    }
+    const donor = G.dwarves
+      .filter(d => !d.dead && (d.age ?? 20) >= 20 && d.cityId !== city.id && (counts.get(d.cityId) || 0) > 1)
+      .sort((a, b) => (counts.get(b.cityId) || 0) - (counts.get(a.cityId) || 0))[0];
+    if (!donor) continue;
+    const oldCityId = donor.cityId;
+    const land = findNearbyLand(city.mx, city.my);
+    if (!land) continue;
+    counts.set(oldCityId, (counts.get(oldCityId) || 1) - 1);
+    donor.cityId = city.id; donor.x = land[0]; donor.y = land[1];
+    donor.target = null; donor.path = []; donor.state = 'idle'; donor.travelMode = null;
+    donor.hunger = Math.max(donor.hunger || 80, 70);
+    donor.energy = Math.max(donor.energy || 80, 70);
+    donor.happiness = Math.min(100, (donor.happiness || 70) + 5);
+    counts.set(city.id, 1);
+    fixed++;
+    log(`🏘️ ${donor.name} resettled ${city.name}`, 'system', 3, city.emoji, city.mx, city.my);
+    addEvent(donor, 'home', `Resettled ${city.name}`);
+  }
+  return fixed;
+}
+function hasEmptyCities() {
+  const counts = cityPopulationCounts();
+  return CITIES.some(c => c.res && c.mx !== undefined && (counts.get(c.id) || 0) === 0);
+}
 function nearestCity(x, y) {
   let best = null, bestDist = Infinity;
   for (const c of CITIES) {
@@ -697,8 +745,8 @@ function findNearbyLand(cx, cy) {
 function spawnDwarfAtCity(city) {
   if (!city || city.mx === undefined) return;
   const cityPop = G.dwarves.filter(d => d.cityId === city.id).length;
-  if (cityPop >= 10) return;
-  if (G.dwarves.length >= 300) return;
+  if (cityPop >= settlementPopCap(city)) return;
+  if (G.dwarves.length >= WORLD_POP_HARD_CAP) return;
   const hx = city.mx, hy = city.my;
   let x, y, tries = 0;
   do { x = wrapX(hx+Math.floor(Math.random()*6-3)); y = hy+Math.floor(Math.random()*4-2); tries++; }
@@ -1112,6 +1160,7 @@ function aiIdle(d) {
   const res = cityOf(d).res || {};
   if (d.hunger < 40 && res.food > 0) { d.state = 'seek_food'; return; }
   if (d.energy < 30) { d.state = 'seek_sleep'; return; }
+  if (tryMoveIntoEmptyTown(d)) return;
 
   // Cargo-laden dwarves prefer travel — gets vehicles/ships rolling.
   if ((d.carrying||0) >= carryCapacity(d) * 0.7 && Math.random() < 0.4 && tryTravel(d)) return;
@@ -1255,6 +1304,15 @@ function aiWalk(d) {
           addEvent(d, 'trade', `Delivered ${amt} ${good} to ${destCity.name}`);
         }
         d.happiness = Math.min(100, d.happiness + 10);
+      }
+      d.target = null; d.state = 'idle'; return;
+    } else if (tt === 'move_town') {
+      const town = cityById(d.target.cityId);
+      if (town && town.res) {
+        d.cityId = town.id; d.x = town.mx; d.y = town.my;
+        d.happiness = Math.min(100, d.happiness + 8);
+        log(`🏘️ ${d.name} moved into empty ${town.name}`, 'system', 3, town.emoji, town.mx, town.my);
+        addEvent(d, 'home', `Moved into ${town.name}`);
       }
       d.target = null; d.state = 'idle'; return;
     } else d.state = 'idle';
@@ -1775,6 +1833,40 @@ function tryRelocateToSuburb(d) {
   return false;
 }
 
+function tryMoveIntoEmptyTown(d) {
+  const source = cityOf(d);
+  const popByCity = new Map();
+  for (const dw of G.dwarves) popByCity.set(dw.cityId, (popByCity.get(dw.cityId) || 0) + 1);
+  if (!source || (popByCity.get(source.id) || 0) <= 1) return false;
+  const towns = [...CITIES, ...G.suburbs]
+    .filter(t => t.id !== d.cityId && t.res && t.mx !== undefined && (popByCity.get(t.id) || 0) === 0)
+    .sort((a, b) => {
+      const da = Math.min(Math.abs(a.mx - d.x), MAP_W - Math.abs(a.mx - d.x)) + Math.abs(a.my - d.y);
+      const db = Math.min(Math.abs(b.mx - d.x), MAP_W - Math.abs(b.mx - d.x)) + Math.abs(b.my - d.y);
+      return da - db;
+    });
+  for (const town of towns) {
+    if (G.dwarves.some(o => o !== d && o.target?.type === 'move_town' && o.target.cityId === town.id)) continue;
+    const dist = Math.min(Math.abs(town.mx - d.x), MAP_W - Math.abs(town.mx - d.x)) + Math.abs(town.my - d.y);
+    if (dist > EMPTY_TOWN_MOVE_RADIUS) continue;
+    if (dist === 0) {
+      d.cityId = town.id; d.target = null; d.path = []; d.state = 'idle';
+      d.happiness = Math.min(100, d.happiness + 8);
+      log(`🏘️ ${d.name} moved into empty ${town.name}`, 'system', 3, town.emoji, town.mx, town.my);
+      addEvent(d, 'home', `Moved into ${town.name}`);
+      return true;
+    }
+    if (Math.random() > 0.04) return false;
+    const p = bfs(d.x, d.y, (x,y) => x === town.mx && y === town.my, false);
+    if (!p || p.length === 0 || p.length > EMPTY_TOWN_MOVE_RADIUS + 20) continue;
+    d.target = {type:'move_town', cityId:town.id, x:town.mx, y:town.my};
+    d.path = p; d.state = 'walk';
+    log(`🏘️ ${d.name} set out to settle empty ${town.name}`, 'system', 2, town.emoji, town.mx, town.my);
+    return true;
+  }
+  return false;
+}
+
 function aiSeekFood(d) {
   if (d._tickSlot === undefined) d._tickSlot = G.dwarves.indexOf(d) % 4;
   if (G.tick % 4 !== d._tickSlot) return;
@@ -2102,8 +2194,8 @@ function tickSeason() {
       if (!city.res || city.mx === undefined) continue;
       const cityDwarves = G.dwarves.filter(d => d.cityId === city.id);
       const cityPop = cityDwarves.length;
-      const popCap = city.id?.startsWith('suburb_') ? 4 : 10;
-      if (cityPop >= popCap || G.dwarves.length >= 300) continue;
+      const popCap = settlementPopCap(city);
+      if (cityPop >= popCap || G.dwarves.length >= WORLD_POP_HARD_CAP) continue;
       if (city.res.food < cityPop * 3) continue;
       const males = cityDwarves.filter(d => d.sex === 'M' && d.happiness >= 70 && d.age >= 20 && d.age < 55);
       const females = cityDwarves.filter(d => d.sex === 'F' && d.happiness >= 70 && d.age >= 20 && d.age < 55);
@@ -2245,17 +2337,18 @@ function tickSeason() {
     }
 
     // Repopulate cities: cities with food and beds but low pop get new dwarves
-    if (G.dwarves.length < 300) {
+    if (G.dwarves.length < WORLD_POP_HARD_CAP) {
       for (const city of CITIES) {
         if (!city.res || city.mx === undefined) continue;
         const pop = G.dwarves.filter(d => d.cityId === city.id).length;
-        if (pop < 2 && city.res.food >= 5) {
+        if (pop > 0 && pop < 2 && city.res.food >= 5) {
           spawnDwarfAtCity(city);
-        } else if (pop < (city.res.beds || 1) && city.res.food >= pop * 3 && Math.random() < 0.4) {
+        } else if (pop > 0 && pop < (city.res.beds || 1) && city.res.food >= pop * 3 && Math.random() < 0.4) {
           spawnDwarfAtCity(city);
         }
       }
     }
+    rebalanceEmptyCities();
 
     // Auto-build roads between nearby cities
     autoConnectCities();
@@ -2497,6 +2590,7 @@ self.onmessage = function(e) {
       G.yearResolutions = data.state?.yearResolutions || [];
       G.suburbs = data.state?.suburbs || [];
       G.dirtTiles = data.state?.dirtTiles || [];
+      G.routeDwarfId = data.state?.routeDwarfId || null;
       // Restore dwarf paths/targets to empty (they were stripped for transfer)
       for (const d of G.dwarves) {
         if (!d.path) d.path = [];
@@ -2508,12 +2602,27 @@ self.onmessage = function(e) {
       }
       G.animals = (data.animals || []).map(a => ({...a, path:a.path||[], target:a.target||null}));
       if (G.animals.length === 0) seedAnimals();
+      rebalanceEmptyCities();
+      G.popRebalancePending = hasEmptyCities();
       startTickLoop();
       break;
     }
     case 'control':
       if (data.speed !== undefined) G.speed = data.speed;
       if (data.paused !== undefined) G.paused = data.paused;
+      break;
+    case 'route_focus':
+      G.routeDwarfId = data.dwarfId || null;
+      break;
+    case 'population_rebalance':
+      for (const patch of data.dwarves || []) {
+        const d = G.dwarves.find(o => o.id === patch.id);
+        if (!d) continue;
+        d.cityId = patch.cityId; d.x = patch.x; d.y = patch.y;
+        d.state = patch.state || 'idle'; d.target = null; d.path = []; d.travelMode = null;
+        d.hunger = patch.hunger; d.energy = patch.energy; d.happiness = patch.happiness;
+      }
+      G.popRebalancePending = hasEmptyCities();
       break;
     case 'designate':
       if (data.cityResources) {
@@ -2587,12 +2696,9 @@ self.onmessage = function(e) {
       }
       G.suburbs = saved.suburbs || [];
       G.dirtTiles = saved.dirtTiles || [];
-      // Ensure min population
-      for (const city of CITIES) {
-        if (city.mx === undefined) continue;
-        const pop = G.dwarves.filter(d => d.cityId === city.id).length;
-        if (pop < 2) for (let i = 0; i < 2+Math.floor(Math.random()*2)-pop; i++) spawnDwarfAtCity(city);
-      }
+      if (G.dwarves.length === 0 && G.homeCity) spawnDwarfAtCity(G.homeCity);
+      rebalanceEmptyCities();
+      G.popRebalancePending = hasEmptyCities();
       break;
     }
   }
@@ -2617,6 +2723,10 @@ function startTickLoop() {
       tickSeason();
     }
     aiTickAll();
+    if (G.popRebalancePending || G.tick % 300 === 0) {
+      rebalanceEmptyCities();
+      G.popRebalancePending = hasEmptyCities();
+    }
 
     const includeDetails = G.tick % 30 === 0;
 
@@ -2628,8 +2738,9 @@ function startTickLoop() {
       dwarves:G.dwarves.map(d => ({
         id:d.id,name:d.name,x:d.x,y:d.y,cityId:d.cityId,color:d.color,
         hunger:d.hunger,energy:d.energy,happiness:d.happiness,
-        state:d.state, target:d.target?{type:d.target.type}:null,
+        state:d.state, target:d.target ? (d.id === G.routeDwarfId ? d.target : {type:d.target.type}) : null,
         travelMode:d.travelMode||null,
+        ...(d.id === G.routeDwarfId ? {path:d.path||[]} : {}),
         stats:d.stats,faith:d.faith,morality:d.morality,ambition:d.ambition,age:d.age,
         carrying:d.carrying||0,carryItems:d.carryItems||{},
         carryMax:carryCapacity(d),

@@ -65,12 +65,14 @@ function buildMap() {
 
 type WorkerHooks = {
   tryTravelTo: (d: any, city: any, dest: any) => boolean;
+  tryTravel: (d: any) => boolean;
+  rebuildRoadGraph: () => void;
   findVehicleRoute: (city: any, dest: any, minRoad: number) => Array<[number, number]> | null;
   tryShipPath: (city: any, dest: any) => Array<[number, number]> | null;
   bfs: (sx: number, sy: number, goalFn: (x: number, y: number) => boolean, walkToGoal: boolean) => Array<[number, number]> | null;
   bfsWater: (sx: number, sy: number, goalFn: (x: number, y: number) => boolean) => Array<[number, number]> | null;
   terrainCost: (x: number, y: number) => number;
-  G: { roadGraph?: Record<string, any> };
+  G: Record<string, any>;
   T: Record<string, number>;
   MAP_W: number;
   MAP_H: number;
@@ -82,6 +84,8 @@ function loadWorkerHooks(): WorkerHooks {
   const workerCode = readFileSync(new URL('../public/game-worker.js', import.meta.url), 'utf8') + `
 self.__testHooks = {
   tryTravelTo,
+  tryTravel,
+  rebuildRoadGraph,
   findVehicleRoute,
   tryShipPath,
   bfs,
@@ -306,6 +310,85 @@ describe('live worker travel continuity', () => {
     expect(worker.tryTravelTo(dwarf, cityA, cityB)).toBe(true);
     expect(dwarf.travelMode).toBe('cart');
     expect(dwarf.path).toEqual(directRoute);
+  });
+
+  it('uses car on asphalt city routes', () => {
+    const map = buildWorkerMap(worker, worker.T.PLAINS);
+    const cityA = { id:'a', name:'A', mx:100, my:100, res:{} };
+    const cityB = { id:'b', name:'B', mx:120, my:100, res:{} };
+    map[cityA.my][cityA.mx] = worker.T.CITY;
+    map[cityB.my][cityB.mx] = worker.T.CITY;
+    for (let x = cityA.mx + 1; x < cityB.mx; x++) map[cityA.my][x] = worker.T.ASPHALT;
+    worker.setMap(map);
+    worker.setCities([cityA, cityB]);
+    worker.G.roadGraph = { 'a-b': { path:true, gravel:true, asphalt:true } };
+    const directRoute = worker.findVehicleRoute(cityA, cityB, worker.T.ASPHALT);
+    const dwarf: any = { id:'d', name:'D', x:cityA.mx, y:cityA.my, eventLog:[], carryItems:{}, inventory:[] };
+
+    expect(worker.tryTravelTo(dwarf, cityA, cityB)).toBe(true);
+    expect(dwarf.travelMode).toBe('car');
+    expect(dwarf.path).toEqual(directRoute);
+  });
+
+  it('uses train on railroad city routes', () => {
+    const map = buildWorkerMap(worker, worker.T.PLAINS);
+    const cityA = { id:'a', name:'A', mx:100, my:100, res:{} };
+    const cityB = { id:'b', name:'B', mx:120, my:100, res:{} };
+    map[cityA.my][cityA.mx] = worker.T.CITY;
+    map[cityB.my][cityB.mx] = worker.T.CITY;
+    for (let x = cityA.mx + 1; x < cityB.mx; x++) map[cityA.my][x] = worker.T.RAILROAD;
+    worker.setMap(map);
+    worker.setCities([cityA, cityB]);
+    worker.G.roadGraph = { 'a-b': { path:true, gravel:true, asphalt:true, railroad:true } };
+    const directRoute = worker.findVehicleRoute(cityA, cityB, worker.T.RAILROAD);
+    const dwarf: any = { id:'d', name:'D', x:cityA.mx, y:cityA.my, eventLog:[], carryItems:{}, inventory:[] };
+
+    expect(worker.tryTravelTo(dwarf, cityA, cityB)).toBe(true);
+    expect(dwarf.travelMode).toBe('train');
+    expect(dwarf.path).toEqual(directRoute);
+  });
+
+  it('rebuilds a dirty road graph before choosing travel mode', () => {
+    const map = buildWorkerMap(worker, worker.T.PLAINS);
+    const cityA = { id:'a', name:'A', mx:100, my:100, res:{} };
+    const cityB = { id:'b', name:'B', mx:120, my:100, res:{} };
+    map[cityA.my][cityA.mx] = worker.T.CITY;
+    map[cityB.my][cityB.mx] = worker.T.CITY;
+    for (let x = cityA.mx + 1; x < cityB.mx; x++) map[cityA.my][x] = worker.T.ASPHALT;
+    worker.setMap(map);
+    worker.setCities([cityA, cityB]);
+    worker.G.roadGraph = {};
+    worker.G.roadGraphDirty = true;
+    const dwarf: any = { id:'d', name:'D', cityId:'a', x:cityA.mx, y:cityA.my, hunger:100, energy:100, eventLog:[], carryItems:{}, inventory:[] };
+
+    expect(worker.tryTravel(dwarf)).toBe(true);
+    expect(worker.G.roadGraphDirty).toBe(false);
+    expect(worker.G.roadGraph['a-b'].asphalt).toBe(true);
+    expect(dwarf.travelMode).toBe('car');
+  });
+
+  it('prioritizes a farther railroad route over a nearby path route', () => {
+    const map = buildWorkerMap(worker, worker.T.PLAINS);
+    const cityA = { id:'a', name:'A', mx:100, my:100, res:{} };
+    const cityB = { id:'b', name:'B', mx:104, my:110, res:{} };
+    const cityC = { id:'c', name:'C', mx:150, my:100, res:{} };
+    map[cityA.my][cityA.mx] = worker.T.CITY;
+    map[cityB.my][cityB.mx] = worker.T.CITY;
+    map[cityC.my][cityC.mx] = worker.T.CITY;
+    for (let y = cityA.my + 1; y < cityB.my; y++) map[y][cityA.mx] = worker.T.PATH;
+    for (let x = cityA.mx + 1; x <= cityB.mx; x++) map[cityB.my][x] = worker.T.PATH;
+    for (let x = cityA.mx + 1; x < cityC.mx; x++) map[cityA.my][x] = worker.T.RAILROAD;
+    worker.setMap(map);
+    worker.setCities([cityA, cityB, cityC]);
+    worker.G.roadGraph = {
+      'a-b': { path:true },
+      'a-c': { path:true, gravel:true, asphalt:true, railroad:true },
+    };
+    const dwarf: any = { id:'d', name:'D', cityId:'a', x:cityA.mx, y:cityA.my, hunger:100, energy:100, eventLog:[], carryItems:{}, inventory:[] };
+
+    expect(worker.tryTravel(dwarf)).toBe(true);
+    expect(dwarf.target.destCityId).toBe('c');
+    expect(dwarf.travelMode).toBe('train');
   });
 
   it('continues from the current route tile instead of returning to the origin city', () => {

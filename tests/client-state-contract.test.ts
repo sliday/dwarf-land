@@ -56,6 +56,37 @@ describe('client state contract', () => {
     expect(indexHtml).toContain('const previousAnimals = new Map(G.animals.map(a => [a.id, a]))');
   });
 
+  it('draws selected dwarf routes from focused worker paths', () => {
+    expect(indexHtml).toContain('function drawSelectedDwarfRoute(nowMs)');
+    expect(indexHtml).toContain('drawSelectedDwarfRoute(renderNowMs)');
+    expect(indexHtml).toContain("gameWorker.postMessage({ type: 'route_focus', dwarfId: nextId })");
+    expect(indexHtml).toContain('routeDwarfId: G.routeDwarfId || null');
+    expect(gameWorker).toContain("case 'route_focus':");
+    expect(gameWorker).toContain('G.routeDwarfId = data.dwarfId || null');
+    expect(gameWorker).toContain("...(d.id === G.routeDwarfId ? {path:d.path||[]} : {})");
+  });
+
+  it('lets dwarves claim empty towns and repairs production zero-pop cities', () => {
+    expect(indexHtml).toContain('function tryMoveIntoEmptyTown(d)');
+    expect(indexHtml).toContain('function rebalanceEmptyCities()');
+    expect(indexHtml).toContain("d.target = { type: 'move_town', cityId: town.id, x: town.mx, y: town.my }");
+    expect(indexHtml).toContain("else if (tt === 'move_town')");
+    expect(indexHtml).toContain('if (G.dwarves.length === 0 && G.homeCity) spawnDwarfAtCity(G.homeCity)');
+    expect(indexHtml).toContain('rebalanceEmptyCities();');
+    expect(gameWorker).toContain('function tryMoveIntoEmptyTown(d)');
+    expect(gameWorker).toContain('function rebalanceEmptyCities()');
+    expect(gameWorker).toContain("d.target = {type:'move_town', cityId:town.id, x:town.mx, y:town.my}");
+    expect(gameWorker).toContain("} else if (tt === 'move_town') {");
+    expect(gameWorker).toContain('if (G.dwarves.length === 0 && G.homeCity) spawnDwarfAtCity(G.homeCity)');
+    expect(gameWorker).toContain('donor.cityId = city.id');
+  });
+
+  it('uses JetBrains Mono as the compact UI monospace face', () => {
+    expect(indexHtml).toContain("family=JetBrains+Mono");
+    expect(indexHtml).toContain("--ui-mono: 'JetBrains Mono'");
+    expect(indexHtml).toContain('body { font-family: var(--ui-mono)');
+  });
+
   it('keeps worker save and restore fields aligned with browser saves', () => {
     expect(gameWorker).toContain('travelMode:d.travelMode||null');
     expect(gameWorker).toContain('starveTicks:d.starveTicks||0');
