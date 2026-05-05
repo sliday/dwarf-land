@@ -47,8 +47,22 @@ export const ComplexDecisionSchema = z.object({
 });
 export type ComplexDecision = z.infer<typeof ComplexDecisionSchema>;
 
-// PREMIUM tier: god decrees
+// PREMIUM tier: high-end per-dwarf decisions
 export const PremiumDecisionSchema = z.object({
+  decisions: z.array(
+    z.object({
+      dwarfId: z.string(),
+      action: actionEnum,
+      targetDwarfId: z.string().optional(),
+      params: z.record(z.string(), z.unknown()).optional(),
+      reason: z.string().max(240),
+    })
+  ),
+});
+export type PremiumDecision = z.infer<typeof PremiumDecisionSchema>;
+
+// Deity decrees for future religion endpoints
+export const PremiumDecreeSchema = z.object({
   decree: z.object({
     text: z.string().max(300),
     action: actionEnum,
@@ -57,7 +71,7 @@ export const PremiumDecisionSchema = z.object({
   divineMessage: z.string().max(200).optional(),
   prophecy: z.string().max(200).optional(),
 });
-export type PremiumDecision = z.infer<typeof PremiumDecisionSchema>;
+export type PremiumDecree = z.infer<typeof PremiumDecreeSchema>;
 
 // Backstory generation
 export const BackstorySchema = z.object({

@@ -1786,6 +1786,7 @@ function bfs(sx, sy, goalFn, walkToGoal) {
     }
     for (const [dx, dy] of dirs) {
       const nx = cx + dx, ny = cy + dy;
+      if (ny < 0 || ny >= MAP_H) continue;
       const nk = key(nx, ny);
       const isGoal = walkToGoal && goalFn(wrapX(nx), ny);
       const tc = isGoal ? 1 : terrainCost(nx, ny);
@@ -4623,6 +4624,12 @@ function deductGlobalCost(cost) {
   }
 }
 
+function getCityResourcesSnapshot() {
+  const cityResources = {};
+  for (const c of CITIES) if (c.res) cityResources[c.id] = c.res;
+  return cityResources;
+}
+
 function formatCost(cost) {
   const parts = [];
   const icons = { food: '🍖', wood: '🪵', stone: '🪨', iron: '⚔️', gold: '🌕' };
@@ -4725,7 +4732,7 @@ function finalizeDesignation() {
             changes.push({ x, y, tile: t });
           }
         }
-      if (changes.length) gameWorker.postMessage({ type: 'designate', changes });
+      if (changes.length) gameWorker.postMessage({ type: 'designate', changes, cityResources: getCityResourcesSnapshot() });
     }
   }
   G.drag = null; G.sel = null;
@@ -5097,11 +5104,28 @@ const AI = {
 };
 
 const SEASONS_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
+const SPONSOR_CLAIM_PREFIX = 'dwarf-land-sponsor-claim:';
+
+function getSponsorClaimToken(dwarfId) {
+  try { return localStorage.getItem(SPONSOR_CLAIM_PREFIX + dwarfId) || ''; }
+  catch (_) { return ''; }
+}
+
+function setSponsorClaimToken(dwarfId, claimToken) {
+  try { localStorage.setItem(SPONSOR_CLAIM_PREFIX + dwarfId, claimToken); }
+  catch (_) {}
+}
+
+function sponsorClaimsFor(dwarves) {
+  return (dwarves || []).map(d => ({ dwarfId: d.id, claimToken: d.sponsorClaimToken || getSponsorClaimToken(d.id) }))
+    .filter(claim => claim.claimToken);
+}
 
 function aiClientContext(cityDwarves, city) {
   const res = city?.res || defaultRes();
+  const dwarves = cityDwarves || G.dwarves;
   return {
-    dwarves: (cityDwarves || G.dwarves).map(d => ({
+    dwarves: dwarves.map(d => ({
       id: d.id, name: d.name,
       hunger: d.hunger, energy: d.energy, happiness: d.happiness,
       state: d.state, x: d.x, y: d.y,
@@ -5109,6 +5133,7 @@ function aiClientContext(cityDwarves, city) {
       eventLog: d.eventLog?.slice(-10),
       cityId: d.cityId,
     })),
+    sponsorshipClaims: sponsorClaimsFor(dwarves),
     resources: res,
     cityName: city?.name,
     culture: city?.culture,
@@ -5354,6 +5379,7 @@ async function sponsorDwarf(dwarfId, tier) {
       body: JSON.stringify({ dwarfId, tier }),
     });
     const data = await res.json();
+    if (data.claimToken) setSponsorClaimToken(dwarfId, data.claimToken);
     if (data.checkoutUrl) window.open(data.checkoutUrl, '_blank');
     else log('Sponsorship failed: ' + (data.error || 'unknown'), 'system');
   } catch (e) { log('Sponsorship request failed', 'system'); }
@@ -5387,10 +5413,12 @@ function applySponsorships() {
       d.sponsored = true;
       d.sponsorTier = s.tier;
       d.sponsorCallsRemaining = s.callsRemaining;
+      d.sponsorClaimToken = getSponsorClaimToken(d.id);
     } else {
       d.sponsored = false;
       d.sponsorTier = null;
       d.sponsorCallsRemaining = 0;
+      d.sponsorClaimToken = getSponsorClaimToken(d.id);
     }
   }
 }

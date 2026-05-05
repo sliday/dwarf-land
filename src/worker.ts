@@ -22,11 +22,22 @@ type ActiveSponsorshipRow = {
   created_at: string | null;
   activated_at: string | null;
 };
+type SponsorshipClaim = { dwarfId: string; claimToken: string };
 
 type HonoEnv = { Bindings: Env };
 
 const app = new Hono<HonoEnv>();
-app.use('/*', cors());
+function isAllowedOrigin(c: any, origin?: string | null): boolean {
+  if (!origin) return false;
+  const selfOrigin = new URL(c.req.url).origin;
+  return origin === selfOrigin;
+}
+
+app.use('/*', cors({
+  origin: (origin, c) => isAllowedOrigin(c, origin) ? origin : undefined,
+  allowHeaders: ['Content-Type', 'X-State-Write-Token'],
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+}));
 
 const TIER_RANK: Record<Tier, number> = { simple: 0, medium: 1, complex: 2, premium: 3 };
 
@@ -51,12 +62,29 @@ function selectEffectiveSponsorships(rows: ActiveSponsorshipRow[]): ActiveSponso
   return [...selected.values()];
 }
 
-async function loadActiveSponsorships(db: D1Database, dwarfIds: string[]): Promise<ActiveSponsorshipRow[]> {
-  if (!dwarfIds.length) return [];
-  const placeholders = dwarfIds.map(() => '?').join(',');
+function generateClaimToken(): string {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function collectSponsorshipClaims(body: any): SponsorshipClaim[] {
+  const rawClaims = Array.isArray(body?.sponsorshipClaims) ? body.sponsorshipClaims : [];
+  const claims = rawClaims
+    .map((claim: any) => ({ dwarfId: claim?.dwarfId, claimToken: claim?.claimToken }))
+    .filter((claim: SponsorshipClaim) => typeof claim.dwarfId === 'string' && claim.dwarfId.length > 0 && typeof claim.claimToken === 'string' && claim.claimToken.length >= 32);
+  const selected = new Map<string, SponsorshipClaim>();
+  for (const claim of claims) selected.set(claim.dwarfId, claim);
+  return [...selected.values()];
+}
+
+async function loadActiveSponsorships(db: D1Database, claims: SponsorshipClaim[]): Promise<ActiveSponsorshipRow[]> {
+  if (!claims.length) return [];
+  const predicate = claims.map(() => '(dwarf_id=? AND claim_token=?)').join(' OR ');
+  const values = claims.flatMap((claim) => [claim.dwarfId, claim.claimToken]);
   const sponsored = await db.prepare(
-    `SELECT id, dwarf_id, ai_tier, created_at, activated_at FROM dwarf_sponsorships WHERE dwarf_id IN (${placeholders}) AND status='active' AND calls_remaining > 0`
-  ).bind(...dwarfIds).all();
+    `SELECT id, dwarf_id, ai_tier, created_at, activated_at FROM dwarf_sponsorships WHERE (${predicate}) AND status='active' AND calls_remaining > 0`
+  ).bind(...values).all();
   return selectEffectiveSponsorships((sponsored.results || []) as ActiveSponsorshipRow[]);
 }
 
@@ -97,11 +125,8 @@ app.post('/api/decide/:tier', async (c) => {
 
   try {
     const body = await c.req.json<any>();
-    const dwarfIds: string[] = Array.isArray(body.dwarves)
-      ? Array.from(new Set<string>(body.dwarves.map((d: any) => d?.id).filter((id: any): id is string => typeof id === 'string' && id.length > 0)))
-      : [];
     let effectiveTier = tier;
-    const activeSponsorships = await loadActiveSponsorships(c.env.DB, dwarfIds);
+    const activeSponsorships = await loadActiveSponsorships(c.env.DB, collectSponsorshipClaims(body));
     const sponsoredDwarfIds = activeSponsorships.map((row) => row.dwarf_id);
     for (const row of activeSponsorships) {
       if (TIER_RANK[row.ai_tier] > TIER_RANK[effectiveTier]) {
@@ -148,6 +173,11 @@ app.post('/api/decide/:tier', async (c) => {
 // State persistence
 app.post('/api/state/save', async (c) => {
   try {
+    const origin = c.req.header('origin');
+    const token = c.req.header('x-state-write-token');
+    if (!isAllowedOrigin(c, origin) && (!c.env.STATE_WRITE_TOKEN || token !== c.env.STATE_WRITE_TOKEN)) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
     const state: GameState = await c.req.json();
     await saveState(c.env.DB, state);
     return c.json({ ok: true });
@@ -332,15 +362,16 @@ app.post('/api/sponsor/checkout', async (c) => {
     metadata: { dwarfId, tier },
   });
 
+  const claimToken = generateClaimToken();
   await c.env.DB.prepare(
-    'INSERT INTO dwarf_sponsorships (dwarf_id, checkout_id, tier, ai_tier, calls_remaining, calls_total, amount_cents, status) VALUES (?,?,?,?,?,?,?,?)'
+    'INSERT INTO dwarf_sponsorships (dwarf_id, checkout_id, tier, ai_tier, calls_remaining, calls_total, amount_cents, status, claim_token) VALUES (?,?,?,?,?,?,?,?,?)'
   ).bind(
     dwarfId, checkout.id, tier,
     config.aiTier, config.calls, config.calls,
-    config.amount, 'pending'
+    config.amount, 'pending', claimToken
   ).run();
 
-  return c.json({ checkoutUrl: checkout.url });
+  return c.json({ checkoutUrl: checkout.url, claimToken });
 });
 
 app.post('/api/sponsor/webhook', async (c) => {
@@ -378,7 +409,7 @@ app.get('/api/sponsor/total', async (c) => {
 
 app.get('/api/sponsor/status/:dwarfId', async (c) => {
   const rows = await c.env.DB.prepare(
-    "SELECT * FROM dwarf_sponsorships WHERE dwarf_id=? AND status='active' AND calls_remaining > 0"
+    "SELECT id, dwarf_id, tier, ai_tier, calls_remaining, calls_total, amount_cents, status, created_at, activated_at, expired_at FROM dwarf_sponsorships WHERE dwarf_id=? AND status='active' AND calls_remaining > 0"
   ).bind(c.req.param('dwarfId')).all();
   const [row] = selectEffectiveSponsorships((rows.results || []) as ActiveSponsorshipRow[]);
   return c.json({ sponsorship: row || null });

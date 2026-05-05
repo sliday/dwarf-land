@@ -494,7 +494,8 @@ function isWalkable(x, y) {
   return props && props.speed > 0;
 }
 function terrainCost(x, y) {
-  const t = G.map[wrapY(y)][wrapX(x)];
+  if (y < 0 || y >= MAP_H) return Infinity;
+  const t = G.map[y][wrapX(x)];
   const props = TERRAIN_PROPS[t];
   if (!props || props.speed <= 0) return Infinity;
   return props.speed;
@@ -545,6 +546,7 @@ function bfs(sx, sy, goalFn, walkToGoal) {
     }
     for (const [dx, dy] of dirs) {
       const nx = cx + dx, ny = cy + dy;
+      if (ny < 0 || ny >= MAP_H) continue;
       const nk = key(nx, ny);
       const isGoal = walkToGoal && goalFn(wrapX(nx), ny);
       const tc = isGoal ? 1 : terrainCost(nx, ny);
@@ -588,6 +590,7 @@ function bfsWater(sx, sy, goalFn) {
     }
     for (const [dx, dy] of dirs) {
       const nx = cx + dx, ny = cy + dy;
+      if (ny < 0 || ny >= MAP_H) continue;
       const nk = key(nx, ny);
       if (visited.has(nk)) continue;
       if (!isWater(nx, ny) && !goalFn(wrapX(nx), ny)) continue;
@@ -2305,14 +2308,21 @@ const AI = {
   stats: {calls:0,fallbacks:0,errors:0},
 };
 
+function sponsorClaimsFor(dwarves) {
+  return (dwarves || []).map(d => ({dwarfId:d.id, claimToken:d.sponsorClaimToken || ''}))
+    .filter(claim => claim.claimToken);
+}
+
 function aiClientContext(cityDwarves, city) {
   const res = city?.res || defaultRes();
+  const dwarves = cityDwarves || G.dwarves;
   return {
-    dwarves: (cityDwarves||G.dwarves).map(d => ({
+    dwarves: dwarves.map(d => ({
       id:d.id,name:d.name,hunger:d.hunger,energy:d.energy,happiness:d.happiness,
       state:d.state,x:d.x,y:d.y,stats:d.stats,faith:d.faith,traits:d.traits,
       eventLog:d.eventLog?.slice(-10),cityId:d.cityId,
     })),
+    sponsorshipClaims:sponsorClaimsFor(dwarves),
     resources:res, cityName:city?.name, culture:city?.culture,
     season:SEASONS[G.season]||'Spring', year:G.year,
   };
@@ -2441,7 +2451,10 @@ function getSerializableState() {
       inventory:d.inventory||[],
       hp:d.hp,maxHp:d.maxHp,ac:d.ac,poisonTicks:d.poisonTicks||0,pet:d.pet||null,
       sex:d.sex||'M',
+      travelMode:d.travelMode||null,
       sponsored:d.sponsored||false,sponsorTier:d.sponsorTier||null,sponsorCallsRemaining:d.sponsorCallsRemaining||0,
+      starveTicks:d.starveTicks||0,
+      relationships:d.relationships||[],
     })),
     animals:G.animals.map(a => ({
       id:a.id,type:a.type,x:a.x,y:a.y,hp:a.hp,maxHp:a.maxHp,ac:a.ac,
@@ -2503,6 +2516,12 @@ self.onmessage = function(e) {
       if (data.paused !== undefined) G.paused = data.paused;
       break;
     case 'designate':
+      if (data.cityResources) {
+        for (const [cityId, res] of Object.entries(data.cityResources)) {
+          const city = cityById(cityId);
+          if (city && city.res) Object.assign(city.res, res);
+        }
+      }
       for (const ch of data.changes) {
         if (ch.tile === T.D_UPGRADE) G.upgradeFrom[`${ch.x},${ch.y}`] = G.map[ch.y][ch.x];
         G.map[ch.y][ch.x] = ch.tile; G.mapDeltas[`${ch.x},${ch.y}`] = ch.tile;
@@ -2537,6 +2556,9 @@ self.onmessage = function(e) {
             hp:sd.hp??d.hp, maxHp:sd.maxHp??d.maxHp, ac:sd.ac??d.ac,
             poisonTicks:sd.poisonTicks||0, pet:sd.pet||null,
             sex:sd.sex||d.sex,
+            travelMode:sd.travelMode??null,
+            starveTicks:sd.starveTicks||0,
+            relationships:sd.relationships||[],
           });
           d.target = null; d.path = [];
           if (!isWalkable(d.x, d.y)) {

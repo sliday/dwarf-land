@@ -1,5 +1,5 @@
 import type { Tier, DwarfState } from '../shared/types';
-import { SIMPLE_ACTIONS, MEDIUM_ACTIONS, COMPLEX_ACTIONS } from '../shared/actions';
+import { SIMPLE_ACTIONS, MEDIUM_ACTIONS, COMPLEX_ACTIONS, ACTION_IDS } from '../shared/actions';
 
 function formatDwarf(d: DwarfState): string {
   return `${d.id}|${d.name}|hunger:${Math.round(d.hunger)}|energy:${Math.round(d.energy)}|happy:${Math.round(d.happiness)}|state:${d.state}`;
@@ -25,7 +25,7 @@ export function buildPrompt(tier: Tier, context: any): string {
     case 'complex':
       return buildComplexPrompt(dwarves, resources, season, year, cityName, culture);
     case 'premium':
-      return buildPremiumPrompt(context);
+      return buildPremiumPrompt(dwarves, resources, season, year, cityName, culture);
     default:
       return '';
   }
@@ -128,7 +128,39 @@ Consider:
 Return strategic decisions. JSON only.`;
 }
 
-function buildPremiumPrompt(context: any): string {
+function buildPremiumPrompt(
+  dwarves: DwarfState[],
+  resources: any,
+  season: string,
+  year: number,
+  cityName?: string,
+  culture?: string
+): string {
+  const dwarfList = dwarves.map(formatDwarfDetailed).join('\n');
+  const actions = ACTION_IDS.join(', ');
+
+  return `You are a premium strategic AI for a live dwarf colony simulation. Return executable per-dwarf intents, not narration.
+${cityName ? `CITY: ${cityName}${culture ? ` (${culture} culture)` : ''}` : ''}
+RESOURCES: food=${resources.food}, wood=${resources.wood}, stone=${resources.stone}, iron=${resources.iron ?? 0}, gold=${resources.gold ?? 0}, ale=${resources.ale ?? 0}, herbs=${resources.herbs ?? 0}
+SEASON: ${season}, YEAR: ${year}
+POPULATION: ${dwarves.length}
+
+DWARVES (detailed):
+${dwarfList}
+
+AVAILABLE ACTIONS: ${actions}
+
+Rules:
+- Return decisions only for dwarves who need an action now
+- Prefer colony survival before social or spiritual goals
+- Use targetDwarfId for social, combat, rescue, or care actions
+- Use params for concrete targets such as coordinates or resource names
+- Keep reasons under 240 chars
+
+Return per-dwarf decisions. JSON only.`;
+}
+
+export function buildPremiumDecreePrompt(context: any): string {
   const { religion, dwarves, resources, season, year, worldEvents } = context;
 
   if (!religion) return 'No religion context provided.';

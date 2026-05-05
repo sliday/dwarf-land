@@ -66,6 +66,7 @@ type SponsorshipRow = {
   calls_total: number;
   amount_cents: number;
   status: 'pending' | 'active' | 'expired';
+  claim_token: string | null;
   created_at: string;
   activated_at: string | null;
   expired_at: string | null;
@@ -89,11 +90,11 @@ class MockDB {
   }
 
   private async handleAll(sql: string, args: any[]) {
-    if (sql.includes("SELECT * FROM dwarf_sponsorships WHERE dwarf_id=? AND status='active' AND calls_remaining > 0")) {
+    if (sql.includes("FROM dwarf_sponsorships WHERE dwarf_id=? AND status='active' AND calls_remaining > 0")) {
       return {
         results: this.sponsorships.filter(
           (row) => row.dwarf_id === args[0] && row.status === 'active' && row.calls_remaining > 0
-        ),
+        ).map(({ claim_token, ...row }) => row),
       };
     }
 
@@ -134,6 +135,7 @@ function createSponsorship(overrides: Partial<SponsorshipRow> = {}): Sponsorship
     calls_total: 5,
     amount_cents: 1000,
     status: 'pending',
+    claim_token: 'claim-token-000000000000000000000001',
     created_at: '2026-05-04T10:00:00.000Z',
     activated_at: null,
     expired_at: null,
@@ -303,6 +305,7 @@ describe('Sponsorship routes', () => {
     expect(response.status).toBe(200);
     expect(payload.sponsorship.ai_tier).toBe('premium');
     expect(payload.sponsorship.id).toBe(2);
+    expect(payload.sponsorship.claim_token).toBeUndefined();
   });
 
   it('returns null when a dwarf has no active calls remaining', async () => {

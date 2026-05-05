@@ -67,6 +67,9 @@ type WorkerHooks = {
   tryTravelTo: (d: any, city: any, dest: any) => boolean;
   findVehicleRoute: (city: any, dest: any, minRoad: number) => Array<[number, number]> | null;
   tryShipPath: (city: any, dest: any) => Array<[number, number]> | null;
+  bfs: (sx: number, sy: number, goalFn: (x: number, y: number) => boolean, walkToGoal: boolean) => Array<[number, number]> | null;
+  bfsWater: (sx: number, sy: number, goalFn: (x: number, y: number) => boolean) => Array<[number, number]> | null;
+  terrainCost: (x: number, y: number) => number;
   G: { roadGraph?: Record<string, any> };
   T: Record<string, number>;
   MAP_W: number;
@@ -81,6 +84,9 @@ self.__testHooks = {
   tryTravelTo,
   findVehicleRoute,
   tryShipPath,
+  bfs,
+  bfsWater,
+  terrainCost,
   G,
   T,
   MAP_W,
@@ -236,6 +242,32 @@ describe('live worker travel continuity', () => {
 
   beforeEach(() => {
     worker = loadWorkerHooks();
+  });
+
+  it('does not call land goals outside vertical map bounds', () => {
+    const map = buildWorkerMap(worker, worker.T.PLAINS);
+    worker.setMap(map);
+
+    const path = worker.bfs(10, 0, (_x, y) => {
+      if (y < 0 || y >= worker.MAP_H) throw new Error('out of bounds');
+      return false;
+    }, true);
+
+    expect(path).toBeNull();
+    expect(worker.terrainCost(10, -1)).toBe(Infinity);
+    expect(worker.terrainCost(10, worker.MAP_H)).toBe(Infinity);
+  });
+
+  it('does not call water goals outside vertical map bounds', () => {
+    const map = buildWorkerMap(worker, worker.T.OCEAN);
+    worker.setMap(map);
+
+    const path = worker.bfsWater(10, 0, (_x, y) => {
+      if (y < 0 || y >= worker.MAP_H) throw new Error('out of bounds');
+      return false;
+    });
+
+    expect(path).toBeNull();
   });
 
   it('walks back into the origin road network before vehicle travel from the field', () => {

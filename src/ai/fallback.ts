@@ -16,13 +16,7 @@ export function localFallback(tier: Tier, context: any): any {
     case 'complex':
       return { decisions: [] }; // No strategic decisions without AI
     case 'premium':
-      return {
-        decree: {
-          text: 'The gods are silent today.',
-          action: 'pray',
-          urgency: 10,
-        },
-      };
+      return { decisions: simpleLocalDecisions(dwarves, context.resources) };
     default:
       return { decisions: [] };
   }

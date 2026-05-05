@@ -113,12 +113,11 @@ describe('Fallback Logic', () => {
   });
 
   describe('premium tier', () => {
-    it('returns a default prayer decree', () => {
+    it('returns executable dwarf decisions', () => {
       const result = localFallback('premium', { ...baseContext, dwarves: [makeDwarf()] });
-      expect(result.decree).toBeDefined();
-      expect(result.decree.action).toBe('pray');
-      expect(result.decree.urgency).toBeLessThan(50);
-      expect(result.decree.text).toBeTruthy();
+      expect(result.decisions).toHaveLength(1);
+      expect(result.decisions[0].dwarfId).toBe('d_test');
+      expect(result.decisions[0].reason).toBeTruthy();
     });
   });
 

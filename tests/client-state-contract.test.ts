@@ -48,6 +48,21 @@ describe('client state contract', () => {
     expect(gameWorker).toContain('eventLog:d.eventLog?.slice(-50)');
   });
 
+  it('keeps worker save and restore fields aligned with browser saves', () => {
+    expect(gameWorker).toContain('travelMode:d.travelMode||null');
+    expect(gameWorker).toContain('starveTicks:d.starveTicks||0');
+    expect(gameWorker).toContain('relationships:d.relationships||[]');
+    expect(gameWorker).toContain('travelMode:sd.travelMode??null');
+    expect(gameWorker).toContain('starveTicks:sd.starveTicks||0');
+    expect(gameWorker).toContain('relationships:sd.relationships||[]');
+  });
+
+  it('sends designation resource deductions into the worker', () => {
+    expect(indexHtml).toContain("gameWorker.postMessage({ type: 'designate', changes, cityResources: getCityResourcesSnapshot() })");
+    expect(gameWorker).toContain('if (data.cityResources) {');
+    expect(gameWorker).toContain('Object.assign(city.res, res)');
+  });
+
   it('keeps terrain updates tracked in fallback and worker snapshot paths', () => {
     expect(indexHtml).toContain("setWorldTile(ch.x, ch.y, ch.tile, { markDirty: false })");
     expect(indexHtml).toContain("setWorldTile(x, y, T.D_MINE)");

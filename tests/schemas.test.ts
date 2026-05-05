@@ -4,6 +4,7 @@ import {
   MediumDecisionSchema,
   ComplexDecisionSchema,
   PremiumDecisionSchema,
+  PremiumDecreeSchema,
   BackstorySchema,
   ReligionSchema,
 } from '../src/ai/schemas';
@@ -126,6 +127,30 @@ describe('Zod Schema Validation', () => {
   });
 
   describe('PremiumDecisionSchema', () => {
+    it('accepts executable per-dwarf decisions', () => {
+      const valid = {
+        decisions: [
+          { dwarfId: 'd_abc', action: 'build_shrine', reason: 'faith is high and resources allow it' },
+        ],
+      };
+      const result = PremiumDecisionSchema.safeParse(valid);
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects deity-only decree output', () => {
+      const invalid = {
+        decree: {
+          text: 'Build a great shrine to honor the deep stone!',
+          action: 'build_shrine',
+          urgency: 75,
+        },
+      };
+      const result = PremiumDecisionSchema.safeParse(invalid);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('PremiumDecreeSchema', () => {
     it('accepts valid god decree', () => {
       const valid = {
         decree: {
@@ -135,7 +160,7 @@ describe('Zod Schema Validation', () => {
         },
         divineMessage: 'The earth trembles with my blessing.',
       };
-      const result = PremiumDecisionSchema.safeParse(valid);
+      const result = PremiumDecreeSchema.safeParse(valid);
       expect(result.success).toBe(true);
     });
 
@@ -147,7 +172,7 @@ describe('Zod Schema Validation', () => {
           urgency: 150,
         },
       };
-      const result = PremiumDecisionSchema.safeParse(invalid);
+      const result = PremiumDecreeSchema.safeParse(invalid);
       expect(result.success).toBe(false);
     });
 
@@ -159,7 +184,7 @@ describe('Zod Schema Validation', () => {
           urgency: 50,
         },
       };
-      const result = PremiumDecisionSchema.safeParse(invalid);
+      const result = PremiumDecreeSchema.safeParse(invalid);
       expect(result.success).toBe(false);
     });
 
@@ -167,7 +192,7 @@ describe('Zod Schema Validation', () => {
       const minimal = {
         decree: { text: 'Pray now.', action: 'pray', urgency: 50 },
       };
-      const result = PremiumDecisionSchema.safeParse(minimal);
+      const result = PremiumDecreeSchema.safeParse(minimal);
       expect(result.success).toBe(true);
     });
   });

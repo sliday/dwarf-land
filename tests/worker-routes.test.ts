@@ -63,6 +63,7 @@ type SponsorshipRow = {
   calls_total: number;
   amount_cents: number;
   status: 'pending' | 'active' | 'expired';
+  claim_token: string | null;
   created_at: string;
   activated_at: string | null;
   expired_at: string | null;
@@ -70,6 +71,7 @@ type SponsorshipRow = {
 
 class MockDB {
   sponsorships: SponsorshipRow[];
+  savedState: string | null = null;
 
   constructor(sponsorships: SponsorshipRow[] = []) {
     this.sponsorships = sponsorships.map((row) => ({ ...row }));
@@ -77,6 +79,9 @@ class MockDB {
 
   prepare(sql: string) {
     return {
+      all: async () => this.handleAll(sql, []),
+      first: async () => this.handleFirst(sql, []),
+      run: async () => this.handleRun(sql, []),
       bind: (...args: any[]) => ({
         all: async () => this.handleAll(sql, args),
         first: async () => this.handleFirst(sql, args),
@@ -86,10 +91,13 @@ class MockDB {
   }
 
   private async handleAll(sql: string, args: any[]) {
-    if (sql.includes('FROM dwarf_sponsorships WHERE dwarf_id IN')) {
+    if (sql.includes('FROM dwarf_sponsorships WHERE (')) {
       return {
         results: this.sponsorships.filter(
-          (row) => args.includes(row.dwarf_id) && row.status === 'active' && row.calls_remaining > 0
+          (row) => {
+            const matchesClaim = args.some((arg, index) => index % 2 === 0 && arg === row.dwarf_id && args[index + 1] === row.claim_token);
+            return matchesClaim && row.status === 'active' && row.calls_remaining > 0;
+          }
         ),
       };
     }
@@ -106,6 +114,10 @@ class MockDB {
   }
 
   private async handleFirst(sql: string, args: any[]) {
+    if (sql.includes('SELECT id FROM game_state WHERE id = 1')) {
+      return this.savedState ? { id: 1 } : null;
+    }
+
     if (sql.includes('SELECT dwarf_id FROM dwarf_sponsorships WHERE checkout_id=?')) {
       const row = this.sponsorships.find((entry) => entry.checkout_id === args[0]);
       return row ? { dwarf_id: row.dwarf_id } : null;
@@ -130,6 +142,16 @@ class MockDB {
       return {};
     }
 
+    if (sql.includes('UPDATE game_state SET state = ?')) {
+      this.savedState = args[0];
+      return {};
+    }
+
+    if (sql.includes('INSERT INTO game_state')) {
+      this.savedState = args[0];
+      return {};
+    }
+
     return {};
   }
 }
@@ -145,6 +167,7 @@ function createSponsorship(overrides: Partial<SponsorshipRow> = {}): Sponsorship
     calls_total: 5,
     amount_cents: 1000,
     status: 'active',
+    claim_token: 'claim-token-000000000000000000000001',
     created_at: '2026-05-04T10:00:00.000Z',
     activated_at: '2026-05-04T10:05:00.000Z',
     expired_at: null,
@@ -205,7 +228,10 @@ describe('Worker routes', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ dwarves: [{ id: 'dwarf-1' }] }),
+        body: JSON.stringify({
+          dwarves: [{ id: 'dwarf-1' }],
+          sponsorshipClaims: [{ dwarfId: 'dwarf-1', claimToken: 'claim-token-000000000000000000000001' }],
+        }),
       },
       createEnv(db)
     );
@@ -219,6 +245,31 @@ describe('Worker routes', () => {
       expect.objectContaining({ dwarves: [{ id: 'dwarf-1' }] }),
       'openrouter-key'
     );
+  });
+
+  it('does not spend sponsorships when only a public dwarf id is sent', async () => {
+    const db = new MockDB([createSponsorship({ calls_remaining: 5 })]);
+
+    const response = await app.request(
+      '/api/decide/simple',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dwarves: [{ id: 'dwarf-1' }] }),
+      },
+      createEnv(db)
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(rateLimiterMocks.checkRateLimit).toHaveBeenCalledWith('simple');
+    expect(routerMocks.routeDecision).toHaveBeenCalledWith(
+      'simple',
+      expect.objectContaining({ dwarves: [{ id: 'dwarf-1' }] }),
+      'openrouter-key'
+    );
+    expect(payload.sponsoredDwarfIds).toEqual([]);
+    expect(db.sponsorships[0].calls_remaining).toBe(5);
   });
 
   it('decrements one active sponsorship row per dwarf request', async () => {
@@ -241,7 +292,10 @@ describe('Worker routes', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ dwarves: [{ id: 'dwarf-1' }] }),
+        body: JSON.stringify({
+          dwarves: [{ id: 'dwarf-1' }],
+          sponsorshipClaims: [{ dwarfId: 'dwarf-1', claimToken: 'claim-token-000000000000000000000001' }],
+        }),
       },
       createEnv(db)
     );
@@ -262,7 +316,10 @@ describe('Worker routes', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ dwarves: [{ id: 'dwarf-1' }] }),
+        body: JSON.stringify({
+          dwarves: [{ id: 'dwarf-1' }],
+          sponsorshipClaims: [{ dwarfId: 'dwarf-1', claimToken: 'claim-token-000000000000000000000001' }],
+        }),
       },
       createEnv(db)
     );
@@ -282,7 +339,10 @@ describe('Worker routes', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ dwarves: [{ id: 'dwarf-1' }] }),
+        body: JSON.stringify({
+          dwarves: [{ id: 'dwarf-1' }],
+          sponsorshipClaims: [{ dwarfId: 'dwarf-1', claimToken: 'claim-token-000000000000000000000001' }],
+        }),
       },
       createEnv(db)
     );
@@ -302,7 +362,10 @@ describe('Worker routes', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ dwarves: [{ id: 'dwarf-1' }, { id: 'dwarf-1' }] }),
+        body: JSON.stringify({
+          dwarves: [{ id: 'dwarf-1' }, { id: 'dwarf-1' }],
+          sponsorshipClaims: [{ dwarfId: 'dwarf-1', claimToken: 'claim-token-000000000000000000000001' }],
+        }),
       },
       createEnv(db)
     );
@@ -316,7 +379,7 @@ describe('Worker routes', () => {
   it('uses the highest sponsored tier across a multi-dwarf request', async () => {
     const db = new MockDB([
       createSponsorship({ id: 1, dwarf_id: 'dwarf-1', tier: 'bronze', ai_tier: 'medium', amount_cents: 100 }),
-      createSponsorship({ id: 2, dwarf_id: 'dwarf-2', checkout_id: 'chk-2', tier: 'silver', ai_tier: 'complex', amount_cents: 300 }),
+      createSponsorship({ id: 2, dwarf_id: 'dwarf-2', checkout_id: 'chk-2', tier: 'silver', ai_tier: 'complex', amount_cents: 300, claim_token: 'claim-token-000000000000000000000002' }),
     ]);
 
     const response = await app.request(
@@ -324,7 +387,13 @@ describe('Worker routes', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ dwarves: [{ id: 'dwarf-1' }, { id: 'dwarf-2' }] }),
+        body: JSON.stringify({
+          dwarves: [{ id: 'dwarf-1' }, { id: 'dwarf-2' }],
+          sponsorshipClaims: [
+            { dwarfId: 'dwarf-1', claimToken: 'claim-token-000000000000000000000001' },
+            { dwarfId: 'dwarf-2', claimToken: 'claim-token-000000000000000000000002' },
+          ],
+        }),
       },
       createEnv(db)
     );
@@ -373,5 +442,39 @@ describe('Worker routes', () => {
     expect(response.status).toBe(429);
     expect(budgetMocks.checkBudget).toHaveBeenCalledWith(expect.anything(), 'medium', 3);
     expect(routerMocks.generateBackstory).not.toHaveBeenCalled();
+  });
+
+  it('rejects public state saves without a same-origin request', async () => {
+    const db = new MockDB();
+
+    const response = await app.request(
+      '/api/state/save',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
+        body: JSON.stringify({ tick: 1, year: 1, season: 0, speed: 1, dwarves: [], stats: { mined: 0, built: 0, farmed: 0 }, homeCity: null }),
+      },
+      createEnv(db)
+    );
+
+    expect(response.status).toBe(403);
+    expect(db.savedState).toBeNull();
+  });
+
+  it('allows same-origin state saves', async () => {
+    const db = new MockDB();
+
+    const response = await app.request(
+      'https://dwarf.land/api/state/save',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://dwarf.land' },
+        body: JSON.stringify({ tick: 2, year: 1, season: 0, speed: 1, dwarves: [], stats: { mined: 0, built: 0, farmed: 0 }, homeCity: null }),
+      },
+      createEnv(db)
+    );
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(db.savedState || '{}').tick).toBe(2);
   });
 });

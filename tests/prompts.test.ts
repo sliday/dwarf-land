@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPrompt } from '../src/ai/prompts';
+import { buildPremiumDecreePrompt, buildPrompt } from '../src/ai/prompts';
 
 const makeDwarf = (overrides = {}) => ({
   id: 'd_test',
@@ -95,7 +95,15 @@ describe('Prompt Templates', () => {
   });
 
   describe('premium tier', () => {
-    it('speaks in character as deity', () => {
+    it('returns executable per-dwarf decision instructions', () => {
+      const prompt = buildPrompt('premium', baseContext);
+      expect(prompt).toContain('per-dwarf intents');
+      expect(prompt).toContain('AVAILABLE ACTIONS');
+      expect(prompt).toContain('targetDwarfId');
+      expect(prompt).toContain('Return per-dwarf decisions');
+    });
+
+    it('keeps deity decrees on the separate decree prompt', () => {
       const context = {
         ...baseContext,
         religion: {
@@ -109,7 +117,7 @@ describe('Prompt Templates', () => {
           },
         },
       };
-      const prompt = buildPrompt('premium', context);
+      const prompt = buildPremiumDecreePrompt(context);
       expect(prompt).toContain('Korthak');
       expect(prompt).toContain('The Eternal Flame');
       expect(prompt).toContain('Honor the stone');
@@ -117,7 +125,7 @@ describe('Prompt Templates', () => {
     });
 
     it('handles missing religion gracefully', () => {
-      const prompt = buildPrompt('premium', baseContext);
+      const prompt = buildPremiumDecreePrompt(baseContext);
       expect(prompt).toBeTruthy();
     });
   });
