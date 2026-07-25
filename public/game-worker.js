@@ -325,6 +325,9 @@ function createAnimal(type, x, y) {
 // Populated from init message
 let CITIES = [], CULTURES = {}, DWARF_NAMES = [], SURNAMES = [];
 let AI_API_BASE = '';
+// Identifies this worker generation. Echoed on every outgoing message so the
+// main thread can drop messages queued by a worker it has already terminated.
+let EPOCH = 0;
 
 // Worker state
 const G = {
@@ -2630,6 +2633,7 @@ self.onmessage = function(e) {
   const data = e.data;
   switch (data.type) {
     case 'init': {
+      EPOCH = data.epoch || 0;
       const flat = new Uint8Array(data.map);
       G.map = [];
       for (let y = 0; y < MAP_H; y++) G.map.push(flat.slice(y * MAP_W, (y+1) * MAP_W));
@@ -2699,7 +2703,7 @@ self.onmessage = function(e) {
       }
       break;
     case 'save_request':
-      self.postMessage({type:'save_response', state:getSerializableState()});
+      self.postMessage({type:'save_response', epoch:EPOCH, state:getSerializableState()});
       break;
     case 'restore': {
       const saved = data.state;
@@ -2795,6 +2799,7 @@ function startTickLoop() {
     // Post snapshot to main thread
     self.postMessage({
       type:'snapshot',
+      epoch:EPOCH,
       tick:G.tick, year:G.year, season:G.season,
       stats:{...G.stats},
       dwarves:G.dwarves.map(d => ({

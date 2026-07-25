@@ -5,3 +5,8 @@ dist/
 .playwright-mcp/
 CLAUDE.local.md
 data.json
+
+# Local tooling artefacts
+codedb.snapshot
+dwarf-land-live.png
+.gstack/

@@ -519,7 +519,7 @@ const WORLD_POP_HARD_CAP = 300;
 const TOWN_POP_CAP = 10;
 const SUBURB_POP_CAP = 4;
 const EMPTY_TOWN_MOVE_RADIUS = 80;
-const WORKER_VERSION = '2026-05-05-pop-rebalance-3';
+const WORKER_VERSION = '2026-07-26-worker-epoch-1';
 
 const TERRAIN_PROPS = {
   [T.OCEAN]:     { speed: 0, desc: 'Deep water, impassable' },
@@ -1031,7 +1031,7 @@ const isMobile = 'ontouchstart' in window;
 if (isMobile) { document.body.classList.add('mobile'); G.zoom = 1.5; }
 
 // ---- Web Worker ----
-let gameWorker = null, workerActive = false;
+let gameWorker = null, workerActive = false, workerEpoch = 0;
 
 // Helper: find city by id
 function cityById(id) { return CITIES.find(c => c.id === id) || G.suburbs?.find(s => s.id === id); }
@@ -6448,15 +6448,36 @@ function gameLoop(ts) {
   render();
 }
 
+// ---- Worker Lifecycle ----
+// A Worker keeps running until terminate() is called. Nulling the handle only
+// forgets it: the orphan keeps ticking (setTimeout loop in game-worker.js),
+// keeps draining its AI queues, and its onmessage stays bound, so it can still
+// write into G while the main-thread fallback runs over the same object.
+// Always tear a worker down through here.
+function killWorker() {
+  workerActive = false;
+  workerEpoch++;
+  const w = gameWorker;
+  gameWorker = null;
+  if (!w) return;
+  w.onmessage = null;
+  w.onerror = null;
+  w.onmessageerror = null;
+  try { w.terminate(); } catch (_) {}
+}
+
 // ---- Worker Init ----
 function initWorker() {
   if (typeof Worker === 'undefined') return;
+  if (gameWorker) killWorker();
   try {
     gameWorker = new Worker('/game-worker.js?v=' + WORKER_VERSION);
   } catch (e) { console.warn('Worker init failed, using main thread:', e); return; }
 
   gameWorker.onmessage = function(e) {
     const data = e.data;
+    // Drop anything queued by a worker generation we have already killed.
+    if (data.epoch !== workerEpoch) return;
     switch (data.type) {
       case 'snapshot':
         const previousDwarves = new Map(G.dwarves.map(d => [d.id, d]));
@@ -6521,9 +6542,13 @@ function initWorker() {
   };
 
   gameWorker.onerror = function(e) {
-    console.error('Worker error:', e);
-    workerActive = false;
-    gameWorker = null;
+    console.error('Worker error:', e.message || e);
+    killWorker();
+  };
+
+  gameWorker.onmessageerror = function(e) {
+    console.error('Worker message error (payload could not be cloned):', e);
+    killWorker();
   };
 
   // Build flat map buffer for transfer
@@ -6533,6 +6558,7 @@ function initWorker() {
 
   gameWorker.postMessage({
     type: 'init',
+    epoch: workerEpoch,
     map: flat.buffer,
     cities: CITIES.map(c => ({ ...c, discoveries: undefined })),
     cultures: CULTURES,
