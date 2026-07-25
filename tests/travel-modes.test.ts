@@ -392,6 +392,35 @@ describe('live worker travel continuity', () => {
     expect(worker.findVehicleRoute(cityA, cityB, worker.T.PATH)).not.toBeNull();
   });
 
+  // Pins the intent behind dropping T.FLOOR from dontOverwrite: roads may pave
+  // bare floor so they reach the city centre and join the vehicle graph, but
+  // they must never bulldoze furniture, walls or graves.
+  it('auto-connect paves floor but never furniture, walls or graves', () => {
+    const map = buildWorkerMap(worker, worker.T.PLAINS);
+    const cityA = { id:'a', name:'A', mx:100, my:100, res:{} };
+    const cityB = { id:'b', name:'B', mx:110, my:100, res:{} };
+    map[cityA.my][cityA.mx] = worker.T.CITY;
+    map[cityB.my][cityB.mx] = worker.T.CITY;
+    map[100][101] = worker.T.FLOOR;
+    map[100][103] = worker.T.BED;
+    map[100][104] = worker.T.TABLE;
+    map[100][105] = worker.T.STOCKPILE;
+    map[100][106] = worker.T.WALL;
+    map[100][107] = worker.T.GRAVE;
+    worker.setMap(map);
+    worker.setCities([cityA, cityB]);
+    worker.G.roadGraph = {};
+
+    worker.autoConnectCities();
+
+    expect(map[100][101]).toBe(worker.T.PATH);
+    expect(map[100][103]).toBe(worker.T.BED);
+    expect(map[100][104]).toBe(worker.T.TABLE);
+    expect(map[100][105]).toBe(worker.T.STOCKPILE);
+    expect(map[100][106]).toBe(worker.T.WALL);
+    expect(map[100][107]).toBe(worker.T.GRAVE);
+  });
+
   it('prioritizes a farther railroad route over a nearby path route', () => {
     const map = buildWorkerMap(worker, worker.T.PLAINS);
     const cityA = { id:'a', name:'A', mx:100, my:100, res:{} };

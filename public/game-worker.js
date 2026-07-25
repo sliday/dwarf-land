@@ -1164,12 +1164,11 @@ function tryRoadwrightWork(d) {
     const gp = roadwrightPathTo(d, gap.x, gap.y, 80);
     if (gp) return setRoadwrightTarget(d, 'fix_road', gap.x, gap.y, gp);
   }
-  const SCRAP_ROAD = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD]);
-  const sp = bfs(d.x, d.y, (x,y) => SCRAP_ROAD.has(G.map[y][x]) && isOrphanRoad(x, y), false);
-  if (sp && sp.length < 50) {
-    const last = sp[sp.length-1];
-    return setRoadwrightTarget(d, 'scrap_road', last[0], last[1], sp);
-  }
+  // Road scrapping is DISABLED. isOrphanRoad gives up after 8 visited tiles and
+  // then returns true, so any point in the middle of a long intercity road is
+  // classified as an orphan and dwarves demolish working roads. Re-enable only
+  // once the check uses real reachability (the road graph already knows which
+  // roads connect which cities).
   const best = bestUpgradeTarget(d.x, d.y, res);
   if (best) {
     const up = roadwrightPathTo(d, best.x, best.y, 50);
@@ -1260,15 +1259,7 @@ function aiIdle(d) {
       if (gp) { d.target = {type:'fix_road',x:gap.x,y:gap.y}; d.path = gp; d.state = 'walk'; return; }
     }
   }
-  if (Math.random() < 0.05) {
-    const SCRAP_ROAD = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD]);
-    const sp = bfs(d.x, d.y, (x,y) => SCRAP_ROAD.has(G.map[y][x]) && isOrphanRoad(x, y), false);
-    if (sp && sp.length < 20) {
-      const last = sp[sp.length-1];
-      d.target = {type:'scrap_road', x:last[0], y:last[1]};
-      d.path = sp; d.state = 'walk'; return;
-    }
-  }
+  // Second road-scrapping site, also DISABLED for the isOrphanRoad reason above.
   if (((res.stone >= 1) || (res.stone >= 2 && res.iron >= 1) || (res.iron >= 3 && res.wood >= 2)) && Math.random() < 0.15) {
     const best = bestUpgradeTarget(d.x, d.y, res);
     if (best) {

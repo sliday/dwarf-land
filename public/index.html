@@ -2470,12 +2470,8 @@ function tryRoadwrightWork(d) {
     const gp = roadwrightPathTo(d, gap.x, gap.y, 80);
     if (gp) return setRoadwrightTarget(d, 'fix_road', gap.x, gap.y, gp);
   }
-  const SCRAP_ROAD = new Set([T.PATH, T.ROAD, T.ASPHALT, T.RAILROAD]);
-  const sp = bfs(d.x, d.y, (x, y) => SCRAP_ROAD.has(G.map[y][x]) && isOrphanRoad(x, y), false);
-  if (sp && sp.length < 50) {
-    const last = sp[sp.length - 1];
-    return setRoadwrightTarget(d, 'scrap_road', last[0], last[1], sp);
-  }
+  // Road scrapping is DISABLED here too, matching game-worker.js. See the note
+  // there: isOrphanRoad misclassifies long intercity roads as orphans.
   const best = bestUpgradeTarget(d.x, d.y, res);
   if (best) {
     const up = roadwrightPathTo(d, best.x, best.y, 50);
@@ -2754,6 +2750,10 @@ function aiBuild(d) {
   if (d.timer >= dur) {
     const keepRoadwright = d.target.roadwright;
     const { x, y } = d.target;
+    // Snapshots send only {type} for non-focused dwarves (game-worker.js
+    // strips x/y), so a target restored from a snapshot has no coordinates.
+    // Bail out instead of indexing G.map[undefined][undefined].
+    if (x === undefined || y === undefined) { d.state = 'idle'; d.target = null; return; }
     const res = cityOf(d).res;
     if (!res) { d.state = 'idle'; d.target = null; return; }
     if (G.map[y][x] === T.D_BUILD && res.stone >= 2) {
