@@ -491,7 +491,7 @@ app.get('/success', async (c) => {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sponsorship Received - Dwarf Land</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daub-ui@latest/daub.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daub-ui@3.19.12/daub.css" integrity="sha384-lqMQEdChfpz5OrhS1k2uryuRVI14A3JdzFYJ7vCHkG1FaTt2X2ypiApGuqQ9Qxmu" crossorigin="anonymous">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧔</text></svg>">
 <style>body{min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:'Courier New',monospace}</style>
 </head>

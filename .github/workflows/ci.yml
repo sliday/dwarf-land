@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Dormancy alarm. A parked repo gets no pushes, so CI would never run and the
+  # suite would rot against upstream drift undetected. Monthly run also fails
+  # when the newest commit is older than 90 days (see the dormancy job).
+  schedule:
+    - cron: '0 6 1 * *'
 
 jobs:
   test:
@@ -23,3 +28,23 @@ jobs:
 
       - name: Test
         run: npm test
+
+  dormancy:
+    # Scheduled runs only. Gives the 90-day checkpoint in
+    # docs/plans/2026-08-17-handover.md a mechanism instead of an intention.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail if no commit in 90 days
+        run: |
+          LAST=$(git log -1 --format=%ct)
+          AGE_DAYS=$(( ( $(date +%s) - LAST ) / 86400 ))
+          echo "Newest commit is $AGE_DAYS days old."
+          if [ "$AGE_DAYS" -gt 90 ]; then
+            echo "::error::Repo dormant for $AGE_DAYS days. Revisit the accepted risks in docs/plans/2026-08-17-handover.md: the live OpenRouter key, outstanding Polar sponsorships, and whether the D1 backup is still current."
+            exit 1
+          fi
