@@ -6,7 +6,7 @@ import type { Env, Tier, GameState } from './shared/types';
 import { routeDecision, generateBackstory, generateCraftResult, generateEpitaph } from './ai/router';
 import { checkBudget, getProjectedCostCents, logUsage, MAX_CENTS_PER_HOUR, MAX_TOTAL_CENTS_PER_HOUR } from './guardrails/budget';
 import { checkRateLimit } from './guardrails/rate-limiter';
-import { saveState, loadState } from './db/state';
+import { saveState, loadState, MAX_STATE_BYTES, StateTooLargeError, StateCorruptError } from './db/state';
 
 const SPONSOR_TIERS = {
   bronze: { amount: 100, aiTier: 'medium' as Tier, calls: 100 },
@@ -53,6 +53,12 @@ const MAX_ITEM_NAME_LEN = 50;
 const MAX_EMOJI_LEN = 16;
 const MAX_DWARF_NAME_LEN = 60;
 const MAX_CAUSE_LEN = 80;
+// Two bound parameters per claim against D1's 100-parameter ceiling.
+const MAX_SPONSORSHIP_CLAIMS = 40;
+// One prompt is built from this list; an uncapped body could bill far more than the
+// per-call projection the budget guard assumes.
+const MAX_DWARVES_PER_DECISION = 200;
+const MAX_BACKSTORY_BATCH = 10;
 
 /** Trim a value to a bounded single-line string, or null when it is not a usable string. */
 function cleanString(value: unknown, maxLen: number): string | null {
@@ -102,7 +108,9 @@ function collectSponsorshipClaims(body: any): SponsorshipClaim[] {
     .filter((claim: SponsorshipClaim) => typeof claim.dwarfId === 'string' && claim.dwarfId.length > 0 && typeof claim.claimToken === 'string' && claim.claimToken.length >= 32);
   const selected = new Map<string, SponsorshipClaim>();
   for (const claim of claims) selected.set(claim.dwarfId, claim);
-  return [...selected.values()];
+  // D1 allows at most 100 bound parameters per query and each claim binds two, so an
+  // uncapped list turned a large colony (or any caller) into a permanent 500 on /api/decide.
+  return [...selected.values()].slice(0, MAX_SPONSORSHIP_CLAIMS);
 }
 
 async function loadActiveSponsorships(db: D1Database, claims: SponsorshipClaim[]): Promise<ActiveSponsorshipRow[]> {
@@ -150,6 +158,14 @@ app.post('/api/decide/:tier', async (c) => {
 
   try {
     const body = await c.req.json<any>();
+    if (!body || typeof body !== 'object' || !Array.isArray(body.dwarves)) {
+      // buildPrompt() maps over body.dwarves outside routeDecision's try, so a malformed
+      // body used to surface as a 500 "AI call failed" that the client retried forever.
+      return c.json({ error: 'Invalid body: dwarves must be an array' }, 400);
+    }
+    if (body.dwarves.length > MAX_DWARVES_PER_DECISION) {
+      body.dwarves = body.dwarves.slice(0, MAX_DWARVES_PER_DECISION);
+    }
     let effectiveTier = tier;
     const activeSponsorships = await loadActiveSponsorships(c.env.DB, collectSponsorshipClaims(body));
     const sponsoredDwarfIds = activeSponsorships.map((row) => row.dwarf_id);
@@ -173,7 +189,11 @@ app.post('/api/decide/:tier', async (c) => {
 
     await logUsage(c.env.DB, effectiveTier, result.model, result.tokensIn, result.tokensOut, result.costCents);
 
-    for (const sponsorship of activeSponsorships) {
+    // Do not bill a sponsor when every model failed and local logic answered. A gold
+    // sponsor could otherwise burn all 100 premium calls during an OpenRouter outage
+    // and receive no AI output at all.
+    const billSponsorships = result.model !== 'local-fallback';
+    for (const sponsorship of billSponsorships ? activeSponsorships : []) {
       await c.env.DB.prepare(
         "UPDATE dwarf_sponsorships SET calls_remaining = calls_remaining - 1 WHERE id=? AND status='active' AND calls_remaining > 0"
       ).bind(sponsorship.id).run();
@@ -203,10 +223,25 @@ app.post('/api/state/save', async (c) => {
     if (!isAllowedOrigin(c, origin) && (!c.env.STATE_WRITE_TOKEN || token !== c.env.STATE_WRITE_TOKEN)) {
       return c.json({ error: 'Forbidden' }, 403);
     }
-    const state: GameState = await c.req.json();
+    // Read the real bytes rather than trusting Content-Length, which the caller controls
+    // and a chunked body may omit entirely.
+    const raw = await c.req.arrayBuffer();
+    if (raw.byteLength > MAX_STATE_BYTES) {
+      return c.json({ error: 'Payload too large', maxBytes: MAX_STATE_BYTES, bytes: raw.byteLength }, 413);
+    }
+    let state: GameState;
+    try {
+      state = JSON.parse(new TextDecoder().decode(raw));
+    } catch {
+      return c.json({ error: 'Malformed state' }, 400);
+    }
     await saveState(c.env.DB, state);
     return c.json({ ok: true });
   } catch (err: any) {
+    if (err instanceof StateTooLargeError) {
+      console.error('Save state rejected:', err.message);
+      return c.json({ error: 'Payload too large', maxBytes: MAX_STATE_BYTES, bytes: err.bytes }, 413);
+    }
     console.error('Save state error:', err?.message || err);
     return c.json({ error: 'Save failed' }, 500);
   }
@@ -218,6 +253,12 @@ app.get('/api/state/load', async (c) => {
     if (!state) return c.json({ ok: true, state: null });
     return c.json({ ok: true, state });
   } catch (err: any) {
+    if (err instanceof StateCorruptError) {
+      // Explicitly NOT {state:null}: that reads as "new game" and the client would
+      // overwrite a recoverable world on its next autosave.
+      console.error('Load state error: stored world is corrupt');
+      return c.json({ error: 'Stored state is corrupt', corrupt: true }, 500);
+    }
     console.error('Load state error:', err?.message || err);
     return c.json({ error: 'Load failed' }, 500);
   }
@@ -249,7 +290,12 @@ app.post('/api/backstory/batch', async (c) => {
 
   try {
     const { dwarves } = await c.req.json<{ dwarves: any[] }>();
-    const batch = (dwarves || []).slice(0, 10);
+    // Without the Array check a string body iterated per character, producing real model
+    // calls for 'o','o','p','s'.
+    if (!Array.isArray(dwarves)) {
+      return c.json({ error: 'Invalid body: dwarves must be an array' }, 400);
+    }
+    const batch = dwarves.slice(0, MAX_BACKSTORY_BATCH);
     const budgetOk = await checkBudget(c.env.DB, 'medium', getProjectedCostCents('medium', batch.length));
     if (!budgetOk) return c.json({ error: 'Budget exceeded' }, 429);
     const results: any[] = [];
@@ -298,11 +344,19 @@ app.post('/api/craft', async (c) => {
     ].sort((x, y) => x.name.localeCompare(y.name));
 
     // Ensure both items exist in DB (insert if not)
+    // craft_items.name is UNIQUE, so the old select-then-insert returned a 500 whenever
+    // two players crafted the same new item at once. Let the database resolve the race.
     const ensureItem = async (emoji: string, name: string): Promise<number> => {
       const existing = await db.prepare('SELECT id FROM craft_items WHERE name = ?').bind(name).first<{ id: number }>();
       if (existing) return existing.id;
-      const res = await db.prepare('INSERT INTO craft_items (emoji, name, depth) VALUES (?, ?, 99)').bind(emoji, name).run();
-      return res.meta.last_row_id as number;
+      const inserted = await db.prepare(
+        'INSERT INTO craft_items (emoji, name, depth) VALUES (?, ?, 99) ON CONFLICT(name) DO NOTHING RETURNING id'
+      ).bind(emoji, name).first<{ id: number }>();
+      if (inserted?.id != null) return inserted.id;
+      // DO NOTHING fired: another request inserted it between our select and insert.
+      const raced = await db.prepare('SELECT id FROM craft_items WHERE name = ?').bind(name).first<{ id: number }>();
+      if (raced) return raced.id;
+      throw new Error(`craft_items row for ${name} vanished after conflict`);
     };
 
     const aId = await ensureItem(a.emoji, a.name);
@@ -442,11 +496,15 @@ app.post('/api/sponsor/webhook', async (c) => {
     }
 
     return c.text('ok');
-  } catch (err) {
+  } catch (err: any) {
     if (err instanceof WebhookVerificationError) {
       return c.text('Invalid signature', 403);
     }
-    throw err;
+    // Anything else used to rethrow into a bare 500 with no log line, which is how a
+    // missing Buffer global hid here: Polar retried, gave up, and every sponsorship
+    // stayed 'pending' forever with nobody watching.
+    console.error('Sponsor webhook error:', err?.stack || err?.message || err);
+    return c.text('Webhook handler error', 500);
   }
 });
 

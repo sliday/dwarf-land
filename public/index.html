@@ -5502,7 +5502,7 @@ bindMinimapJump();
     for (const d of dwarfMatches) {
       found = true;
       const city = cityOf(d);
-      const stateEmoji = d.hunger > STARVE_IMMOBILE ? '💀' : d.state === 'sleep' ? '😴' : d.state === 'eat' ? '🍲' : d.state === 'mine' ? '⛏' : '🧔';
+      const stateEmoji = d.starveTicks >= STARVE_IMMOBILE ? '💀' : d.state === 'sleep' ? '😴' : d.state === 'eat' ? '🍲' : d.state === 'mine' ? '⛏' : '🧔';
       results.appendChild(makeRow(stateEmoji, d.name + (d.sponsored ? ' ⭐' : ''), city ? city.name : '', d.color || '#ebdbb2', () => {
         closeSearch();
         G.followDwarf = d.id;
@@ -5776,26 +5776,64 @@ function getSerializableState() {
   };
 }
 
+let lastSaveProblem = null;
+// Set when the stored world exists but could not be read. Autosave stays off in that
+// state, because overwriting a corrupt-but-recoverable row destroys the only copy.
+let saveBlocked = false;
+
+/** Surface a save failure once per distinct problem, so a broken save cannot stay silent. */
+function reportSaveFailure(reason) {
+  if (lastSaveProblem === reason) return;
+  lastSaveProblem = reason;
+  console.error('[save] failed:', reason);
+  log(`⚠️ Progress is not being saved: ${reason}`, 'system');
+}
+
+function reportSaveResult(resp) {
+  if (resp.ok) {
+    if (lastSaveProblem) { lastSaveProblem = null; log('✅ Saving works again.', 'system'); }
+    return;
+  }
+  if (resp.status === 413) {
+    reportSaveFailure('the world is too large for the database. Progress will be lost on reload.');
+  } else {
+    reportSaveFailure(`server returned ${resp.status}`);
+  }
+}
+
 async function saveGameState() {
+  if (saveBlocked) return;
   if (workerActive && gameWorker) {
     gameWorker.postMessage({ type: 'save_request' });
     return;
   }
   try {
-    await fetch(`${AI.apiBase}/api/state/save`, {
+    const resp = await fetch(`${AI.apiBase}/api/state/save`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(getSerializableState()),
     });
-  } catch (e) { /* silent fail */ }
+    reportSaveResult(resp);
+  } catch (e) {
+    reportSaveFailure(String(e && e.message || e));
+  }
 }
 
 async function loadGameState() {
   try {
     const resp = await fetch(`${AI.apiBase}/api/state/load`);
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    return data.state;
+    if (!resp.ok) {
+      let corrupt = false;
+      try { corrupt = (await resp.json()).corrupt === true; } catch (_) {}
+      if (corrupt) {
+        saveBlocked = true;
+        reportSaveFailure('the stored world could not be read. Saving is paused so it is not overwritten.');
+      } else {
+        reportSaveFailure(`could not load the world (server returned ${resp.status})`);
+      }
+      return null;
+    }
+    return (await resp.json()).state;
   } catch (e) { return null; }
 }
 
@@ -6479,6 +6517,11 @@ function initWorker() {
     // Drop anything queued by a worker generation we have already killed.
     if (data.epoch !== workerEpoch) return;
     switch (data.type) {
+      case 'tick_error':
+        // The sim survived a throw instead of dying silently. Say so once, then stay quiet.
+        console.error('[sim] tick error', data.message, 'at tick', data.tick);
+        if (data.count === 1) log(`⚠️ Simulation hit an error and recovered: ${data.message}`, 'system');
+        break;
       case 'snapshot':
         const previousDwarves = new Map(G.dwarves.map(d => [d.id, d]));
         const previousAnimals = new Map(G.animals.map(a => [a.id, a]));
@@ -6530,13 +6573,14 @@ function initWorker() {
         if (G.tick % 30 === 0) updateHUD();
         break;
       case 'save_response':
-        try {
-          fetch(`${AI.apiBase}/api/state/save`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data.state),
-          });
-        } catch (_) {}
+        // This is the live save path. It used to call fetch without awaiting it inside a
+        // synchronous try, so the catch never fired and a rejected save was invisible: the
+        // world stopped persisting on 2026-07-26 and nothing said so for three weeks.
+        fetch(`${AI.apiBase}/api/state/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data.state),
+        }).then(reportSaveResult).catch(err => reportSaveFailure(String(err && err.message || err)));
         break;
     }
   };

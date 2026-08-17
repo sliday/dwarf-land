@@ -84,6 +84,14 @@ class MockDB {
     if (sql.includes('SELECT id FROM craft_items WHERE name = ?')) {
       return this.items.find((i) => i.name === args[0]) ?? null;
     }
+    // INSERT ... ON CONFLICT(name) DO NOTHING RETURNING id — D1 returns no row when the
+    // conflict fires, which is the race path the route has to recover from.
+    if (sql.includes('INSERT INTO craft_items')) {
+      if (this.items.some((i) => i.name === args[1])) return null;
+      const item = { id: this.nextId++, emoji: args[0], name: args[1] };
+      this.items.push(item);
+      return { id: item.id };
+    }
     if (sql.includes('FROM craft_recipes r')) {
       const recipe = this.recipes.find((r) => r.a === args[0] && r.b === args[1]);
       if (!recipe) return null;

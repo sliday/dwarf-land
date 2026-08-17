@@ -1,0 +1,111 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
+
+/**
+ * The simulation exists twice: public/game-worker.js runs it, public/index.html carries a
+ * second copy for rendering and the (dead) main-thread fallback. Both declare the same
+ * constants independently, and nothing has ever checked that they agree.
+ *
+ * They already disagreed in ways nothing caught, which is how a tile id in one file can
+ * mean a different terrain in the other. This gate fails loudly on the next divergence.
+ *
+ * When the sim is extracted to public/sim/ this file should be deleted: one declaration
+ * cannot drift from itself.
+ */
+
+const workerSrc = readFileSync(new URL('../public/game-worker.js', import.meta.url), 'utf8');
+const indexSrc = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+
+/** Pull `const T = { ... };` and parse it into a plain object. */
+function extractTileEnum(src: string, label: string): Record<string, number> {
+  const start = src.indexOf('const T = {');
+  if (start === -1) throw new Error(`no tile enum found in ${label}`);
+  const open = src.indexOf('{', start);
+  let depth = 0;
+  let end = -1;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) { end = i; break; }
+    }
+  }
+  if (end === -1) throw new Error(`unterminated tile enum in ${label}`);
+  const body = src.slice(open + 1, end);
+  const out: Record<string, number> = {};
+  for (const [, key, value] of body.matchAll(/([A-Z_0-9]+)\s*:\s*(-?[0-9.]+)/g)) {
+    out[key] = Number(value);
+  }
+  if (Object.keys(out).length === 0) throw new Error(`empty tile enum in ${label}`);
+  return out;
+}
+
+/**
+ * Find `NAME = <number>` in a const declaration, tolerating comma-separated declarators
+ * such as `const STARVE_IMMOBILE = 2000, STARVE_DEATH = 2667;`.
+ */
+function scalar(src: string, name: string): number | undefined {
+  const m = src.match(new RegExp(`\\b${name}\\s*=\\s*(-?[0-9.]+)`));
+  return m ? Number(m[1]) : undefined;
+}
+
+describe('tile enum parity between the two simulation copies', () => {
+  const workerT = extractTileEnum(workerSrc, 'game-worker.js');
+  const indexT = extractTileEnum(indexSrc, 'index.html');
+
+  it('declares a non-trivial enum in both files', () => {
+    expect(Object.keys(workerT).length).toBeGreaterThan(20);
+    expect(Object.keys(indexT).length).toBeGreaterThan(20);
+  });
+
+  it('assigns every shared tile name the same id', () => {
+    const shared = Object.keys(workerT).filter((k) => k in indexT);
+    expect(shared.length).toBeGreaterThan(20);
+    const mismatches = shared
+      .filter((k) => workerT[k] !== indexT[k])
+      .map((k) => `${k}: worker=${workerT[k]} index=${indexT[k]}`);
+    expect(mismatches).toEqual([]);
+  });
+
+  it('never maps two tile names onto the same id within a file', () => {
+    for (const [label, table] of [['worker', workerT], ['index', indexT]] as const) {
+      const seen = new Map<number, string>();
+      const collisions: string[] = [];
+      for (const [name, id] of Object.entries(table)) {
+        const prior = seen.get(id);
+        if (prior) collisions.push(`${label}: ${prior} and ${name} both = ${id}`);
+        else seen.set(id, name);
+      }
+      expect(collisions).toEqual([]);
+    }
+  });
+});
+
+describe('scalar constant parity between the two simulation copies', () => {
+  // Only constants that genuinely exist in both files and must agree.
+  const shared = ['STARVE_IMMOBILE', 'STARVE_DEATH', 'MAP_W', 'MAP_H'];
+
+  it.each(shared)('%s matches across both files', (name) => {
+    const w = scalar(workerSrc, name);
+    const i = scalar(indexSrc, name);
+    expect(w, `${name} missing from game-worker.js`).toBeDefined();
+    expect(i, `${name} missing from index.html`).toBeDefined();
+    expect(w).toBe(i);
+  });
+});
+
+describe('the simulation worker has no undefined pathfinder', () => {
+  it('never calls findPath, which was never defined and killed the tick loop', () => {
+    // Comments mentioning the old name are fine; a call is not.
+    const calls = workerSrc
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//'))
+      .filter((line) => /\bfindPath\s*\(/.test(line));
+    expect(calls).toEqual([]);
+  });
+
+  it('reschedules the tick even when the body throws', () => {
+    // A throw that escapes doTick leaves tickTimer unset and the simulation dead.
+    expect(workerSrc).toMatch(/function doTick\(\)[\s\S]{0,1200}catch[\s\S]{0,900}tickTimer\s*=\s*setTimeout\(doTick/);
+  });
+});

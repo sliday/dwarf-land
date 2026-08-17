@@ -1877,7 +1877,9 @@ function tryRelocateToSuburb(d) {
     const subPop = G.dwarves.filter(o => o.cityId === sub.id).length;
     if (subPop >= 3) continue;
     d.target = {type:'relocate_suburb', x:sub.mx, y:sub.my, suburbId:sub.id};
-    const p = findPath(d.x, d.y, sub.mx, sub.my);
+    // findPath() never existed in this worker; calling it threw a ReferenceError that
+    // escaped doTick and stopped the simulation permanently. bfs is the real pathfinder.
+    const p = bfs(d.x, d.y, (px, py) => px === sub.mx && py === sub.my, false);
     if (!p || p.length === 0) continue;
     d.path = p; d.state = 'walk';
     const oldCityId = d.cityId;
@@ -2764,8 +2766,7 @@ self.onmessage = function(e) {
 // ---- Tick Loop ----
 let tickTimer = null;
 function startTickLoop() {
-  function doTick() {
-    if (G.paused) { tickTimer = setTimeout(doTick, 100); return; }
+  function tickOnce() {
     const TICK_BATCH = 3;
     for (let i = 0; i < TICK_BATCH; i++) {
       G.tick++;
@@ -2823,6 +2824,27 @@ function startTickLoop() {
       newGraves:pendingGraves.splice(0),
     });
 
+  }
+
+  let tickErrorCount = 0;
+  function doTick() {
+    if (G.paused) { tickTimer = setTimeout(doTick, 100); return; }
+    try {
+      tickOnce();
+    } catch (err) {
+      // A throw inside the tick used to escape the timer task, so tickTimer was never
+      // rearmed and the simulation stopped for good (that is exactly what the missing
+      // findPath did). Report it and keep ticking: a degraded sim beats a dead one.
+      tickErrorCount++;
+      console.error('[sim] tick error', err);
+      self.postMessage({
+        type: 'tick_error',
+        epoch: EPOCH, // without this the page drops the message as stale (index.html:6480)
+        message: String((err && err.message) || err),
+        tick: G.tick,
+        count: tickErrorCount,
+      });
+    }
     const interval = Math.max(33, Math.floor(100 / G.speed));
     tickTimer = setTimeout(doTick, interval);
   }

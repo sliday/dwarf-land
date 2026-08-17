@@ -2,6 +2,10 @@
   "name": "dwarf-planet",
   "main": "src/worker.ts",
   "compatibility_date": "2025-01-01",
+  // Required by @polar-sh/sdk/webhooks: validateEvent() calls Buffer.from() as a bare
+  // global. Without this flag Buffer is undefined in workerd, every Polar webhook throws
+  // ReferenceError, and no sponsorship ever activates.
+  "compatibility_flags": ["nodejs_compat"],
   "assets": { "directory": "./public" },
   "d1_databases": [
     {
