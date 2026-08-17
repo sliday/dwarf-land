@@ -148,11 +148,14 @@ export async function generateBackstory(
 ): Promise<BackstoryResult> {
   const openrouter = createOpenRouter({ apiKey });
 
+  // Callers may omit stats; a missing block must not throw before the model chain runs.
+  const stats = dwarfContext.stats || {};
+
   const prompt = `You are a fantasy storyteller for a dwarf civilization game.
 Generate a short backstory and personality traits for this dwarf.
 
 DWARF: ${dwarfContext.name}
-STATS: STR ${dwarfContext.stats.STR} DEX ${dwarfContext.stats.DEX} CON ${dwarfContext.stats.CON} INT ${dwarfContext.stats.INT} WIS ${dwarfContext.stats.WIS} CHA ${dwarfContext.stats.CHA}
+STATS: STR ${stats.STR ?? 10} DEX ${stats.DEX ?? 10} CON ${stats.CON ?? 10} INT ${stats.INT ?? 10} WIS ${stats.WIS ?? 10} CHA ${stats.CHA ?? 10}
 SOUL: faith=${dwarfContext.faith} morality=${dwarfContext.morality} ambition=${dwarfContext.ambition}
 ${dwarfContext.cityName ? `HOME: ${dwarfContext.cityName}` : ''}
 
@@ -192,7 +195,7 @@ Make the backstory reflect their stats (high STR = strong, low CHA = antisocial,
           backstory: {
             name: dwarfContext.name,
             backstory: `${dwarfContext.name} is a hardworking dwarf who arrived seeking fortune and glory.`,
-            traits: [dwarfContext.stats.STR >= 14 ? 'strong' : 'resourceful'],
+            traits: [(stats.STR ?? 10) >= 14 ? 'strong' : 'resourceful'],
           },
           model: 'local-fallback',
           tokensIn: 0,
@@ -339,7 +342,7 @@ Be poetic but brief. Think medieval fantasy tombstone inscription. Reply with ON
       console.error(`Epitaph model ${modelId} failed:`, err?.message || err);
       if (i === EPITAPH_MODELS.length - 1) {
         return {
-          epitaph: `Here lies ${context.name}, who ${context.cause.toLowerCase()}. May they find peace beneath the mountain.`,
+          epitaph: `Here lies ${context.name}, who ${(context.cause || 'passed on').toLowerCase()}. May they find peace beneath the mountain.`,
           model: 'local-fallback',
           tokensIn: 0,
           tokensOut: 0,

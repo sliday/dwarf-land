@@ -18,7 +18,7 @@ AI-powered civilization simulator. Autonomous dwarves make decisions using tiere
 - 4-tier road system: dirt path (👣 free) → gravel (🟫 1 stone) → asphalt (⬛ 2 stone + 1 iron) → railroad (# on ⬛, 3 iron + 2 wood); single-lane rendering, each tier progressively faster
 - **Road gap auto-repair**: dwarves detect broken single-lane roads (1-2 tile gaps) within 10 tiles and auto-fix them with a dirt path
 - **Smart road upgrades**: dwarves pick upgrade targets that extend the longest unbroken chain of same-type road (chain-scoring algorithm, 15-tile scan radius)
-- **Orphan road scrapping**: dwarves detect disconnected road tiles (flood-fill ≤8 tiles, no city/factory connection) and demolish them, recovering stone; scrapped tiles become bare dirt
+- **Orphan road scrapping** (currently disabled): the `isOrphanRoad` flood-fill gives up after 8 tiles and then reports `true`, so dwarves demolished working intercity roads. All call sites are commented out in `public/game-worker.js`; see the P1 item in `TODOS.md` before switching it back on
 - **Dirt tile lifecycle**: scrapped roads become bare dirt (🟤 darker brown, slightly slower) that naturally regrows to plains after 1 year
 - **Persistent terrain**: all tile changes (builds, farms, roads, mines, designations) saved as deltas and restored on reload
 - **Loop Hero rendering**: adjacent same-type terrain tiles grouped into larger squares with scaled emojis (greedy cover, world-aligned for scroll stability)
@@ -148,14 +148,37 @@ Pay to upgrade a dwarf's AI reasoning tier via Polar.sh. Sponsored dwarves get a
 - **AI:** OpenRouter via Vercel AI SDK v6 + Zod v4 schemas
 - **Payments:** Polar.sh (@polar-sh/sdk)
 - **Frontend:** Vanilla JS canvas + DAUB UI (grunge theme)
-- **Tests:** Vitest (405 tests across 23 files)
+- **Tests:** Vitest (453 tests across 26 files)
 
 ## Development
 
+### First-time setup
+
 ```bash
 npm install
+cp .dev.vars.example .dev.vars   # then fill in the keys it lists
+npm run db:migrate:local         # create the local D1 schema
+npm run dev
+```
+
+`.dev.vars` holds local secrets and is gitignored. In production the same names are Worker
+secrets:
+
+```bash
+npx wrangler secret put OPENROUTER_API_KEY
+npx wrangler secret put POLAR_ACCESS_TOKEN
+npx wrangler secret put POLAR_WEBHOOK_SECRET
+```
+
+`OPENROUTER_API_KEY` is the only one the simulation needs; the Polar pair is required only
+for sponsorship. `POLAR_PRODUCT_ID` and `STATE_WRITE_TOKEN` are optional — see
+`.dev.vars.example` for what each one changes.
+
+### Commands
+
+```bash
 npm run dev              # local dev server
-npm test                 # run 405 tests
+npm test                 # run 453 tests
 npm run test:watch       # vitest watch mode
 npm run db:migrate:local # apply D1 migrations locally
 npm run db:migrate:remote # apply D1 migrations to production
@@ -177,13 +200,26 @@ npm run db:migrate:remote                 # apply to production
 | GET | `/api/health` | Budget status per tier |
 | POST | `/api/decide/:tier` | AI decision (simple/medium/complex/premium) |
 | POST | `/api/backstory` | Generate dwarf backstory |
+| POST | `/api/backstory/batch` | Generate up to 10 backstories in one call |
 | POST | `/api/craft` | Combine two items (cache-first, AI fallback) |
+| POST | `/api/epitaph` | Generate a gravestone inscription |
+| POST | `/api/religion` | Not implemented — returns 501 |
 | POST | `/api/state/save` | Save game state (includes map deltas) |
 | GET | `/api/state/load` | Load game state (restores terrain changes) |
 | POST | `/api/sponsor/checkout` | Create Polar checkout session |
 | POST | `/api/sponsor/webhook` | Polar webhook handler |
 | GET | `/api/sponsor/total` | Total sponsorship revenue |
 | GET | `/api/sponsor/status/:dwarfId` | Check sponsorship status |
+| GET | `/api/sponsor/list` | List active and expired sponsorships |
+| GET | `/success` | Post-checkout landing page |
+
+Every AI route is public and unauthenticated. The spend ceiling is the guardrail: per-tier
+hourly caps in `src/guardrails/budget.ts` plus in-memory rate limits in
+`src/guardrails/rate-limiter.ts`. Those limits live per Worker isolate, so they throttle a
+burst rather than enforce a global quota — the hourly budget caps in D1 do that.
+
+`POST /api/state/save` writes the single shared world row. It accepts same-origin requests,
+or any request carrying `X-State-Write-Token` matching `STATE_WRITE_TOKEN`.
 
 ## Database Migrations
 
@@ -192,6 +228,8 @@ npm run db:migrate:remote                 # apply to production
 | `0001_init.sql` | Game state, budget log, AI log tables |
 | `0002_sponsorships.sql` | Dwarf sponsorship tracking |
 | `0003_crafting.sql` | Craft items + recipes tables |
+| `0004_sponsorship_indexes.sql` | Indexes on the sponsorship lookup columns |
+| `0005_sponsorship_claim_tokens.sql` | Per-checkout claim tokens |
 
 ## Architecture
 
@@ -209,5 +247,19 @@ src/guardrails/        # Budget + rate limiting
 src/db/state.ts        # D1 state persistence
 migrations/            # D1 SQL migrations
 scripts/               # Import/seed scripts
-tests/                 # 23 test files, 405 tests
+tests/                 # 26 test files, 453 tests
+.github/workflows/     # CI: typecheck + tests on push and PR
 ```
+
+## Handing this over
+
+Start here, in order:
+
+1. `TODOS.md` — deferred work with the reasoning behind each deferral, not just a title.
+2. `public/game-worker.js` — the simulation. Every tick rule lives here.
+3. `public/index.html` — client, canvas rendering and UI. Large; `G` at the top holds both
+   simulation and view state (see the P3 TODO about splitting them).
+4. `src/` — the Worker API. Small and covered by tests.
+
+The simulation runs entirely in the browser. The Worker exists for AI calls, save/load and
+sponsorship. A change to dwarf behaviour is almost always a change to `public/game-worker.js`.

@@ -4,7 +4,7 @@ import { Polar } from '@polar-sh/sdk';
 import { validateEvent, WebhookVerificationError } from '@polar-sh/sdk/webhooks';
 import type { Env, Tier, GameState } from './shared/types';
 import { routeDecision, generateBackstory, generateCraftResult, generateEpitaph } from './ai/router';
-import { checkBudget, getProjectedCostCents, logUsage } from './guardrails/budget';
+import { checkBudget, getProjectedCostCents, logUsage, MAX_CENTS_PER_HOUR, MAX_TOTAL_CENTS_PER_HOUR } from './guardrails/budget';
 import { checkRateLimit } from './guardrails/rate-limiter';
 import { saveState, loadState } from './db/state';
 
@@ -13,6 +13,10 @@ const SPONSOR_TIERS = {
   silver: { amount: 300, aiTier: 'complex' as Tier, calls: 75 },
   gold:   { amount: 1000, aiTier: 'premium' as Tier, calls: 100 },
 } as const;
+
+// Fallback keeps the deployed store working when POLAR_PRODUCT_ID is unset; a fork should
+// set the var to its own product rather than edit this line.
+const DEFAULT_POLAR_PRODUCT_ID = 'b1004307-cc24-45c8-8211-52e319403bea';
 
 type SponsorTier = keyof typeof SPONSOR_TIERS;
 type ActiveSponsorshipRow = {
@@ -40,6 +44,29 @@ app.use('/*', cors({
 }));
 
 const TIER_RANK: Record<Tier, number> = { simple: 0, medium: 1, complex: 2, premium: 3 };
+
+// Length caps for user-supplied strings. These bound three things at once: rows written to
+// D1 by public endpoints, the size of text interpolated into model prompts, and the blast
+// radius of a prompt-injection attempt.
+const MAX_DWARF_ID_LEN = 64;
+const MAX_ITEM_NAME_LEN = 50;
+const MAX_EMOJI_LEN = 16;
+const MAX_DWARF_NAME_LEN = 60;
+const MAX_CAUSE_LEN = 80;
+
+/** Trim a value to a bounded single-line string, or null when it is not a usable string. */
+function cleanString(value: unknown, maxLen: number): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.replace(/\s+/g, ' ').trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, maxLen);
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (ch) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] as string
+  ));
+}
 
 function compareSponsorshipRows(a: ActiveSponsorshipRow, b: ActiveSponsorshipRow): number {
   const tierDiff = TIER_RANK[a.ai_tier] - TIER_RANK[b.ai_tier];
@@ -96,11 +123,9 @@ app.get('/api/health', async (c) => {
     'SELECT tier, calls, cost_cents FROM budget_log WHERE hour = ?'
   ).bind(hour).all();
 
-  const caps: Record<string, number> = {
-    simple: 50, medium: 100, complex: 200, premium: 500,
-  };
+  const caps = MAX_CENTS_PER_HOUR;
 
-  const tiers = ['simple', 'medium', 'complex', 'premium'].map((tier) => {
+  const tiers = (['simple', 'medium', 'complex', 'premium'] as Tier[]).map((tier) => {
     const row = rows.results?.find((r: any) => r.tier === tier);
     return {
       tier,
@@ -113,7 +138,7 @@ app.get('/api/health', async (c) => {
   });
 
   const totalCents = tiers.reduce((s, t) => s + t.costCents, 0);
-  return c.json({ ok: true, hour, tiers, totalCents, maxTotalCents: 850 });
+  return c.json({ ok: true, hour, tiers, totalCents, maxTotalCents: MAX_TOTAL_CENTS_PER_HOUR });
 });
 
 // AI decision endpoint
@@ -255,14 +280,22 @@ app.post('/api/craft', async (c) => {
       item2: { emoji: string; name: string };
     }>();
 
-    if (!item1?.name || !item2?.name) {
+    // Both items land in craft_items verbatim, so bound them before they reach D1.
+    const name1 = cleanString(item1?.name, MAX_ITEM_NAME_LEN);
+    const name2 = cleanString(item2?.name, MAX_ITEM_NAME_LEN);
+    const emoji1 = cleanString(item1?.emoji, MAX_EMOJI_LEN) ?? '❓';
+    const emoji2 = cleanString(item2?.emoji, MAX_EMOJI_LEN) ?? '❓';
+    if (!name1 || !name2) {
       return c.json({ error: 'Invalid items' }, 400);
     }
 
     const db = c.env.DB;
 
     // Normalize: sort by name so A+B = B+A
-    const [a, b] = [item1, item2].sort((x, y) => x.name.localeCompare(y.name));
+    const [a, b] = [
+      { emoji: emoji1, name: name1 },
+      { emoji: emoji2, name: name2 },
+    ].sort((x, y) => x.name.localeCompare(y.name));
 
     // Ensure both items exist in DB (insert if not)
     const ensureItem = async (emoji: string, name: string): Promise<number> => {
@@ -300,15 +333,19 @@ app.post('/api/craft', async (c) => {
     const aiResult = await generateCraftResult(a, b, c.env.OPENROUTER_API_KEY);
     await logUsage(db, 'simple', aiResult.model, aiResult.tokensIn, aiResult.tokensOut, aiResult.costCents);
 
-    // Store result item + recipe
-    const resultId = await ensureItem(aiResult.emoji, aiResult.name);
+    // Store result item + recipe. The model's output is untrusted too, so bound it the
+    // same way as the request items before it becomes a permanent cache entry.
+    const resultName = cleanString(aiResult.name, MAX_ITEM_NAME_LEN);
+    const resultEmoji = cleanString(aiResult.emoji, MAX_EMOJI_LEN) ?? '❓';
+    if (!resultName) return c.json({ error: 'Craft failed' }, 502);
+    const resultId = await ensureItem(resultEmoji, resultName);
     await db.prepare(
       'INSERT OR IGNORE INTO craft_recipes (item_a_id, item_b_id, result_id, source) VALUES (?, ?, ?, ?)'
     ).bind(lowId, highId, resultId, 'ai').run();
 
     return c.json({
       ok: true,
-      result: { emoji: aiResult.emoji, name: aiResult.name, isNew: true },
+      result: { emoji: resultEmoji, name: resultName, isNew: true },
       source: 'ai',
       costCents: aiResult.costCents,
       model: aiResult.model,
@@ -329,8 +366,15 @@ app.post('/api/epitaph', async (c) => {
 
   try {
     const body = await c.req.json<{ name: string; cause: string; age: number; cityName?: string }>();
-    if (!body?.name) return c.json({ error: 'Missing name' }, 400);
-    const result = await generateEpitaph(body, c.env.OPENROUTER_API_KEY);
+    const name = cleanString(body?.name, MAX_DWARF_NAME_LEN);
+    if (!name) return c.json({ error: 'Missing name' }, 400);
+    // Every field below is interpolated into a prompt, so normalize rather than pass through.
+    const result = await generateEpitaph({
+      name,
+      cause: cleanString(body?.cause, MAX_CAUSE_LEN) ?? 'died of unknown causes',
+      age: Number.isFinite(body?.age) ? Math.trunc(body.age) : 0,
+      cityName: cleanString(body?.cityName, MAX_DWARF_NAME_LEN) ?? undefined,
+    }, c.env.OPENROUTER_API_KEY);
     await logUsage(c.env.DB, 'simple', result.model, result.tokensIn, result.tokensOut, result.costCents);
     return c.json({ ok: true, epitaph: result.epitaph, model: result.model, costCents: result.costCents });
   } catch (err: any) {
@@ -347,31 +391,37 @@ app.post('/api/religion', async (c) => {
 // --- Sponsorship endpoints ---
 
 app.post('/api/sponsor/checkout', async (c) => {
-  const { dwarfId, tier } = await c.req.json<{ dwarfId: string; tier: string }>();
-  if (!dwarfId || !(tier in SPONSOR_TIERS)) {
-    return c.json({ error: 'Invalid dwarfId or tier' }, 400);
+  try {
+    const { dwarfId, tier } = await c.req.json<{ dwarfId: string; tier: string }>();
+    const cleanDwarfId = cleanString(dwarfId, MAX_DWARF_ID_LEN);
+    if (!cleanDwarfId || typeof tier !== 'string' || !(tier in SPONSOR_TIERS)) {
+      return c.json({ error: 'Invalid dwarfId or tier' }, 400);
+    }
+
+    const config = SPONSOR_TIERS[tier as SponsorTier];
+    const polar = new Polar({ accessToken: c.env.POLAR_ACCESS_TOKEN });
+
+    const checkout = await polar.checkouts.create({
+      products: [c.env.POLAR_PRODUCT_ID || DEFAULT_POLAR_PRODUCT_ID],
+      amount: config.amount,
+      successUrl: `${new URL(c.req.url).origin}/success?checkout_id={CHECKOUT_ID}`,
+      metadata: { dwarfId: cleanDwarfId, tier },
+    });
+
+    const claimToken = generateClaimToken();
+    await c.env.DB.prepare(
+      'INSERT INTO dwarf_sponsorships (dwarf_id, checkout_id, tier, ai_tier, calls_remaining, calls_total, amount_cents, status, claim_token) VALUES (?,?,?,?,?,?,?,?,?)'
+    ).bind(
+      cleanDwarfId, checkout.id, tier,
+      config.aiTier, config.calls, config.calls,
+      config.amount, 'pending', claimToken
+    ).run();
+
+    return c.json({ checkoutUrl: checkout.url, claimToken });
+  } catch (err: any) {
+    console.error('Sponsor checkout error:', err?.message || err);
+    return c.json({ error: 'Checkout failed' }, 502);
   }
-
-  const config = SPONSOR_TIERS[tier as SponsorTier];
-  const polar = new Polar({ accessToken: c.env.POLAR_ACCESS_TOKEN });
-
-  const checkout = await polar.checkouts.create({
-    products: ['b1004307-cc24-45c8-8211-52e319403bea'],
-    amount: config.amount,
-    successUrl: 'https://dwarf.land/success?checkout_id={CHECKOUT_ID}',
-    metadata: { dwarfId, tier },
-  });
-
-  const claimToken = generateClaimToken();
-  await c.env.DB.prepare(
-    'INSERT INTO dwarf_sponsorships (dwarf_id, checkout_id, tier, ai_tier, calls_remaining, calls_total, amount_cents, status, claim_token) VALUES (?,?,?,?,?,?,?,?,?)'
-  ).bind(
-    dwarfId, checkout.id, tier,
-    config.aiTier, config.calls, config.calls,
-    config.amount, 'pending', claimToken
-  ).run();
-
-  return c.json({ checkoutUrl: checkout.url, claimToken });
 });
 
 app.post('/api/sponsor/webhook', async (c) => {
@@ -450,7 +500,7 @@ app.get('/success', async (c) => {
   <div style="font-size:64px;margin-bottom:16px">⭐</div>
   <h1 class="db-h3" style="margin-bottom:8px">Sponsorship Received</h1>
   <p class="db-body" style="margin-bottom:24px">Polar still needs to confirm the payment. The verified webhook will activate your dwarf's AI upgrade as soon as that check lands.</p>
-  <p class="db-caption" style="margin-bottom:24px;opacity:0.6">Checkout: ${checkoutId.slice(0, 8)}...</p>
+  <p class="db-caption" style="margin-bottom:24px;opacity:0.6">Checkout: ${escapeHtml(checkoutId.slice(0, 8))}...</p>
   <a href="${returnUrl}" class="db-btn db-btn--primary">Return to Dwarf Land</a>
 </div>
 </body>

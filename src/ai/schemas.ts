@@ -5,7 +5,6 @@ import { SIMPLE_ACTIONS, MEDIUM_ACTIONS, COMPLEX_ACTIONS, ACTION_IDS } from '../
 const actionEnum = z.enum(ACTION_IDS);
 const simpleActionEnum = z.enum(SIMPLE_ACTIONS);
 const mediumActionEnum = z.enum(MEDIUM_ACTIONS);
-const complexMediumActions = [...COMPLEX_ACTIONS, ...MEDIUM_ACTIONS] as const;
 const complexActionEnum = z.enum([...COMPLEX_ACTIONS, ...MEDIUM_ACTIONS]);
 
 // SIMPLE tier: batch survival/work decisions for all dwarves

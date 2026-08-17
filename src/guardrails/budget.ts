@@ -1,12 +1,15 @@
 import type { Tier } from '../shared/types';
 
 // Hard caps in cents per hour
-const MAX_CENTS_PER_HOUR: Record<Tier, number> = {
+export const MAX_CENTS_PER_HOUR: Record<Tier, number> = {
   simple: 50,    // $0.50
   medium: 100,   // $1.00
   complex: 200,  // $2.00
   premium: 500,  // $5.00
 };
+
+// Total ceiling across every tier, derived so /api/health cannot drift from the caps above.
+export const MAX_TOTAL_CENTS_PER_HOUR = Object.values(MAX_CENTS_PER_HOUR).reduce((sum, c) => sum + c, 0);
 
 const PROJECTED_CENTS_PER_CALL: Record<Tier, number> = {
   simple: 1,

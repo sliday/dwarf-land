@@ -102,6 +102,48 @@ that movement interpolates smoothly between ticks. Read that before touching any
 
 ---
 
+## P2 — Cap the size of the state save payload
+
+**What:** `POST /api/state/save` accepts any body length and writes it to the single
+`game_state` row via `saveState()` (`src/db/state.ts`). Nothing checks how big the JSON is.
+
+**Why it matters:** one oversized POST can fill the row that every player loads from. The
+origin check on the route stops cross-site browser requests, but `Origin` is trivially set
+by a non-browser client, so it is not a real authorization boundary.
+
+**Where to start:** `src/worker.ts` `/api/state/save`. Reject on `Content-Length` above a
+ceiling picked from a real save (log a few first), before parsing.
+
+**Depends on:** nothing. Pairs naturally with the P2 malformed-save item above, since both
+want the same validation layer.
+
+---
+
+## P3 — Rate limit sponsorship checkout creation
+
+**What:** `POST /api/sponsor/checkout` inserts a `dwarf_sponsorships` row per call with no
+per-caller limit. Input length and error handling were fixed 2026-08-17; call volume was not.
+
+**Why it matters:** each call also creates a live Polar checkout. Polar throttles upstream,
+so this is row spam rather than a spend risk, but the table is unbounded.
+
+**Where to start:** `checkRateLimit` is keyed by AI tier and shares buckets with the model
+budget, so do not reuse it directly — a checkout limiter needs its own bucket.
+
+---
+
+## P3 — Bump the Worker compatibility date
+
+**What:** `wrangler.jsonc` pins `compatibility_date` to `2025-01-01`.
+
+**Why it matters:** the runtime keeps old behaviour flags alive for that date. Newer Workers
+APIs and fixes stay off until it moves.
+
+**Watch out:** a compatibility date bump changes runtime semantics. Deliberately not done as
+part of a review pass — do it on its own, deploy, and watch the logs.
+
+---
+
 ## Deferred scope from the design doc
 
 These were considered and consciously cut. See

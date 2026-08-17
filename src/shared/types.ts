@@ -3,6 +3,7 @@ export interface Env {
   OPENROUTER_API_KEY: string;
   POLAR_ACCESS_TOKEN: string;
   POLAR_WEBHOOK_SECRET: string;
+  POLAR_PRODUCT_ID?: string;
   STATE_WRITE_TOKEN?: string;
 }
 

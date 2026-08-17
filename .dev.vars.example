@@ -1,0 +1,19 @@
+# Copy to .dev.vars for local development. .dev.vars is gitignored — never commit real keys.
+# In production these are Worker secrets: `npx wrangler secret put <NAME>`.
+
+# Required. OpenRouter key used by every AI tier. https://openrouter.ai/keys
+OPENROUTER_API_KEY=sk-or-v1-...
+
+# Required only for the sponsorship endpoints. https://polar.sh
+POLAR_ACCESS_TOKEN=polar_oat_...
+
+# Required to verify Polar webhooks. Copy from the Polar dashboard webhook settings.
+POLAR_WEBHOOK_SECRET=whsec_...
+
+# Optional. Polar product to bill sponsorships against. Falls back to the product
+# hardcoded in src/worker.ts (DEFAULT_POLAR_PRODUCT_ID) when unset — a fork should set it.
+POLAR_PRODUCT_ID=
+
+# Optional. Lets a non-browser client POST /api/state/save. Without it, that route
+# accepts only same-origin requests.
+STATE_WRITE_TOKEN=
