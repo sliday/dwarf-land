@@ -82,7 +82,13 @@ export interface GameState {
   animals?: Array<Record<string, unknown>>;
   stats: { mined: number; built: number; farmed: number };
   homeCity: { name: string; mx: number; my: number } | null;
-  mapDeltas?: Record<string, number>;
+  // Packed to a base64 string at the save boundary to keep the payload under
+
+  // MAX_STATE_BYTES. Saves written before that carry the plain object, and
+
+  // unpackMapDeltas accepts both, so the type has to allow both too.
+
+  mapDeltas?: Record<string, number> | string;
   graves?: Record<string, unknown>;
   yearResolutions?: Array<Record<string, unknown>>;
   suburbs?: Array<Record<string, unknown>>;

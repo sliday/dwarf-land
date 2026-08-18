@@ -663,7 +663,65 @@ existing save. Sequence it with the `SAVE_VERSION` work, not before it.
 
 ---
 
-### P0-3 — The world is non-deterministic while saves store only deltas
+### ~~P0-3 — The world is non-deterministic while saves store only deltas~~ FIXED 2026-08-18
+
+Measured before, running the shipped generator twice with real `Math.random` available:
+**33,891 tiles differed, 1.695% of the map.** The top changes name the mechanism exactly —
+`FISH_SPOT<->OCEAN`, `HILL<->IRON_ORE`, `FOREST<->MUSHROOM` — so iron a player had mined out
+reappeared somewhere else every session. The worst single call picked `G.homeCity` at random,
+which relocates the entire starting fortress.
+
+All 22 `Math.random()` calls inside `generateMap` now go through a seeded `genRandom()`
+(mulberry32, `WORLD_SEED = 20260726`), reseeded at the top of the function so a second call
+repeats the first. The other 66 calls in the file — dwarf creation, spawning, animals, the AI —
+are deliberately untouched: gameplay should stay random.
+
+**Measured after: 0 differing tiles.**
+
+**It was worse than one player's world drifting between sessions.** `migrations/0001_init.sql`
+declares `game_state` with `id INTEGER PRIMARY KEY DEFAULT 1` and `src/db/state.ts` upserts that
+single row, so there is exactly one shared save for everyone — while each client generated its
+own base map locally. The one shared set of deltas was landing on a *different world in every
+browser*. A fixed seed is the whole fix precisely because the save is shared; nothing needs to
+choose a seed per world. The save records `worldSeed` in both serializers and `restoreState`
+warns when it does not match the running build.
+
+Pinned by `tests/worldgen-determinism.test.ts`, which generates twice with real `Math.random`
+in the sandbox — a stubbed sandbox would have hidden the very bug under test — plus a
+source-level assertion that no `Math.random` remains inside `generateMap`, and `WORLD_SEED`
+added to the shared list in `tests/constants-parity.test.ts`. Four mutations verified: one site
+reverted to `Math.random`, the reseed removed, the two files' seeds made to disagree (which
+fails in both gates), and the PRNG made to ignore its seed argument.
+
+**Three harnesses broke and were right to.** `drift`, `city-placement-coverage` and
+`colony-persistence` all extract shipped functions into a sandbox, and the new helpers sit
+outside the spans they were extracting. Each needed widening rather than stubbing — the
+placement harness is now deterministic too, which is what lets its thresholds be exact numbers.
+
+### P1 — The save records a world seed the loader cannot honour
+
+**What:** `init()` calls `generateMap()` at line ~6894 and `await restoreState()` at ~6912 —
+generation happens 18 lines before the save is even fetched. So the `worldSeed` now written
+into the save can be compared against the running build, and warned about, but never acted on.
+If a save was written against a different seed, the loader will still generate the current
+world and drop the player's deltas onto it.
+
+**Why it matters:** it is fine while the seed is a fixed constant, which is why the warning is
+enough today. It stops being fine the moment anyone changes `WORLD_SEED`, adds per-world seeds,
+or ships a generator change — and the failure is silent terrain corruption, which is what the
+fix above was for.
+
+**Where to start:** two changes, not one. `generateMap()` takes no seed argument — it calls
+`resetWorldRng(WORLD_SEED)` internally — so honouring a saved seed needs both a
+`generateMap(seed)` signature and `loadGameState()` moved ahead of it in `init()`. That reorders
+startup, so it wants a browser to verify rather than only the Node harnesses.
+
+**Worth knowing first:** a seed change does *not* redraw the continents. `noise` and `prand` are
+hash functions over hardcoded constants and take no seed, so the landmasses, biomes and
+coastlines are fixed by the `LAND` table and the noise functions regardless. `WORLD_SEED` only
+moves the scattered things — mushrooms, ores, fish spots, the biome-border bleed and the home
+city. Anyone expecting "new seed, new world" will be surprised, and if that is wanted, the noise
+functions need a seed parameter too.
 
 **What:** two runs of `generateMap()` differ on 45,478 tiles (2.27%). Mushrooms, the resource
 overlay and the biome scatter all use unseeded `Math.random()`.
@@ -786,6 +844,67 @@ merge at `:6464` interpolates movement between ticks). Deleting the fallback is 
 deleting every duplicated function, so the two jobs need separating before either starts.
 
 **Depends on:** nothing. Gets much easier once the simulation lives in `public/sim/`.
+
+---
+
+### ~~The save exceeded the server cap, so a played-in world stopped persisting~~ FIXED 2026-08-18
+
+Measured from a real save sitting in the local D1: **2,196,897 bytes** against
+`MAX_STATE_BYTES = 1_500_000`. Every save of a world with any history in it was rejected 413.
+Where it went:
+
+| key | bytes |
+|---|---|
+| dwarves | 1,102,683 — of which `eventLog` alone was 869,670, 40% of the whole save |
+| mapDeltas | 900,223 — 71,250 entries at ~13 bytes as `{"x,y":tile}` |
+| animals | 126,699 |
+| everything else | 67,292 |
+
+Two changes, both in the worker and the page:
+
+- `mapDeltas` is packed at the save boundary only — 3 bytes of tile index plus 1 byte of tile
+  id, base64'd, about 5.3 bytes an entry instead of 13. The in-memory shape is untouched, so
+  `mapSet`, the snapshot path and the worker init payload all still pass the plain object;
+  only two emitters and two restore readers changed. `unpackMapDeltas` accepts the old object
+  form, so existing saves still load and no `SAVE_VERSION` bump was needed.
+- Per-dwarf history in the save is capped by a named `SAVED_EVENT_LOG = 10` rather than a
+  hardcoded 50.
+
+Result, measured against the same real payload: **996,183 bytes, 55% smaller, 503,817 under the
+cap**, with the deltas round-tripping exactly.
+
+**What the log trim costs:** nothing during a session. The in-memory log is capped at 50 either
+way, the snapshot still sends 50, and the AI prompt path already used `slice(-10)`. The only
+visible change is that the dwarf panel, which renders `slice(-50)`, shows ten entries instead
+of fifty for a dwarf whose history came back from a save.
+
+Pinned by `tests/save-size.test.ts`, which runs the shipped packer and measures the real
+payload when one is present on disk. Four mutations verified, including the `slice(-0)` trap —
+setting the cap to 0 keeps the whole array rather than none of it, which the sizing model hit
+for real before the test existed.
+
+### P2 — The save now has headroom, not a bound
+
+**What:** packing bought room; it did not stop the growth. At about 5.3 bytes per map delta and
+503,817 bytes of headroom, the cap comes back at roughly **166,000 deltas**, against 71,250 in
+the sample — a bit over twice as much play. Several structures still only grow: `G.graves`
+gains an entry per death forever, `yearResolutions` gains one per year per city, and
+`AI.intentCache` never drops entries for dwarves that died before executing.
+
+**Why it matters:** the failure mode is the one just fixed, and it returns silently. The 413 is
+reported by `reportSaveResult` on the periodic path, but the `beforeunload` beacon path
+discards the response entirely.
+
+**Where to start:** bound the unbounded things rather than shrinking the bounded ones. Graves
+and `yearResolutions` want a cap with the oldest dropped; `intentCache` wants eviction on
+death. For `mapDeltas` the honest answer is that a delta which restores a tile to the value
+`generateMap` would produce anyway is dead weight, and once the world is seeded and
+deterministic that becomes checkable.
+
+**Measure, do not estimate:** the sizing above came from a real 2.19 MB row in
+`.wrangler/state/v3/d1/miniflare-D1DatabaseObject/`. There are two sqlite files there and only
+one holds a played-in world — the other has a 329-byte row, which is what a naive first look
+finds.
 
 ---
 

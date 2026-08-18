@@ -16,12 +16,21 @@ import { createContext, runInContext } from 'node:vm';
 
 const SRC = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 
+
+/** The shipped world seed, read rather than restated so it cannot drift from the source. */
+function worldSeed(src: string): number {
+  const m = src.match(/const WORLD_SEED = (\d+);/);
+  if (!m) throw new Error('WORLD_SEED not found');
+  return Number(m[1]);
+}
 /** Run the real getSerializableState against a stub world and return the save object. */
 function serialize(cities: any[]): any {
-  const start = SRC.indexOf('function getSerializableState()');
-  if (start === -1) throw new Error('getSerializableState not found');
+  // Start at the packing helpers: getSerializableState calls packMapDeltas, which is defined
+  // just above it, so extracting the function alone leaves a dangling reference.
+  const start = SRC.indexOf('function packMapDeltas(');
+  if (start === -1) throw new Error('packMapDeltas not found');
   // Take the whole function by brace matching, so the extraction cannot silently truncate.
-  const open = SRC.indexOf('{', start);
+  const open = SRC.indexOf('{', SRC.indexOf('function getSerializableState()', start));
   let depth = 0, end = -1;
   for (let i = open; i < SRC.length; i++) {
     if (SRC[i] === '{') depth++;
@@ -40,6 +49,11 @@ function serialize(cities: any[]): any {
       suburbs: [], dirtTiles: [], mapDeltas: {}, homeCity: null, upgradeFrom: {},
       aiCityIndex: 0, routeDwarfId: null, paused: false,
     },
+    // getSerializableState packs mapDeltas at the save boundary, so the sandbox has to offer
+    // what a page or worker offers: the map dimensions and base64.
+    MAP_W: 2000, MAP_H: 1000, Uint8Array, String, WORLD_SEED: worldSeed(SRC),
+    btoa: (b: string) => Buffer.from(b, 'binary').toString('base64'),
+    atob: (b: string) => Buffer.from(b, 'base64').toString('binary'),
     Math, JSON, Object, Array, Number, console,
   };
   createContext(ctx);
@@ -58,7 +72,10 @@ function rebuild(saved: any, cities: any[]): any[] {
   expect(block).toContain('CITIES.push({');
 
   const ctx: Record<string, any> = {
-    CITIES: cities, MAP_W: 2000, MAP_H: 1000, Math, Array, Object, console,
+    // The extracted span now also covers the world-seed mismatch warning that sits between
+    // the colony rebuild and the resource loop, so the sandbox needs the constant.
+    CITIES: cities, MAP_W: 2000, MAP_H: 1000, WORLD_SEED: worldSeed(SRC),
+    Math, Array, Object, console,
   };
   ctx.cityById = (id: string) => ctx.CITIES.find((c: any) => c.id === id);
   createContext(ctx);
@@ -125,9 +142,9 @@ describe('a colony founded in the worker survives all the way to the next sessio
  */
 function serializeWorker(cities: any[]): any {
   const wsrc = readFileSync(new URL('../public/game-worker.js', import.meta.url), 'utf8');
-  const start = wsrc.indexOf('function getSerializableState()');
-  if (start === -1) throw new Error('worker getSerializableState not found');
-  const open = wsrc.indexOf('{', start);
+  const start = wsrc.indexOf('function packMapDeltas(');
+  if (start === -1) throw new Error('worker packMapDeltas not found');
+  const open = wsrc.indexOf('{', wsrc.indexOf('function getSerializableState()', start));
   let depth = 0, end = -1;
   for (let i = open; i < wsrc.length; i++) {
     if (wsrc[i] === '{') depth++;
@@ -145,6 +162,9 @@ function serializeWorker(cities: any[]): any {
       suburbs: [], dirtTiles: [], mapDeltas: {}, homeCity: null, upgradeFrom: {},
       aiCityIndex: 0, routeDwarfId: null, paused: false,
     },
+    MAP_W: 2000, MAP_H: 1000, Uint8Array, String, WORLD_SEED: worldSeed(SRC),
+    btoa: (b: string) => Buffer.from(b, 'binary').toString('base64'),
+    atob: (b: string) => Buffer.from(b, 'base64').toString('binary'),
     Math, JSON, Object, Array, Number, console,
   };
   createContext(ctx);

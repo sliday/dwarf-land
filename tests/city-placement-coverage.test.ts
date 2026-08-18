@@ -40,6 +40,11 @@ function buildWorld(): World {
     return out.join('\n');
   };
 
+  // generateMap calls resetWorldRng, defined in the seeding helpers just above it, so the
+  // extraction has to start there. It also makes this world reproducible, which is what lets
+  // the thresholds below be exact numbers rather than ranges.
+  const seedStart = lines.findIndex((l) => /^\/\/ ---- Deterministic world generation ----/.test(l));
+  if (seedStart === -1) throw new Error('seeding helpers not found; update this harness');
   const genStart = lines.findIndex((l) => /^function generateMap\(\)/.test(l));
   const placeStart = lines.findIndex((l) => /^  \/\/ Place cities/.test(l));
   const roadStart = lines.findIndex((l) => /^  \/\/ Generate roads between nearby cities/.test(l));
@@ -58,6 +63,7 @@ function buildWorld(): World {
     grab(/^\/\/ ---- Land check ----/, /^\/\/ ---- Biome ----/, true),
     grab(/^function getBiome\(/, /^\}/),
     `const G = { map: [], cam: { x: 0, y: 0 } };`,
+    lines.slice(seedStart, genStart).join('\n'),
     // Only mx/my matter here; starting resources are a separate concern.
     `function biomeStartRes() { return {}; }`,
     `function generateTerrain() {\n${lines.slice(genStart + 1, placeStart).join('\n')}\n}`,

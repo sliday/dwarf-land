@@ -83,7 +83,9 @@ describe('tile enum parity between the two simulation copies', () => {
 
 describe('scalar constant parity between the two simulation copies', () => {
   // Only constants that genuinely exist in both files and must agree.
-  const shared = ['STARVE_IMMOBILE', 'STARVE_DEATH', 'MAP_W', 'MAP_H'];
+  // WORLD_SEED is duplicated only so both save paths record the same world. If the two
+  // drift, a save written by one build claims a base map the other did not generate.
+  const shared = ['STARVE_IMMOBILE', 'STARVE_DEATH', 'MAP_W', 'MAP_H', 'WORLD_SEED'];
 
   it.each(shared)('%s matches across both files', (name) => {
     const w = scalar(workerSrc, name);

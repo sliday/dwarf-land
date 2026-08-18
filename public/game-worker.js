@@ -10,6 +10,9 @@ const T = {
   FISH_SPOT:28,DEER:29,CORAL:30,CRAB:31,ROAD:32,D_ROAD:33,RAILROAD:34,
   GRAVE:35,ASPHALT:36,FACTORY:37,PATH:38,DIRT:39,D_UPGRADE:40
 };
+// The page generates the world; the worker only records which seed it was built from, so the
+// two save paths agree. Kept in step with public/index.html by tests/constants-parity.test.ts.
+const WORLD_SEED = 20260726;
 const WALKABLE = new Set([
   T.TUNDRA,T.TAIGA,T.FOREST,T.PLAINS,T.DESERT,T.JUNGLE,T.HILL,T.BEACH,T.MOUNTAIN,
   T.FLOOR,T.STOCKPILE,T.BED,T.TABLE,T.DOOR,T.MUSHROOM,T.FARM,T.CITY,
@@ -2677,12 +2680,59 @@ function aiSeekFarmTask(d, reason) {
 }
 
 // State serialization
+
+// ---- Save-time map delta packing ----
+// mapDeltas is the second largest thing in the save: 71,250 entries serialised as
+// {"x,y":tile} costs about 13 bytes each, or 900 KB of a 2.2 MB payload against a 1.5 MB
+// server cap, so every save of a played-in world was rejected with 413. Packed as a 3-byte
+// tile index plus a 1-byte tile id and base64'd, the same data is about 5.3 bytes an entry.
+// The in-memory representation is unchanged - only the save is packed - so mapSet, the
+// snapshot path and the worker init payload all carry on using the plain object.
+function packMapDeltas(deltas) {
+  const keys = Object.keys(deltas || {});
+  const bytes = new Uint8Array(keys.length * 4);
+  let n = 0;
+  for (const k of keys) {
+    const comma = k.indexOf(',');
+    const x = +k.slice(0, comma), y = +k.slice(comma + 1);
+    if (!(x >= 0 && x < MAP_W && y >= 0 && y < MAP_H)) continue;
+    const idx = y * MAP_W + x;
+    bytes[n] = idx & 0xff;
+    bytes[n + 1] = (idx >> 8) & 0xff;
+    bytes[n + 2] = (idx >> 16) & 0xff;
+    bytes[n + 3] = deltas[k] & 0xff;
+    n += 4;
+  }
+  let s = '';
+  for (let i = 0; i < n; i += 8192) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, n)));
+  }
+  return btoa(s);
+}
+function unpackMapDeltas(packed) {
+  if (!packed) return {};
+  // Saves written before packing carry the plain object. Both shapes have to load.
+  if (typeof packed !== 'string') return packed;
+  const bin = atob(packed);
+  const out = {};
+  for (let i = 0; i + 3 < bin.length; i += 4) {
+    const idx = bin.charCodeAt(i) | (bin.charCodeAt(i + 1) << 8) | (bin.charCodeAt(i + 2) << 16);
+    out[(idx % MAP_W) + ',' + Math.floor(idx / MAP_W)] = bin.charCodeAt(i + 3);
+  }
+  return out;
+}
+// Per-dwarf history was 869,670 bytes of that same save, 40% of the whole thing, at a mean of
+// 44 entries each. Ten is enough for the panel to show recent life without the log becoming
+// the save. Never set this to 0: slice(-0) returns the whole array, not none of it.
+const SAVED_EVENT_LOG = 10;
+
 function getSerializableState() {
   const cityRes = {};
   for (const c of CITIES) { if (c.res) cityRes[c.id] = c.res; }
   return {
     tick:G.tick, year:G.year, season:G.season, speed:G.speed,
     cityResources:cityRes,
+    worldSeed: WORLD_SEED,
     // Colonies founded by tryFoundCity and suburbs promoted by checkSuburbPromotion. Without
     // their identity here the save keeps only their resources, keyed by an id that no longer
     // matches any city after CITIES is reseeded, and the settlement is gone.
@@ -2695,7 +2745,7 @@ function getSerializableState() {
       hunger:d.hunger,energy:d.energy,happiness:d.happiness,
       state:d.state,timer:d.timer,color:d.color,
       stats:d.stats,faith:d.faith,morality:d.morality,ambition:d.ambition,
-      traits:d.traits,backstory:d.backstory,eventLog:d.eventLog?.slice(-50),age:d.age,
+      traits:d.traits,backstory:d.backstory,eventLog: d.eventLog?.slice(-SAVED_EVENT_LOG),age:d.age,
       carrying:d.carrying||0,carryItems:d.carryItems||{},
       inventory:d.inventory||[],
       hp:d.hp,maxHp:d.maxHp,ac:d.ac,poisonTicks:d.poisonTicks||0,pet:d.pet||null,
@@ -2711,7 +2761,7 @@ function getSerializableState() {
     })),
     stats:G.stats,
     homeCity:G.homeCity?{name:G.homeCity.name,mx:G.homeCity.mx,my:G.homeCity.my}:null,
-    mapDeltas:G.mapDeltas,
+    mapDeltas: packMapDeltas(G.mapDeltas),
     graves:G.graves,
     yearResolutions:G.yearResolutions,
     suburbs:G.suburbs,
@@ -2844,8 +2894,8 @@ self.onmessage = function(e) {
       if (G.animals.length === 0) seedAnimals();
       // Restore map deltas
       if (saved.mapDeltas) {
-        G.mapDeltas = saved.mapDeltas;
-        for (const [key, tile] of Object.entries(saved.mapDeltas)) {
+        G.mapDeltas = unpackMapDeltas(saved.mapDeltas);
+        for (const [key, tile] of Object.entries(G.mapDeltas)) {
           const [x, y] = key.split(',').map(Number);
           if (y >= 0 && y < MAP_H && x >= 0 && x < MAP_W) {
             G.map[y][x] = tile;

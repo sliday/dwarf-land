@@ -1630,7 +1630,31 @@ function getBiome(lon, lat) {
 }
 
 // ---- Map Generation ----
+
+// ---- Deterministic world generation ----
+// The save stores map DELTAS against the generated base map, so a world that reshuffles between
+// sessions lands a player's changes on different terrain. Two runs of the shipped generator
+// differed on 33,891 tiles, 1.7% of the map: mined-out iron reappearing, fish spots and
+// mushrooms moving. There is one shared world here (a single game_state row, 125 real cities),
+// so a fixed seed is the whole fix - no per-world seed selection is needed.
+//
+// Nothing inside generateMap may call Math.random. Gameplay randomness outside it is untouched.
+const WORLD_SEED = 20260726;
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+let genRng = mulberry32(WORLD_SEED);
+function resetWorldRng(seed) { genRng = mulberry32(seed === undefined ? WORLD_SEED : seed); }
+function genRandom() { return genRng(); }
+
 function generateMap() {
+  // Reproducible from here down.
+  resetWorldRng(WORLD_SEED);
   G.map = [];
   for (let y = 0; y < MAP_H; y++) {
     const row = new Uint8Array(MAP_W);
@@ -1653,7 +1677,7 @@ function generateMap() {
       }
       const biome = getBiome(lon, lat);
       // Scatter mushrooms in forests/jungles
-      if ((biome === T.FOREST || biome === T.JUNGLE || biome === T.TAIGA) && Math.random() < 0.02) {
+      if ((biome === T.FOREST || biome === T.JUNGLE || biome === T.TAIGA) && genRandom() < 0.02) {
         row[x] = T.MUSHROOM;
       } else {
         row[x] = biome;
@@ -1680,7 +1704,7 @@ function generateMap() {
         for (const nt of neighbors) {
           if (nt !== t && SCATTER_BIOMES.has(nt) && nt !== T.OCEAN) {
             const sn = noise(x * 0.3 + 777 + pass * 111, y * 0.3 + 777 + pass * 111);
-            if (sn > 0.25 && Math.random() < chance) {
+            if (sn > 0.25 && genRandom() < chance) {
               G.map[y][x] = nt;
             }
             break;
@@ -1719,8 +1743,8 @@ function generateMap() {
         if (nearLand) {
           const rn = noise(x * 0.12 + 200, y * 0.12 + 200);
           const rn2 = noise(x * 0.07 + 500, y * 0.07 + 500);
-          if (rn > 0 && Math.random() < 0.08) G.map[y][x] = T.FISH_SPOT;
-          else if (rn2 > 0.2 && Math.random() < 0.03 && Math.abs(y - MAP_H / 2) < MAP_H * 0.3) G.map[y][x] = T.CORAL;
+          if (rn > 0 && genRandom() < 0.08) G.map[y][x] = T.FISH_SPOT;
+          else if (rn2 > 0.2 && genRandom() < 0.03 && Math.abs(y - MAP_H / 2) < MAP_H * 0.3) G.map[y][x] = T.CORAL;
         }
         continue;
       }
@@ -1730,41 +1754,41 @@ function generateMap() {
 
       // Mountains/hills: iron ore, gold veins, gems
       if (t === T.MOUNTAIN) {
-        if (rn > 0.3 && Math.random() < 0.12) G.map[y][x] = T.IRON_ORE;
-        else if (rn > 0.4 && Math.random() < 0.04) G.map[y][x] = T.GOLD_VEIN;
-        else if (rn > 0.5 && Math.random() < 0.015) G.map[y][x] = T.GEMS;
+        if (rn > 0.3 && genRandom() < 0.12) G.map[y][x] = T.IRON_ORE;
+        else if (rn > 0.4 && genRandom() < 0.04) G.map[y][x] = T.GOLD_VEIN;
+        else if (rn > 0.5 && genRandom() < 0.015) G.map[y][x] = T.GEMS;
       }
       if (t === T.HILL) {
-        if (rn > 0.2 && Math.random() < 0.06) G.map[y][x] = T.IRON_ORE;
-        if (rn2 > 0.3 && Math.random() < 0.03) G.map[y][x] = T.CLAY;
+        if (rn > 0.2 && genRandom() < 0.06) G.map[y][x] = T.IRON_ORE;
+        if (rn2 > 0.3 && genRandom() < 0.03) G.map[y][x] = T.CLAY;
       }
       // Forests: berry bushes, deer
       if (t === T.FOREST || t === T.TAIGA) {
-        if (rn2 > 0.1 && Math.random() < 0.03) G.map[y][x] = T.BERRY_BUSH;
-        else if (rn > -0.1 && Math.random() < 0.008) G.map[y][x] = T.DEER;
+        if (rn2 > 0.1 && genRandom() < 0.03) G.map[y][x] = T.BERRY_BUSH;
+        else if (rn > -0.1 && genRandom() < 0.008) G.map[y][x] = T.DEER;
       }
       // Jungle: herbs, berries
       if (t === T.JUNGLE) {
-        if (rn > 0 && Math.random() < 0.04) G.map[y][x] = T.HERB_PATCH;
-        else if (rn2 > 0.2 && Math.random() < 0.025) G.map[y][x] = T.BERRY_BUSH;
+        if (rn > 0 && genRandom() < 0.04) G.map[y][x] = T.HERB_PATCH;
+        else if (rn2 > 0.2 && genRandom() < 0.025) G.map[y][x] = T.BERRY_BUSH;
       }
       // Plains: herbs, deer
       if (t === T.PLAINS) {
-        if (rn > 0.2 && Math.random() < 0.02) G.map[y][x] = T.HERB_PATCH;
-        else if (rn2 > 0.3 && Math.random() < 0.006) G.map[y][x] = T.DEER;
+        if (rn > 0.2 && genRandom() < 0.02) G.map[y][x] = T.HERB_PATCH;
+        else if (rn2 > 0.3 && genRandom() < 0.006) G.map[y][x] = T.DEER;
       }
       // Beach: crabs, clay, fish spots
       if (t === T.BEACH) {
-        if (rn > 0 && Math.random() < 0.05) G.map[y][x] = T.CRAB;
-        else if (rn > 0.1 && Math.random() < 0.04) G.map[y][x] = T.CLAY;
-        else if (rn2 > 0 && Math.random() < 0.03) G.map[y][x] = T.FISH_SPOT;
+        if (rn > 0 && genRandom() < 0.05) G.map[y][x] = T.CRAB;
+        else if (rn > 0.1 && genRandom() < 0.04) G.map[y][x] = T.CLAY;
+        else if (rn2 > 0 && genRandom() < 0.03) G.map[y][x] = T.FISH_SPOT;
       }
       // Tundra: rare iron
-      if (t === T.TUNDRA && rn > 0.4 && Math.random() < 0.02) G.map[y][x] = T.IRON_ORE;
+      if (t === T.TUNDRA && rn > 0.4 && genRandom() < 0.02) G.map[y][x] = T.IRON_ORE;
       // Desert: gold, gems
       if (t === T.DESERT) {
-        if (rn > 0.3 && Math.random() < 0.02) G.map[y][x] = T.GOLD_VEIN;
-        else if (rn > 0.45 && Math.random() < 0.01) G.map[y][x] = T.GEMS;
+        if (rn > 0.3 && genRandom() < 0.02) G.map[y][x] = T.GOLD_VEIN;
+        else if (rn > 0.45 && genRandom() < 0.01) G.map[y][x] = T.GEMS;
       }
     }
   }
@@ -1889,7 +1913,7 @@ function generateMap() {
 
   // Pick starting city (random temperate one)
   const tempCities = CITIES.filter(c => c.mx !== undefined && Math.abs(c.lat) > 20 && Math.abs(c.lat) < 60);
-  G.homeCity = tempCities[Math.floor(Math.random() * tempCities.length)] || CITIES.find(c => c.mx !== undefined);
+  G.homeCity = tempCities[Math.floor(genRandom() * tempCities.length)] || CITIES.find(c => c.mx !== undefined);
 
   // Build larger starting fortress around home city (convert ocean tiles too)
   const hx = G.homeCity.mx, hy = G.homeCity.my;
@@ -5896,6 +5920,52 @@ function aiSeekFarmTask(d, reason) {
 let lastSaveTime = 0;
 const SAVE_INTERVAL = 60000;
 
+
+// ---- Save-time map delta packing ----
+// mapDeltas is the second largest thing in the save: 71,250 entries serialised as
+// {"x,y":tile} costs about 13 bytes each, or 900 KB of a 2.2 MB payload against a 1.5 MB
+// server cap, so every save of a played-in world was rejected with 413. Packed as a 3-byte
+// tile index plus a 1-byte tile id and base64'd, the same data is about 5.3 bytes an entry.
+// The in-memory representation is unchanged - only the save is packed - so mapSet, the
+// snapshot path and the worker init payload all carry on using the plain object.
+function packMapDeltas(deltas) {
+  const keys = Object.keys(deltas || {});
+  const bytes = new Uint8Array(keys.length * 4);
+  let n = 0;
+  for (const k of keys) {
+    const comma = k.indexOf(',');
+    const x = +k.slice(0, comma), y = +k.slice(comma + 1);
+    if (!(x >= 0 && x < MAP_W && y >= 0 && y < MAP_H)) continue;
+    const idx = y * MAP_W + x;
+    bytes[n] = idx & 0xff;
+    bytes[n + 1] = (idx >> 8) & 0xff;
+    bytes[n + 2] = (idx >> 16) & 0xff;
+    bytes[n + 3] = deltas[k] & 0xff;
+    n += 4;
+  }
+  let s = '';
+  for (let i = 0; i < n; i += 8192) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, n)));
+  }
+  return btoa(s);
+}
+function unpackMapDeltas(packed) {
+  if (!packed) return {};
+  // Saves written before packing carry the plain object. Both shapes have to load.
+  if (typeof packed !== 'string') return packed;
+  const bin = atob(packed);
+  const out = {};
+  for (let i = 0; i + 3 < bin.length; i += 4) {
+    const idx = bin.charCodeAt(i) | (bin.charCodeAt(i + 1) << 8) | (bin.charCodeAt(i + 2) << 16);
+    out[(idx % MAP_W) + ',' + Math.floor(idx / MAP_W)] = bin.charCodeAt(i + 3);
+  }
+  return out;
+}
+// Per-dwarf history was 869,670 bytes of that same save, 40% of the whole thing, at a mean of
+// 44 entries each. Ten is enough for the panel to show recent life without the log becoming
+// the save. Never set this to 0: slice(-0) returns the whole array, not none of it.
+const SAVED_EVENT_LOG = 10;
+
 function getSerializableState() {
   const cityRes = {};
   for (const c of CITIES) {
@@ -5904,6 +5974,9 @@ function getSerializableState() {
   return {
     tick: G.tick, year: G.year, season: G.season, speed: G.speed,
     cityResources: cityRes,
+    // Lets a load tell whether the base map it just generated is the one these deltas
+    // were recorded against.
+    worldSeed: WORLD_SEED,
     // Cities that did not come from the hard-coded table: colonies founded by tryFoundCity and
     // suburbs promoted by checkSuburbPromotion. CITIES is rebuilt from the table on every load,
     // so without their identity here they cannot come back. Mirrors how suburbs are saved.
@@ -5916,7 +5989,7 @@ function getSerializableState() {
       hunger: d.hunger, energy: d.energy, happiness: d.happiness,
       state: d.state, timer: d.timer, color: d.color,
       stats: d.stats, faith: d.faith, morality: d.morality, ambition: d.ambition,
-      traits: d.traits, backstory: d.backstory, eventLog: d.eventLog?.slice(-50), age: d.age,
+      traits: d.traits, backstory: d.backstory, eventLog: d.eventLog?.slice(-SAVED_EVENT_LOG), age: d.age,
       carrying: d.carrying || 0, carryItems: d.carryItems || {},
       inventory: d.inventory || [],
       hp: d.hp, maxHp: d.maxHp, ac: d.ac, poisonTicks: d.poisonTicks || 0, pet: d.pet || null,
@@ -5934,7 +6007,7 @@ function getSerializableState() {
     })),
     stats: G.stats,
     homeCity: G.homeCity ? { name: G.homeCity.name, mx: G.homeCity.mx, my: G.homeCity.my } : null,
-    mapDeltas: G.mapDeltas || {},
+    mapDeltas: packMapDeltas(G.mapDeltas),
     graves: G.graves || {},
     yearResolutions: G.yearResolutions || [],
     suburbs: G.suburbs || [],
@@ -6517,6 +6590,11 @@ async function restoreState() {
       });
     }
   }
+  if (saved.worldSeed !== undefined && saved.worldSeed !== WORLD_SEED) {
+    // The deltas below were recorded against a different base map, so they will land on the
+    // wrong terrain. Say so rather than silently corrupting the world.
+    console.warn('[worldgen] save was written against seed ' + saved.worldSeed + ', this build generates ' + WORLD_SEED + '; map deltas may not line up');
+  }
   if (saved.cityResources) {
     for (const [cityId, res] of Object.entries(saved.cityResources)) {
       const city = cityById(cityId);
@@ -6569,8 +6647,8 @@ async function restoreState() {
 
   // Restore map deltas
   if (saved.mapDeltas) {
-    G.mapDeltas = saved.mapDeltas;
-    for (const [key, tile] of Object.entries(saved.mapDeltas)) {
+    G.mapDeltas = unpackMapDeltas(saved.mapDeltas);
+    for (const [key, tile] of Object.entries(G.mapDeltas)) {
       const [x, y] = key.split(',').map(Number);
       if (y >= 0 && y < MAP_H && x >= 0 && x < MAP_W) {
         setWorldTile(x, y, tile, { trackDelta: false, markDirty: false, patchMinimap: false });
