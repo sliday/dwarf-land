@@ -130,40 +130,57 @@ describe('continent lookup', () => {
   it('matches the brute-force scan on the full tile grid', () => {
     // Sampled across the whole map rather than all 2M tiles, so the suite stays fast while
     // still covering every latitude band and the full longitude wrap.
+    //
+    // The comparison is accumulated and asserted once. Calling expect() inside the loop meant
+    // 221,778 assertions, and vitest's per-assertion overhead — not the lookup — pushed this
+    // past the 5s default on CI while passing locally. A mismatch list also says WHICH
+    // coordinate diverged, where a failing expect only ever reported true vs false.
+    const mismatches: string[] = [];
     let checked = 0;
     for (let my = 0; my < g.MAP_H; my += 3) {
       for (let mx = 0; mx < g.MAP_W; mx += 3) {
         const [lon, lat] = g.toLonLat(mx, my);
-        expect(g.isLandAt(lon, lat)).toBe(g.bruteForceIsLandAt(lon, lat));
+        if (g.isLandAt(lon, lat) !== g.bruteForceIsLandAt(lon, lat)) {
+          if (mismatches.length < 5) mismatches.push(`tile ${mx},${my} = lon ${lon.toFixed(3)} lat ${lat.toFixed(3)}`);
+        }
         checked++;
       }
     }
+    expect(mismatches, 'bucketed lookup disagrees with the brute-force scan').toEqual([]);
     expect(checked).toBeGreaterThan(200000);
   });
 
   it('matches on the perturbed coordinates generateMap actually queries', () => {
     // generateMap warps the lookup by noise (cn up to about +-4) and probes +-2 degrees for
     // the coast test, so queries land well outside the plain tile grid, including past +-180.
+    const mismatches: string[] = [];
     for (let lon = -190; lon <= 190; lon += 0.37) {
       for (let lat = -93; lat <= 93; lat += 1.7) {
-        expect(g.isLandAt(lon, lat)).toBe(g.bruteForceIsLandAt(lon, lat));
+        if (g.isLandAt(lon, lat) !== g.bruteForceIsLandAt(lon, lat) && mismatches.length < 5) {
+          mismatches.push(`lon ${lon.toFixed(3)} lat ${lat.toFixed(3)}`);
+        }
       }
     }
+    expect(mismatches, 'disagreement on a warped query').toEqual([]);
   });
 
   it('agrees on ellipse boundaries, where quantisation would show up first', () => {
     // A rasterised bitmap would round these to a tile centre and flip some of them. Walking
     // the rim of every ellipse at sub-tile steps proves the fast path is not approximating.
+    const mismatches: string[] = [];
     for (const [cx, cy, rx, ry] of g.LAND) {
       for (let t = 0; t < 64; t++) {
         const a = (t / 64) * Math.PI * 2;
         for (const scale of [0.999, 1.0, 1.001]) {
           const lon = cx + Math.cos(a) * rx * scale;
           const lat = cy + Math.sin(a) * ry * scale;
-          expect(g.isLandAt(lon, lat)).toBe(g.bruteForceIsLandAt(lon, lat));
+          if (g.isLandAt(lon, lat) !== g.bruteForceIsLandAt(lon, lat) && mismatches.length < 5) {
+            mismatches.push(`rim of [${cx},${cy},${rx},${ry}] at scale ${scale}: lon ${lon.toFixed(4)} lat ${lat.toFixed(4)}`);
+          }
         }
       }
     }
+    expect(mismatches, 'quantisation showing up on an ellipse rim').toEqual([]);
   });
 
   it('handles the antimeridian wrap', () => {
