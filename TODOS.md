@@ -883,30 +883,114 @@ payload when one is present on disk. Four mutations verified, including the `sli
 setting the cap to 0 keeps the whole array rather than none of it, which the sizing model hit
 for real before the test existed.
 
-### P2 — The save now has headroom, not a bound
+### ~~P2 — The save now has headroom, not a bound~~ BOUNDED 2026-08-18
 
-**What:** packing bought room; it did not stop the growth. At about 5.3 bytes per map delta and
-503,817 bytes of headroom, the cap comes back at roughly **166,000 deltas**, against 71,250 in
-the sample — a bit over twice as much play. Several structures still only grow: `G.graves`
-gains an entry per death forever, `yearResolutions` gains one per year per city, and
-`AI.intentCache` never drops entries for dwarves that died before executing.
+The two structures that only grew are capped where they are appended, so the in-memory copies
+are bounded too and not just the payload. Measured per-entry costs from the real save:
 
-**Why it matters:** the failure mode is the one just fixed, and it returns silently. The 413 is
-reported by `reportSaveResult` on the periodic path, but the `beforeunload` beacon path
-discards the response entirely.
+| structure | cost | cap | bounded at |
+|---|---|---|---|
+| `yearResolutions` | 10,415 bytes per game year | 10 years | ~104 KB |
+| `graves` | 113 bytes per death | 500 | ~57 KB |
 
-**Where to start:** bound the unbounded things rather than shrinking the bounded ones. Graves
-and `yearResolutions` want a cap with the oldest dropped; `intentCache` wants eviction on
-death. For `mapDeltas` the honest answer is that a delta which restores a tile to the value
-`generateMap` would produce anyway is dead weight, and once the world is seeded and
-deterministic that becomes checkable.
+Unbounded, `yearResolutions` alone consumed the 503,817 bytes of headroom in about 48 game
+years and brought back the 413 the packing fix was for.
 
-**Measure, do not estimate:** the sizing above came from a real 2.19 MB row in
-`.wrangler/state/v3/d1/miniflare-D1DatabaseObject/`. There are two sqlite files there and only
-one holds a played-in world — the other has a 329-byte row, which is what a naive first look
-finds.
+Both copies route every append through `rememberGrave` / `rememberYear`; a direct assignment
+would slip past the cap, which is how they grew in the first place, so a test asserts no raw
+`G.graves[...] =` or `G.yearResolutions.push(` remains in either file. Five mutations verified:
+each append site reverted, eviction reversed to drop the newest, the two copies' caps made to
+disagree, and the year cap raised until history ate the headroom.
 
----
+Still growing, but slower and with a known rate: `mapDeltas` at about 5.3 bytes an entry. The
+remaining headroom covers roughly 71,000 more deltas against the 71,250 in the sample.
+
+Review caught a claim the cap broke. Two labels read `Object.keys(G.graves).length` and printed
+it as "N fallen"; that equalled cumulative deaths only because graves never went away, so after
+500 deaths both would have frozen at "500 fallen" and under-reported further the longer a world
+ran. A silent wrong number is worse than a missing one. Deaths are now counted in the worker's
+`placeGrave`, the single site all four death paths funnel through, above the ocean guard so a
+dwarf lost at sea still counts. The panel says "500 of 1,234 fallen" when it is showing the tail.
+The page counts nothing: it takes `G.stats` from the worker wholesale, and its only two grave
+writes are the worker sync and the epitaph callback, neither of which is a death.
+
+A save written before the caps is trimmed on load rather than at the next death, so the
+in-memory copy obeys the bound immediately, and the counter seeds from the graves that save
+carried — a floor, not the true toll, which is the most an old save can honestly support.
+
+### ~~P2 — Animals are an eighth of the save~~ PACKED 2026-08-18
+
+Packed rather than dropped. Measured on the real save: 126,699 bytes to 29,491, a 76.7% cut and
+97,208 bytes back, taking the payload to 898,975 and the headroom under the 1.5 MB cap from
+503,817 to 601,025. Per head, 158.6 bytes to 36.9. Zero round-trip mismatches across all 799
+animals; worst timer drift 7.5e-13.
+
+Three things paid for that:
+
+| change | why it is free |
+|---|---|
+| positional rows instead of 12-key objects | the key names were 70 bytes a head, repeated 799 times |
+| `maxHp` and `ac` dropped | both are pure functions of species, and the loader already rebuilds each animal through `createAnimal` before overlaying saved fields |
+| trailing defaults truncated | a typical idle animal ends after `moveTimer`: `["a_5d7ezh","wolf",1532,331,4,0.6]` |
+
+**The item as originally written was wrong and is not what was built.** It proposed dropping
+animals from the save, on the grounds that both copies reseed an empty herd. That is smaller
+still and the wrong trade for this game: a valley a player had cleared of wolves refills on
+reload, tamed pets lose their owners, and the ecosystem restarts every session. The stated aim
+is a real-life simulation, so world continuity wins over the last 29 KB.
+
+The species is stored by NAME, not by an index into the table. An index is about two bytes
+cheaper a head and was what the first implementation used, until a check showed the page's table
+is `ANIMAL_TYPES_FB` and the worker's is `ANIMAL_TYPES` — two independently maintained copies.
+They agree today, but a save is durable data on disk: inserting a species alphabetically later
+would silently turn every stored wolf into some other animal, in worlds already saved, with
+nothing to catch it. Four kilobytes is worth not having that failure mode.
+
+`ANIMAL_PACK_FIXED` is derived from the field order rather than written as `5`. Mutation testing
+is why: a hand-written `4` passed all 21 tests, because truncation compares against a `null`
+default and `hp` is never null. It was an equivalent mutant rather than a caught bug, so the
+answer was to make the constant impossible to write by hand rather than to contrive a test
+around it. Ten of ten mutations now caught, including that one.
+
+### P2 — The dwarf event log is a fifth of the save and mostly repeats itself
+
+**What:** with `SAVED_EVENT_LOG = 10` already applied, `eventLog` is 190,780 bytes across 300
+dwarves — 44% of the 435,597-byte `dwarves` block and 21% of the whole 898,975-byte save. It is
+2,852 entries of the shape `{"tick":66407,"type":"gather","description":"Mined iron ore"}` at 66
+bytes each, and the content barely varies: **260 distinct descriptions across 2,852 entries**,
+with 11 distinct types.
+
+**What it is worth,** modelled on the real save with the same technique used for the animals:
+
+| format | bytes | saved |
+|---|---|---|
+| as shipped | 190,780 | — |
+| positional rows, type as an index | 93,836 | 96,944 (51%) |
+| plus a description dictionary | **50,260** | **140,520 (74%)** |
+
+The dictionary is what makes the difference, because the strings repeat hard: "Repaired a road
+gap" appears 570 times and "Scrapped orphan road" 456. Store each description once in a
+per-save table and reference it by index.
+
+**Where to start:** `packAnimals`/`unpackAnimals` in both files is the working model — positional
+rows, trailing defaults truncated, legacy object rows passed through untouched, a round-trip test
+against the real payload. The event log adds one thing that pattern does not have: a shared table
+that must be written alongside the rows and threaded through both serializers.
+
+**Watch out:** store the type by name, not by an index into a hard-coded list, for the same
+reason the animals do. The description dictionary is different — it is built per save and shipped
+with the data, so an index into it is safe.
+
+**A second, separable measurement from the same pass:** 50,935 bytes of the dwarves block is
+spent writing fields that hold their default in every record — `sponsorCallsRemaining: 0` (7,500),
+`sponsorTier: null` (5,400), `relationships: []` (5,400), `sponsored: false` (5,100),
+`poisonTicks: 0` (4,500), `starveTicks: 0` (4,470). Omitting defaults on write and restoring them
+on read is a smaller, independent change; it does not need the event-log work first.
+
+**Worth a look while in there, unrelated to size:** "Repaired a road gap" and "Scrapped orphan
+road" together are 36% of every logged action. Road scrapping is recorded as disabled elsewhere
+in this file, so these are historical, but a repair/scrap pair dominating the log to that degree
+suggests the road logic was thrashing rather than converging. Check before re-enabling scrapping.
 
 ## P2 — Cap the size of the state save payload
 

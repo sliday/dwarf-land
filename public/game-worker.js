@@ -13,6 +13,34 @@ const T = {
 // The page generates the world; the worker only records which seed it was built from, so the
 // two save paths agree. Kept in step with public/index.html by tests/constants-parity.test.ts.
 const WORLD_SEED = 20260726;
+
+// ---- Bounded history ----
+// yearResolutions and graves only ever grew. Measured on a real save: 10,415 bytes per game
+// year and 113 bytes per death, so together they consume the save's headroom over a long game
+// and bring back the 413 that the delta packing was added to fix. Capped where they are
+// appended, so the in-memory copies are bounded too and not just the payload.
+const MAX_YEAR_RESOLUTIONS = 10;
+const MAX_GRAVES = 500;
+function trimGraves(graves) {
+  const keys = Object.keys(graves);
+  // Keys are "x,y" strings, not array indices, so insertion order is preserved and the front
+  // of this list really is the oldest.
+  for (let i = 0; i + MAX_GRAVES < keys.length; i++) delete graves[keys[i]];
+}
+function trimYears(list) {
+  while (list.length > MAX_YEAR_RESOLUTIONS) list.shift();
+}
+// Re-saving an existing key (the epitaph callback does this) keeps its original insertion
+// position, so an epitaph arriving late does not push a grave to the back of the queue.
+function rememberGrave(graves, key, data) {
+  graves[key] = data;
+  trimGraves(graves);
+}
+function rememberYear(list, entry) {
+  list.push(entry);
+  trimYears(list);
+}
+
 const WALKABLE = new Set([
   T.TUNDRA,T.TAIGA,T.FOREST,T.PLAINS,T.DESERT,T.JUNGLE,T.HILL,T.BEACH,T.MOUNTAIN,
   T.FLOOR,T.STOCKPILE,T.BED,T.TABLE,T.DOOR,T.MUSHROOM,T.FARM,T.CITY,
@@ -348,7 +376,7 @@ const G = {
   year:1, season:0,
   dwarves:[], usedNames:new Set(),
   animals:[], animalGrid:{},
-  stats:{mined:0,built:0,farmed:0},
+  stats:{mined:0,built:0,farmed:0,deaths:0},
   graves:{}, yearResolutions:[], suburbs:[], dirtTiles:[], upgradeFrom:{},
   homeCity:null, aiCityIndex:0, dwarfGrid:{},
   mapDeltas:{},
@@ -407,11 +435,13 @@ function anyDesignation(tiles) {
 function mapSet(x, y, tile) { G.map[y][x] = tile; G.mapDeltas[`${x},${y}`] = tile; pendingMapChanges.push({x,y,tile}); indexDesignation(x, y, tile); }
 const GRAVE_EMOJIS = ['🪦','💀','☠️','⚰️','🕯️'];
 function placeGrave(d, cause) {
+  // Counted before the ocean guard below: a dwarf lost at sea gets no headstone but is still dead.
+  G.stats.deaths = (G.stats.deaths || 0) + 1;
   const wx = wrapX(d.x);
   if (G.map[d.y] && G.map[d.y][wx] !== T.OCEAN) {
     mapSet(wx, d.y, T.GRAVE);
     const gd = {name:d.name, emoji:GRAVE_EMOJIS[Math.floor(Math.random()*GRAVE_EMOJIS.length)], cause:cause||'Unknown', age:d.age??20, cityId:d.cityId};
-    G.graves[`${wx},${d.y}`] = gd;
+    rememberGrave(G.graves, `${wx},${d.y}`, gd);
     pendingGraves.push({x:wx, y:d.y, ...gd});
   }
 }
@@ -2336,7 +2366,7 @@ function tickSeason() {
         else resolution = 'Grow the population steadily';
         resolutions.push({cityId:city.id, name:city.name, emoji:city.emoji, resolution});
       }
-      if (resolutions.length) { G.yearResolutions.push({year:G.year, resolutions}); pendingToasts.push({type:'year_resolutions', year:G.year, resolutions}); }
+      if (resolutions.length) { rememberYear(G.yearResolutions, {year:G.year, resolutions}); pendingToasts.push({type:'year_resolutions', year:G.year, resolutions}); }
     }
     const name = SEASONS[G.season];
     log(`🌍 ${name} of Year ${G.year}`, 'system', 3);
@@ -2724,6 +2754,72 @@ function unpackMapDeltas(packed) {
 // Per-dwarf history was 869,670 bytes of that same save, 40% of the whole thing, at a mean of
 // 44 entries each. Ten is enough for the panel to show recent life without the log becoming
 // the save. Never set this to 0: slice(-0) returns the whole array, not none of it.
+
+// ---- Animal packing ----
+// Animals were 126,699 bytes of a 996,183-byte save, 13% of it, held as 799 objects each
+// repeating twelve key names. Packed as positional rows instead.
+//
+// maxHp and ac are not stored: createAnimal derives both from the species table and nothing
+// mutates them afterwards, and the loader already rebuilds each animal through createAnimal
+// before overlaying the saved fields, so they come back for free.
+//
+// The species is stored by NAME, not by an index into the table. An index is two bytes cheaper
+// a head, but a save is durable data: adding a species in alphabetical order later would then
+// silently turn every stored wolf into some other animal, in worlds already on disk, with
+// nothing to catch it. Four kilobytes is worth not having that failure mode.
+//
+// Dropping animals from the save altogether would be smaller still, and both copies do reseed
+// an empty herd - but then a valley a player had cleared of wolves refills on reload and the
+// ecosystem restarts every session. That trades world continuity for bytes, which is the wrong
+// way round here, so they are packed rather than discarded.
+const ANIMAL_PACK_ORDER = ['id', 'type', 'x', 'y', 'hp', 'moveTimer', 'state', 'timer', 'owner', 'followTicks'];
+// Trailing fields equal to these are dropped and restored on unpack. The four rarely-set fields
+// sit last on purpose: for a typical idle animal the row ends after moveTimer.
+const ANIMAL_PACK_DEFAULTS = [null, null, null, null, null, 0, 'idle', 0, null, 0];
+// The first five fields are structural - identity, species, position, current health - and are
+// never truncated. Derived from the order rather than written as 5 so the two cannot drift: a
+// hand-written 4 here behaves identically today only because hp is never null, and would start
+// dropping health the day that changed.
+const ANIMAL_PACK_FIXED = ANIMAL_PACK_ORDER.indexOf('moveTimer');
+function round3(v) { const n = +v; return Number.isFinite(n) ? Math.round(n * 1000) / 1000 : 0; }
+function packAnimals(list) {
+  const out = [];
+  for (const a of list || []) {
+    if (!a || a.dead) continue;
+    const row = [
+      a.id, a.type, a.x, a.y, a.hp,
+      round3(a.moveTimer), a.state || 'idle', round3(a.timer),
+      a.owner ?? null, a.followTicks || 0,
+    ];
+    let n = row.length;
+    while (n > ANIMAL_PACK_FIXED && row[n - 1] === ANIMAL_PACK_DEFAULTS[n - 1]) n--;
+    out.push(row.slice(0, n));
+  }
+  return out;
+}
+// `types` is the caller's species table, which the two copies of the simulation name
+// differently. Passing it in keeps this helper identical in both.
+function unpackAnimals(packed, types) {
+  if (!packed) return [];
+  const out = [];
+  for (const row of packed) {
+    // Saves written before packing carry plain objects. Both shapes have to load.
+    if (!Array.isArray(row)) { out.push(row); continue; }
+    // A species this build no longer knows would otherwise load as an animal with no stats,
+    // which nothing can fight, eat or render.
+    if (types && !types[row[1]]) {
+      console.warn('[animals] dropping saved animal of unknown species: ' + row[1]);
+      continue;
+    }
+    const a = { id: row[0], type: row[1], x: row[2], y: row[3], hp: row[4] };
+    // Absent trailing fields keep createAnimal's defaults, so nothing is written as undefined.
+    for (let i = ANIMAL_PACK_FIXED; i < ANIMAL_PACK_ORDER.length; i++) {
+      if (row.length > i && row[i] !== undefined) a[ANIMAL_PACK_ORDER[i]] = row[i];
+    }
+    out.push(a);
+  }
+  return out;
+}
 const SAVED_EVENT_LOG = 10;
 
 function getSerializableState() {
@@ -2755,10 +2851,7 @@ function getSerializableState() {
       starveTicks:d.starveTicks||0,
       relationships:d.relationships||[],
     })),
-    animals:G.animals.map(a => ({
-      id:a.id,type:a.type,x:a.x,y:a.y,hp:a.hp,maxHp:a.maxHp,ac:a.ac,
-      state:a.state,timer:a.timer,moveTimer:a.moveTimer,owner:a.owner,followTicks:a.followTicks||0,
-    })),
+    animals: packAnimals(G.animals),
     stats:G.stats,
     homeCity:G.homeCity?{name:G.homeCity.name,mx:G.homeCity.mx,my:G.homeCity.my}:null,
     mapDeltas: packMapDeltas(G.mapDeltas),
@@ -2796,6 +2889,12 @@ self.onmessage = function(e) {
       G.mapDeltas = data.state?.mapDeltas || {};
       G.graves = data.state?.graves || {};
       G.yearResolutions = data.state?.yearResolutions || [];
+      // A grave can be evicted; a death cannot be un-died. Seed the counter from the graves a
+      // pre-cap save carried, which is a floor rather than the true toll, and trim history that
+      // was written before the caps existed so the in-memory copy obeys them immediately.
+      if (typeof G.stats.deaths !== 'number') G.stats.deaths = Object.keys(G.graves).length;
+      trimGraves(G.graves);
+      trimYears(G.yearResolutions);
       G.suburbs = data.state?.suburbs || [];
       G.dirtTiles = data.state?.dirtTiles || [];
       G.routeDwarfId = data.state?.routeDwarfId || null;
@@ -2889,7 +2988,7 @@ self.onmessage = function(e) {
       }
       if (saved.homeCity) G.homeCity = CITIES.find(c => c.name === saved.homeCity.name) || G.homeCity;
       if (saved.animals?.length) {
-        G.animals = saved.animals.map(a => ({...createAnimal(a.type, a.x, a.y), ...a, path:[], target:null}));
+        G.animals = unpackAnimals(saved.animals, ANIMAL_TYPES).map(a => ({...createAnimal(a.type, a.x, a.y), ...a, path:[], target:null}));
       }
       if (G.animals.length === 0) seedAnimals();
       // Restore map deltas
