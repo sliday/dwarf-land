@@ -33,6 +33,11 @@ const TERRAIN_PROPS = {
   [T.BERRY_BUSH]:{speed:1},[T.HERB_PATCH]:{speed:1},[T.CLAY]:{speed:1},
   [T.FISH_SPOT]:{speed:0},[T.DEER]:{speed:1},[T.CORAL]:{speed:0},[T.CRAB]:{speed:1},
   [T.RAILROAD]:{speed:0.2},
+  // GRAVE had no entry, and terrainCost returns Infinity for anything missing here, so every
+  // grave was a permanent hole in the pathfinding graph while isWalkable reported it fine.
+  // This is the live simulation, so it is the copy players actually hit, and graves only
+  // accumulate. Speed matches the value index.html already uses.
+  [T.GRAVE]:{speed:1},
   [T.FACTORY]:{speed:1},
   [T.DIRT]:{speed:1.2},
 };
@@ -198,7 +203,12 @@ function tryTravel(d) {
   const city = cityOf(d);
   if (!city || !city.res) return false;
   if (d.hunger < 30 || d.energy < 25) return false;
-  if (!G.roadGraph || G.roadGraphDirty) rebuildRoadGraph();
+  // A dwarf finishing a road stretch dirties the graph on consecutive ticks, and every one of
+  // those used to charge a full multi-tier rebuild to the next dwarf who considered
+  // travelling. Coalescing them bounds the cost to one rebuild per ROAD_GRAPH_MIN_TICKS. The
+  // interim graph is stale rather than wrong: it only sorts candidate destinations, and
+  // tryTravelTo still routes against the live map.
+  if (!G.roadGraph || (G.roadGraphDirty && G.tick - (G.roadGraphBuiltTick ?? -Infinity) >= ROAD_GRAPH_MIN_TICKS)) rebuildRoadGraph();
   const others = CITIES.filter(c => c.id !== city.id && c.mx !== undefined);
   if (!others.length) return false;
   others.sort((a,b) => {
@@ -346,7 +356,52 @@ const G = {
 // Message buffers
 const pendingLogs = [], pendingToasts = [], pendingMapChanges = [], pendingGraves = [];
 function log(msg, type, rarity, cityEmoji, lx, ly) { pendingLogs.push({msg,type,rarity:rarity||1,season:G.season,cityEmoji:cityEmoji||null,lx:lx??null,ly:ly??null}); }
-function mapSet(x, y, tile) { G.map[y][x] = tile; G.mapDeltas[`${x},${y}`] = tile; pendingMapChanges.push({x,y,tile}); }
+// ---- Designation index ----
+// A designation is only a tile value in G.map, so "is anything designated for mining?" used
+// to mean a full uniform-cost search. aiIdle ran up to five of those per idle dwarf, and each
+// one expanded the whole 30,000-node cap whenever the answer was no: ~45 ms apiece on the
+// 2000x1000 map, against a 33-100 ms tick. The index answers the same question in O(1).
+// Exactly three writers put a designation tile into G.map - mapSet, the `designate` message
+// and the mapDeltas replay inside `restore` - and all three call indexDesignation.
+const DESIGNATION_TILES = [T.D_MINE, T.D_FARM, T.D_ROAD, T.D_UPGRADE, T.D_BUILD];
+const designationIndex = new Map(DESIGNATION_TILES.map(t => [t, new Set()]));
+function indexDesignation(x, y, tile) {
+  const k = `${x},${y}`;
+  for (const [t, set] of designationIndex) { if (t !== tile) set.delete(k); }
+  const own = designationIndex.get(tile);
+  if (own) own.add(k);
+}
+// `init` replaces G.map wholesale with a flat buffer from the page, designations and all, so
+// incremental indexing cannot see it. One pass over the map at startup is the only way the
+// index can know about work that was already designated before this worker existed.
+function rebuildDesignationIndex() {
+  for (const set of designationIndex.values()) set.clear();
+  for (let y = 0; y < MAP_H; y++) {
+    const row = G.map[y];
+    if (!row) continue;
+    for (let x = 0; x < MAP_W; x++) {
+      const set = designationIndex.get(row[x]);
+      if (set) set.add(`${x},${y}`);
+    }
+  }
+}
+// An entry can only go stale if something writes G.map outside those three writers. Rather
+// than trust that, each read checks the tile it points at and drops whatever no longer
+// matches, so the index heals itself on use and a miss costs one Set delete, not a search.
+function anyDesignation(tiles) {
+  for (const t of tiles) {
+    const set = designationIndex.get(t);
+    if (!set) continue;
+    for (const k of set) {
+      const comma = k.indexOf(',');
+      const x = +k.slice(0, comma), y = +k.slice(comma + 1);
+      if (G.map[y] && G.map[y][x] === t) return true;
+      set.delete(k);
+    }
+  }
+  return false;
+}
+function mapSet(x, y, tile) { G.map[y][x] = tile; G.mapDeltas[`${x},${y}`] = tile; pendingMapChanges.push({x,y,tile}); indexDesignation(x, y, tile); }
 const GRAVE_EMOJIS = ['🪦','💀','☠️','⚰️','🕯️'];
 function placeGrave(d, cause) {
   const wx = wrapX(d.x);
@@ -533,6 +588,9 @@ function checkSuburbPromotion() {
       mx: sub.mx, my: sub.my,
       res: {...sub.res},
     };
+    // Marked so getSerializableState can persist it. CITIES is rebuilt from the seeded
+    // table on every load, so a city created here has no way back without this.
+    newCity.founded = true;
     CITIES.push(newCity);
     G.suburbs.splice(i, 1);
     G.roadGraphDirty = true;
@@ -581,15 +639,18 @@ class MinHeap {
     }
   }
 }
-function bfs(sx, sy, goalFn, walkToGoal) {
+// `maxSteps` bounds an opportunistic scan. Callers that discard a result past a certain path
+// length were paying for the full 30,000-node cap first and throwing the answer away after.
+function bfs(sx, sy, goalFn, walkToGoal, maxSteps) {
   const key = (x, y) => wrapX(x) + y * MAP_W;
   const pq = new MinHeap();
   pq.push([0, sx, sy]);
   const dist = new Map(); dist.set(key(sx, sy), 0);
   const par = new Map();
   const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
+  const cap = maxSteps || 30000;
   let steps = 0;
-  while (pq.length > 0 && steps < 30000) {
+  while (pq.length > 0 && steps < cap) {
     const [cost, cx, cy] = pq.pop(); steps++;
     const ck = key(cx, cy);
     if (cost > (dist.get(ck) ?? Infinity)) continue;
@@ -1153,7 +1214,11 @@ function tryRoadwrightWork(d) {
   const here = G.map[d.y]?.[d.x];
   if (here === T.D_ROAD) return setRoadwrightTarget(d, 'road', d.x, d.y, []);
   if (here === T.D_UPGRADE) return setRoadwrightTarget(d, 'upgrade_road', d.x, d.y, []);
-  const rp = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_ROAD || G.map[y][x] === T.D_UPGRADE, false);
+  // Bounded twice over: skip entirely when nothing is designated, and stop the scan once it
+  // has outrun the 80-tile result filter below instead of paying for the full cap first.
+  const rp = anyDesignation([T.D_ROAD, T.D_UPGRADE])
+    ? bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_ROAD || G.map[y][x] === T.D_UPGRADE, false, 12000)
+    : null;
   if (rp && rp.length < 80) {
     const last = rp[rp.length-1];
     const tile = G.map[last[1]][last[0]];
@@ -1228,7 +1293,7 @@ function aiIdle(d) {
     d.state = 'idle';
   }
 
-  const minePath = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_MINE, false);
+  const minePath = anyDesignation([T.D_MINE]) ? bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_MINE, false) : null;
   if (minePath) {
     const last = minePath[minePath.length-1];
     if (G.map[last[1]][last[0]] === T.D_MINE) {
@@ -1240,7 +1305,9 @@ function aiIdle(d) {
     }
   }
   {
-    const rp = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_ROAD || G.map[y][x] === T.D_UPGRADE, false);
+    const rp = anyDesignation([T.D_ROAD, T.D_UPGRADE])
+      ? bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_ROAD || G.map[y][x] === T.D_UPGRADE, false)
+      : null;
     if (rp) {
       const last = rp[rp.length-1];
       const tile = G.map[last[1]][last[0]];
@@ -1263,13 +1330,13 @@ function aiIdle(d) {
   if (((res.stone >= 1) || (res.stone >= 2 && res.iron >= 1) || (res.iron >= 3 && res.wood >= 2)) && Math.random() < 0.15) {
     const best = bestUpgradeTarget(d.x, d.y, res);
     if (best) {
-      const rrp = bfs(d.x, d.y, (x,y) => x === best.x && y === best.y, false);
+      const rrp = bfs(d.x, d.y, (x,y) => x === best.x && y === best.y, false, 2500);
       if (rrp && rrp.length < 30) {
         d.target = {type:'upgrade_road',x:best.x,y:best.y}; d.path = rrp; d.state = 'walk'; return;
       }
     }
   }
-  const fp = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_FARM, false);
+  const fp = anyDesignation([T.D_FARM]) ? bfs(d.x, d.y, (x,y) => G.map[y][x] === T.D_FARM, false) : null;
   if (fp) {
     const last = fp[fp.length-1];
     if (G.map[last[1]][last[0]] === T.D_FARM) {
@@ -1277,7 +1344,8 @@ function aiIdle(d) {
     }
   }
   if (res.wood < 10) {
-    const tp = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.TAIGA || G.map[y][x] === T.FOREST, false);
+    // Trees are worth walking further for than scattered forage, so this keeps a wider cap.
+    const tp = bfs(d.x, d.y, (x,y) => G.map[y][x] === T.TAIGA || G.map[y][x] === T.FOREST, false, 8000);
     if (tp) {
       const last = tp[tp.length-1];
       const adj = adjWalkable(last[0], last[1]);
@@ -1287,7 +1355,10 @@ function aiIdle(d) {
       }
     }
   }
-  const gp = bfs(d.x, d.y, (x,y) => GATHERABLE.has(G.map[y][x]), false);
+  // The result below is thrown away past 30 steps, so 30 steps is the real limit and the cap
+  // only has to clear it. 4000 expansions reaches roughly 44 tiles on open ground, which keeps
+  // a margin over the filter on slower terrain while costing a fraction of the 30000 default.
+  const gp = bfs(d.x, d.y, (x,y) => GATHERABLE.has(G.map[y][x]), false, 4000);
   if (gp && gp.length < 30) {
     const last = gp[gp.length-1];
     const tile = G.map[last[1]][last[0]];
@@ -1700,23 +1771,35 @@ function autoConnectCities() {
 }
 
 // ---- Road connectivity graph ----
+// Minimum ticks between two rebuilds triggered by a dirty flag. At 33-100 ms per tick that is
+// a few seconds of staleness in destination ranking, against ~440-910 ms of rebuild.
+const ROAD_GRAPH_MIN_TICKS = 120;
 function rebuildRoadGraph() {
   G.roadGraph = {};
+  G.roadGraphBuiltTick = G.tick;
   const tiers = [
     { name:'path', tiles:new Set([T.PATH,T.ROAD,T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY]) },
     { name:'gravel', tiles:new Set([T.ROAD,T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY]) },
     { name:'asphalt', tiles:new Set([T.ASPHALT,T.RAILROAD,T.CITY,T.FACTORY]) },
     { name:'railroad', tiles:new Set([T.RAILROAD,T.CITY,T.FACTORY]) },
   ];
+  // One position lookup table for the whole rebuild. The per-tile `CITIES.find` this replaces
+  // was a linear scan of up to 60 cities run once per visited tile, across 4 tiers x 60
+  // starts x 30,000 steps: ~437 ms at 28 cities and ~913 ms at 60, all of it inline in
+  // whichever dwarf happened to consider travelling next.
+  const cityAt = new Map();
+  for (const c of CITIES) if (c.mx !== undefined) cityAt.set(c.mx + c.my * MAP_W, c);
   for (const tier of tiers) {
     for (const startCity of CITIES) {
       if (startCity.mx === undefined) continue;
       const visited = new Set();
       const queue = [[startCity.mx, startCity.my]];
       visited.add(`${startCity.mx},${startCity.my}`);
+      let head = 0;
       let steps = 0;
-      while (queue.length > 0 && steps < 30000) {
-        const [cx,cy] = queue.shift(); steps++;
+      while (head < queue.length && steps < 30000) {
+        // Advancing a head index rather than Array.shift, which recopies the whole queue.
+        const [cx,cy] = queue[head++]; steps++;
         for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
           const nx = wrapX(cx+dx), ny = cy+dy;
           if (ny < 0 || ny >= MAP_H) continue;
@@ -1725,7 +1808,8 @@ function rebuildRoadGraph() {
           const t = G.map[ny][nx];
           if (!tier.tiles.has(t)) continue;
           visited.add(key);
-          const destCity = CITIES.find(c => c.mx === nx && c.my === ny && c.id !== startCity.id);
+          const found = cityAt.get(nx + ny * MAP_W);
+          const destCity = found && found.id !== startCity.id ? found : null;
           if (destCity) {
             const pairKey = [startCity.id, destCity.id].sort().join('-');
             if (!G.roadGraph[pairKey]) G.roadGraph[pairKey] = {};
@@ -1787,7 +1871,14 @@ function tryFoundCity(d) {
   for (const [k,v] of Object.entries(pooled)) {
     if (newCity.res[k] !== undefined) newCity.res[k] += v;
   }
+  // Marked so getSerializableState can persist it. CITIES is rebuilt from the seeded
+  // table on every load, so a city created here has no way back without this.
+  newCity.founded = true;
   CITIES.push(newCity);
+  // A new city is a new node in the connectivity graph. checkSuburbPromotion already marks
+  // this; founding did not, so a colony stayed absent from every road pair until some
+  // unrelated road tile happened to dirty the graph.
+  G.roadGraphDirty = true;
   const cx = d.x, cy = d.y;
   for (let dy = -1; dy <= 1; dy++)
     for (let dx = -1; dx <= 1; dx++) {
@@ -2592,6 +2683,13 @@ function getSerializableState() {
   return {
     tick:G.tick, year:G.year, season:G.season, speed:G.speed,
     cityResources:cityRes,
+    // Colonies founded by tryFoundCity and suburbs promoted by checkSuburbPromotion. Without
+    // their identity here the save keeps only their resources, keyed by an id that no longer
+    // matches any city after CITIES is reseeded, and the settlement is gone.
+    colonies: CITIES.filter(c => c.founded).map(c => ({
+      id: c.id, name: c.name, emoji: c.emoji, mx: c.mx, my: c.my,
+      lon: c.lon, lat: c.lat, culture: c.culture, res: c.res,
+    })),
     dwarves:G.dwarves.map(d => ({
       id:d.id,name:d.name,x:d.x,y:d.y,cityId:d.cityId,
       hunger:d.hunger,energy:d.energy,happiness:d.happiness,
@@ -2630,6 +2728,7 @@ self.onmessage = function(e) {
       const flat = new Uint8Array(data.map);
       G.map = [];
       for (let y = 0; y < MAP_H; y++) G.map.push(flat.slice(y * MAP_W, (y+1) * MAP_W));
+      rebuildDesignationIndex();
       CITIES = data.cities;
       CULTURES = data.cultures;
       DWARF_NAMES = data.dwarfNames;
@@ -2693,6 +2792,7 @@ self.onmessage = function(e) {
       for (const ch of data.changes) {
         if (ch.tile === T.D_UPGRADE) G.upgradeFrom[`${ch.x},${ch.y}`] = G.map[ch.y][ch.x];
         G.map[ch.y][ch.x] = ch.tile; G.mapDeltas[`${ch.x},${ch.y}`] = ch.tile;
+        indexDesignation(ch.x, ch.y, ch.tile);
       }
       break;
     case 'save_request':
@@ -2749,12 +2849,20 @@ self.onmessage = function(e) {
           const [x, y] = key.split(',').map(Number);
           if (y >= 0 && y < MAP_H && x >= 0 && x < MAP_W) {
             G.map[y][x] = tile;
+            indexDesignation(x, y, tile);
             pendingMapChanges.push({x, y, tile});
           }
         }
       }
       G.suburbs = saved.suburbs || [];
       G.dirtTiles = saved.dirtTiles || [];
+      // The restored map is a different world from whatever the graph was built against, and
+      // G.tick has just jumped to the saved value - possibly backwards, which would leave the
+      // rebuild cooldown in tryTravel waiting for a tick number that already passed. Drop the
+      // graph outright so the next traveller builds one from the map actually loaded.
+      G.roadGraph = null;
+      G.roadGraphDirty = true;
+      G.roadGraphBuiltTick = undefined;
       if (G.dwarves.length === 0 && G.homeCity) spawnDwarfAtCity(G.homeCity);
       rebalanceEmptyCities();
       G.popRebalancePending = hasEmptyCities();

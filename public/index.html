@@ -546,6 +546,11 @@ const TERRAIN_PROPS = {
   [T.D_FARM]:    { speed: 1, desc: 'Designated for farming' },
   [T.D_ROAD]:    { speed: 1, desc: 'Designated for road building' },
   [T.D_UPGRADE]: { speed: 0.7, desc: 'Designated for road upgrade' },
+  // PATH had no entry at all, and terrainCost returns Infinity for anything missing from this
+  // table, so the dirt paths dwarves build were walls to the pathfinder while isWalkable
+  // happily said yes. buildRoad reads the same table with a fallback of 5, which is why new
+  // roads routed around existing paths as if they were mountains instead of merging with them.
+  [T.PATH]:      { speed: 1, desc: 'Trodden dirt path' },
   [T.ROAD]:      { speed: 0.7, desc: 'Gravel road, decent travel' },
   [T.ASPHALT]:   { speed: 0.4, desc: 'Asphalt road, fast travel' },
   [T.IRON_ORE]:  { speed: 4, desc: 'Iron ore deposit' },
@@ -663,6 +668,31 @@ const LAND = [
   // ISLANDS
   [140,8,3,3], [-155,20,3,2], [-160,60,6,3],
   [25,38,3,3], [-72,18,3,3], [-60,18,2,2],
+  // Landmasses added 2026-08-17 because nine real cities were falling in open ocean and being
+  // dropped without a word. Each is sized and placed to match the real coastline, and checked
+  // against the land-component count so none of them fuses two continents that are separate.
+  // PHILIPPINES — Luzon, an island, clear of Taiwan to the north and Borneo to the south
+  [121,15.5,2.5,3.5],
+  // JAVA — long and thin east to west. It ends up joined to the Indonesian chain, which the
+  // shipped map already welds to the Asian mainland (Sumatra, Borneo and Bangkok were one
+  // landmass before this was added), so the Java Sea is not a separation this map ever had.
+  [110,-7.5,5.5,1.8],
+  // CAPE — extends South Africa to the south west, not a separate island
+  [20,-32,5,4],
+  // FLORIDA — a peninsula off the Gulf coast ellipse. Wide enough that the coast noise, which
+  // warps the land lookup by up to 4 degrees, cannot chew it down below the 6-of-9 land tiles
+  // a city needs around it.
+  [-81,26.5,2.6,4.5],
+  // JAMAICA — island, kept clear of both Hispaniola and the Central American isthmus
+  [-77,18.1,1,0.5],
+  // ECUADOR — Pacific coast, attached to the South American mass
+  [-77.5,0,3,4],
+  // WEST AFRICA — the Senegal bulge, overlapping the Sahara ellipse to stay attached
+  [-7,13,12,6],
+  // GULF OF GUINEA — the Ghana coast
+  [-1,7,7,4],
+  // MADAGASCAR — long north to south, with the Mozambique Channel left open
+  [47.5,-19,2.5,7],
 ];
 
 // ---- Cities with real coordinates ----
@@ -1393,15 +1423,64 @@ function noise(x, y) {
   const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
   return (a + (b - a) * ux) + ((c + (d - c) * ux) - (a + (b - a) * ux)) * uy;
 }
-function prand(x, y) { let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return (n - Math.floor(n)) * 2 - 1; }
+// prand is a pure function of two integers and the only caller is noise(), which samples the
+// four corners of a lattice cell. World gen steps across a cell every 3 to 185 tiles depending
+// on the frequency, so the same corners get recomputed millions of times: generation makes
+// ~5.3M noise calls, or ~21M Math.sin evaluations. Caching by lattice coordinate returns the
+// identical value and removes almost all of them.
+const PRAND_CACHE = new Map();
+const PRAND_MIN = -4096, PRAND_SPAN = 16384;
+function prandRaw(x, y) { let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return (n - Math.floor(n)) * 2 - 1; }
+function prand(x, y) {
+  // Anything outside the packing range skips the cache rather than risking a key collision.
+  if (x < PRAND_MIN || y < PRAND_MIN || x >= PRAND_MIN + PRAND_SPAN || y >= PRAND_MIN + PRAND_SPAN) {
+    return prandRaw(x, y);
+  }
+  const key = (x - PRAND_MIN) * PRAND_SPAN + (y - PRAND_MIN);
+  const hit = PRAND_CACHE.get(key);
+  if (hit !== undefined) return hit;
+  const v = prandRaw(x, y);
+  PRAND_CACHE.set(key, v);
+  return v;
+}
 
 // ---- Land check ----
+// isLandAt used to scan all 91 continent ellipses on every call, and generateMap calls it five
+// times per land tile (one land test plus four coast probes). Across 2,000,000 tiles that is
+// hundreds of millions of ellipse tests, and it runs synchronously in init() before the first
+// paint, so the tab sits dead for ~15s while the loader animation freezes.
+//
+// Bucketing the ellipses by longitude once turns each call into a scan of the handful that
+// could possibly contain the point. The result is identical, not approximate: an ellipse is
+// filed under every bucket its longitude span touches, and the test itself is unchanged.
+const LAND_BUCKET_DEG = 5;
+const LAND_BUCKET_COUNT = Math.ceil(360 / LAND_BUCKET_DEG);
+function buildLandBuckets(ellipses) {
+  const buckets = [];
+  for (let i = 0; i < LAND_BUCKET_COUNT; i++) buckets.push([]);
+  for (const ellipse of ellipses) {
+    const cx = ellipse[0], rx = ellipse[2];
+    // Moving rx degrees from the centre crosses at most ceil(rx / LAND_BUCKET_DEG) bucket
+    // boundaries in either direction, so that span covers the ellipse whatever its alignment.
+    const span = Math.ceil(rx / LAND_BUCKET_DEG);
+    const centre = Math.floor((((cx + 180) % 360) + 360) % 360 / LAND_BUCKET_DEG);
+    for (let i = -span; i <= span; i++) {
+      buckets[(((centre + i) % LAND_BUCKET_COUNT) + LAND_BUCKET_COUNT) % LAND_BUCKET_COUNT].push(ellipse);
+    }
+  }
+  return buckets;
+}
+const LAND_BUCKETS = buildLandBuckets(LAND);
 function isLandAt(lon, lat) {
-  for (const [cx, cy, rx, ry] of LAND) {
+  const norm = (((lon + 180) % 360) + 360) % 360;
+  const bucket = LAND_BUCKETS[Math.floor(norm / LAND_BUCKET_DEG) % LAND_BUCKET_COUNT];
+  for (const [cx, cy, rx, ry] of bucket) {
+    const dy = lat - cy;
+    // |dy| > ry already forces the sum below past 1, so rejecting here skips two divisions.
+    if (dy > ry || dy < -ry) continue;
     let dx = lon - cx;
     if (dx > 180) dx -= 360;
     if (dx < -180) dx += 360;
-    const dy = lat - cy;
     if ((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1) return true;
   }
   return false;
@@ -1414,20 +1493,31 @@ function getBiome(lon, lat) {
   const n2 = noise(lon * 0.08 + 100, lat * 0.08 + 100);
   const alt = noise(lon * 0.03 + 50, lat * 0.03 + 50);
 
-  // Global altitude features
-  if (alt > 0.55) return T.MOUNTAIN;
-  if (alt > 0.35) return T.HILL;
-
-  // REGIONAL OVERRIDES — realistic terrain for specific areas
+  // REGIONAL OVERRIDES — realistic terrain for specific areas.
+  // These used to sit below the global altitude test, which returned MOUNTAIN or HILL before
+  // any of them could run. That is why the Great Plains came out 36% hill despite having an
+  // override that returns nothing but plains and forest, and why Australia came out half
+  // mountain. The altitude test now runs after this block, so a named region decides its own
+  // terrain and unnamed land still gets its highlands from the noise.
 
   // North America: Rocky Mountains (extra mountain/hill bias)
-  if (lon > -120 && lon < -105 && lat > 32 && lat < 52) {
-    if (alt > 0.1) return T.MOUNTAIN;
-    if (alt > -0.1) return T.HILL;
+  // The southwest is claimed first, so the Rockies box covers only the northern range. It used
+  // to start at lat 32 and swallow Las Vegas and Albuquerque, which are desert, not alpine.
+  //
+  // Thresholds also sit near the old global ones (MOUNTAIN 0.55, HILL 0.35) rather than far
+  // below them: this block now runs before the global test rather than after it, so the old
+  // 0.1 cutoff claimed the whole upper half of the altitude range and built a wall.
+  if (lon > -120 && lon < -105 && lat >= 40 && lat < 52) {
+    if (alt > 0.4) return T.MOUNTAIN;
+    if (alt > 0.0) return T.HILL;
     return T.FOREST;
   }
-  // North America: SW Desert (Arizona, Nevada, New Mexico)
-  if (lon > -118 && lon < -100 && lat > 25 && lat < 38) {
+  // North America: SW Desert (southern California, Arizona, Nevada, New Mexico). Widened west
+  // and north: Los Angeles sits at exactly lon -118 and the old `lon > -118` excluded it by
+  // zero, dropping it through every region into the generic rule and, from there, into
+  // whatever the altitude noise decided. Las Vegas and Albuquerque were likewise inside the
+  // old Rockies box and came out surrounded by impassable mountain.
+  if (lon > -119 && lon < -103 && lat > 25 && lat < 40) {
     if (n1 > 0.3) return T.HILL;
     return T.DESERT;
   }
@@ -1437,7 +1527,10 @@ function getBiome(lon, lat) {
     return T.PLAINS;
   }
   // North America: Southeast (forests, some jungle in Florida)
-  if (lon > -90 && lon < -75 && lat > 25 && lat < 38) {
+  // Widened west by a degree for the same reason: New Orleans sits at exactly lon -90, which
+  // the old bound excluded while Great Plains' `lon < -90` excluded it too, so it belonged to
+  // no region at all.
+  if (lon > -91 && lon < -75 && lat > 25 && lat < 38) {
     if (lat < 28 && n1 > -0.2) return T.JUNGLE;
     return n2 > -0.2 ? T.FOREST : T.PLAINS;
   }
@@ -1448,12 +1541,16 @@ function getBiome(lon, lat) {
   }
   // North America: Pacific NW (dense forests)
   if (lon > -128 && lon < -118 && lat > 40 && lat < 52) {
-    if (alt > 0.2) return T.MOUNTAIN;
+    if (alt > 0.45) return T.MOUNTAIN;
+    if (n2 > 0.2) return T.PLAINS;
     return T.FOREST;
   }
-  // Sahara Desert
+  // Sahara Desert. The Ahaggar and Tibesti highlands used to come from the global altitude
+  // test, which no longer runs before this block. Reaching for `alt` rather than `n1` restores
+  // them: `alt` is the lower-frequency field, so it makes highland blobs big enough to survive
+  // the three biome-scatter passes. An n1 threshold left the desert 95% flat sand.
   if (lon > -15 && lon < 35 && lat > 18 && lat < 32) {
-    if (n1 > 0.4) return T.HILL;
+    if (alt > 0.35) return T.HILL;
     return T.DESERT;
   }
   // Arabian Peninsula
@@ -1461,9 +1558,44 @@ function getBiome(lon, lat) {
     if (alt > 0.2) return T.HILL;
     return T.DESERT;
   }
+  // Himalayas and the Tibetan plateau. Previously neither existed: the range came out 64%
+  // forest because nothing claimed it and the generic rule only looks at latitude.
+  if (lon > 72 && lon < 103 && lat > 30 && lat < 40) {
+    // The Tarim Basin sits inside this rectangle and is a low desert, not a range.
+    if (lat > 36 && lon > 76 && lon < 92) return n1 > 0.3 ? T.HILL : T.DESERT;
+    if (lat > 32 && alt > -0.05) return T.MOUNTAIN;
+    if (alt > 0.2) return T.MOUNTAIN;
+    // A range with no low ground leaves any city inside it unable to farm, since `farmable`
+    // covers neither HILL nor MOUNTAIN. The valleys are what make it liveable.
+    if (alt > -0.5) return T.HILL;
+    return T.PLAINS;
+  }
+  // Australia: the flattest continent. An arid interior, the Great Dividing Range hugging the
+  // east coast rather than filling the middle, and a wetter eastern seaboard behind it.
+  if (lon > 112 && lon < 154 && lat > -40 && lat < -10) {
+    if (lon > 146) return alt > 0.15 ? T.MOUNTAIN : (n1 > 0 ? T.FOREST : T.PLAINS);
+    if (lon > 141 && lat > -20) return n1 > 0 ? T.FOREST : T.PLAINS;
+    if (n1 > 0.45) return T.HILL;
+    if (n2 > 0.4) return T.PLAINS;
+    return T.DESERT;
+  }
   // Siberia (taiga belt)
   if (lon > 60 && lon < 180 && lat > 55 && lat < 70) {
     return n1 > -0.3 ? T.TAIGA : T.TUNDRA;
+  }
+  // Andes: a narrow spine down the Pacific edge, claimed before the Amazon so the basin keeps
+  // everything east of it. Without this the whole range came out forest and desert.
+  if (lon > -76 && lon < -67 && lat > -45 && lat < 8) {
+    if (alt > 0.15) return T.MOUNTAIN;
+    if (alt > -0.45) return T.HILL;
+    // Altiplano and valley floors. Without a farmable outcome any city in the box starves.
+    return T.PLAINS;
+  }
+  // Central Brazil: cerrado savanna. The generic 20-35 degree band rule reads latitude only,
+  // so it was turning a fifth of this into desert.
+  if (lon > -60 && lon < -35 && lat > -25 && lat < -5) {
+    if (n1 > 0.25) return T.FOREST;
+    return T.PLAINS;
   }
   // Amazon rainforest
   if (lon > -75 && lon < -45 && lat > -15 && lat < 5) {
@@ -1472,8 +1604,16 @@ function getBiome(lon, lat) {
   }
   // Central African rainforest
   if (lon > 10 && lon < 35 && lat > -5 && lat < 8) {
-    return n1 > -0.2 ? T.JUNGLE : T.FOREST;
+    // Savanna clearings. Solid rainforest left every city here with no farmable tile in
+    // reach, since `farmable` covers neither JUNGLE nor FOREST.
+    if (n1 > 0.1) return T.JUNGLE;
+    if (n2 > 0.1) return T.FOREST;
+    return T.PLAINS;
   }
+
+  // Global altitude features, for land no named region claimed.
+  if (alt > 0.55) return T.MOUNTAIN;
+  if (alt > 0.35) return T.HILL;
 
   // GENERIC latitude-based biome
   if (absLat > 72) return T.TUNDRA;
@@ -1484,7 +1624,8 @@ function getBiome(lon, lat) {
     return n2 > 0.2 ? T.FOREST : T.PLAINS;
   }
   // Tropical
-  if (n1 > -0.1) return T.JUNGLE;
+  if (n1 > 0.15) return T.JUNGLE;
+  if (n2 > 0.25) return T.FOREST;
   return T.PLAINS;
 }
 
@@ -1498,11 +1639,15 @@ function generateMap() {
       const cn = noise(lon * 0.06, lat * 0.06) * 4;
       const land = isLandAt(lon + cn, lat + cn * 0.4);
       if (!land) { row[x] = T.OCEAN; continue; }
-      // Beach near ocean
-      const nearOcean = !isLandAt(lon + cn + 2, lat + cn * 0.4) ||
-                        !isLandAt(lon + cn - 2, lat + cn * 0.4) ||
-                        !isLandAt(lon + cn, lat + cn * 0.4 + 2) ||
-                        !isLandAt(lon + cn, lat + cn * 0.4 - 2);
+      // Beach near ocean. The probe reach is what sets how deep the sand goes: at 0.18 degrees
+      // per tile, the old +-2 degrees asked "is there ocean within 11 tiles", which produced a
+      // belt averaging 6 tiles deep and reaching 17, not a shoreline. +-0.4 degrees is a
+      // little over 2 tiles, so the sand tracks the coast.
+      const BEACH_PROBE = 0.4;
+      const nearOcean = !isLandAt(lon + cn + BEACH_PROBE, lat + cn * 0.4) ||
+                        !isLandAt(lon + cn - BEACH_PROBE, lat + cn * 0.4) ||
+                        !isLandAt(lon + cn, lat + cn * 0.4 + BEACH_PROBE) ||
+                        !isLandAt(lon + cn, lat + cn * 0.4 - BEACH_PROBE);
       if (nearOcean && Math.abs(lat) < 60 && noise(x * 0.2, y * 0.2) > -0.2) {
         row[x] = T.BEACH; continue;
       }
@@ -1558,6 +1703,28 @@ function generateMap() {
   for (let y = 0; y < MAP_H; y++) {
     for (let x = 0; x < MAP_W; x++) {
       const t = G.map[y][x];
+
+      // Ocean is 69% of the planet and only the tiles bordering land can grow anything, so it
+      // is handled first and skips the rest. This used to fall through every land branch below
+      // and, worse, pay for both noise samples on all 1.38M ocean tiles. noise() is pure, so
+      // not calling it changes neither the terrain nor the Math.random sequence.
+      if (t === T.OCEAN) {
+        let nearLand = false;
+        for (let dy = -2; dy <= 2 && !nearLand; dy++) {
+          for (let dx = -2; dx <= 2 && !nearLand; dx++) {
+            const nx = wrapX(x + dx), ny = y + dy;
+            if (ny >= 0 && ny < MAP_H && G.map[ny][nx] !== T.OCEAN) nearLand = true;
+          }
+        }
+        if (nearLand) {
+          const rn = noise(x * 0.12 + 200, y * 0.12 + 200);
+          const rn2 = noise(x * 0.07 + 500, y * 0.07 + 500);
+          if (rn > 0 && Math.random() < 0.08) G.map[y][x] = T.FISH_SPOT;
+          else if (rn2 > 0.2 && Math.random() < 0.03 && Math.abs(y - MAP_H / 2) < MAP_H * 0.3) G.map[y][x] = T.CORAL;
+        }
+        continue;
+      }
+
       const rn = noise(x * 0.12 + 200, y * 0.12 + 200);
       const rn2 = noise(x * 0.07 + 500, y * 0.07 + 500);
 
@@ -1591,20 +1758,6 @@ function generateMap() {
         if (rn > 0 && Math.random() < 0.05) G.map[y][x] = T.CRAB;
         else if (rn > 0.1 && Math.random() < 0.04) G.map[y][x] = T.CLAY;
         else if (rn2 > 0 && Math.random() < 0.03) G.map[y][x] = T.FISH_SPOT;
-      }
-      // Ocean near land: fish spots, coral
-      if (t === T.OCEAN) {
-        let nearLand = false;
-        for (let dy = -2; dy <= 2 && !nearLand; dy++) {
-          for (let dx = -2; dx <= 2 && !nearLand; dx++) {
-            const nx = wrapX(x + dx), ny = y + dy;
-            if (ny >= 0 && ny < MAP_H && G.map[ny][nx] !== T.OCEAN) nearLand = true;
-          }
-        }
-        if (nearLand) {
-          if (rn > 0 && Math.random() < 0.08) G.map[y][x] = T.FISH_SPOT;
-          else if (rn2 > 0.2 && Math.random() < 0.03 && Math.abs(y - MAP_H / 2) < MAP_H * 0.3) G.map[y][x] = T.CORAL;
-        }
       }
       // Tundra: rare iron
       if (t === T.TUNDRA && rn > 0.4 && Math.random() < 0.02) G.map[y][x] = T.IRON_ORE;
@@ -1646,7 +1799,13 @@ function generateMap() {
         }
       }
     }
-    if (!placed) continue;
+    if (!placed) {
+      // This used to be a bare `continue`, and it swallowed nine of the advertised 125 cities
+      // for as long as anyone can tell. A city that cannot be placed means the LAND ellipses
+      // do not cover its real coordinates, which is a map bug worth hearing about.
+      console.warn(`[worldgen] no land for ${city.id} at lon ${city.lon} lat ${city.lat} within ${10} tiles — city dropped`);
+      continue;
+    }
 
     // Coastal nudge: if ocean is within 8 tiles, move city to land edge (adjacent to ocean)
     {
@@ -5745,6 +5904,13 @@ function getSerializableState() {
   return {
     tick: G.tick, year: G.year, season: G.season, speed: G.speed,
     cityResources: cityRes,
+    // Cities that did not come from the hard-coded table: colonies founded by tryFoundCity and
+    // suburbs promoted by checkSuburbPromotion. CITIES is rebuilt from the table on every load,
+    // so without their identity here they cannot come back. Mirrors how suburbs are saved.
+    colonies: CITIES.filter(c => c.founded).map(c => ({
+      id: c.id, name: c.name, emoji: c.emoji, mx: c.mx, my: c.my,
+      lon: c.lon, lat: c.lat, culture: c.culture, res: c.res,
+    })),
     dwarves: G.dwarves.map(d => ({
       id: d.id, name: d.name, x: d.x, y: d.y, cityId: d.cityId,
       hunger: d.hunger, energy: d.energy, happiness: d.happiness,
@@ -6331,6 +6497,26 @@ async function restoreState() {
   G.stats = { ...G.stats, ...saved.stats };
 
   // Restore per-city resources
+  // Rebuilt before the resource loop below, which looks each city up by id and silently drops
+  // anything it cannot find, and before initWorker seeds the worker from CITIES.
+  if (Array.isArray(saved.colonies)) {
+    for (const c of saved.colonies) {
+      if (!c || !c.id || c.mx === undefined || c.my === undefined) continue;
+      if (cityById(c.id)) continue;
+      CITIES.push({
+        id: c.id,
+        name: c.name || c.id,
+        emoji: c.emoji || '\u{1F3D5}\uFE0F',
+        lon: c.lon !== undefined ? c.lon : (c.mx / MAP_W) * 360 - 180,
+        lat: c.lat !== undefined ? c.lat : 90 - (c.my / MAP_H) * 180,
+        mx: c.mx,
+        my: c.my,
+        culture: c.culture || 'american',
+        res: c.res || {},
+        founded: true,
+      });
+    }
+  }
   if (saved.cityResources) {
     for (const [cityId, res] of Object.entries(saved.cityResources)) {
       const city = cityById(cityId);
@@ -6555,13 +6741,36 @@ function initWorker() {
           for (const g of data.newGraves) G.graves[`${g.x},${g.y}`] = {name:g.name, emoji:g.emoji};
         }
         // Update city resources
+        // Applied before the cities loop on purpose. A promoted suburb keeps its own id
+        // (checkSuburbPromotion reuses sub.id), and cityById falls back to G.suburbs, so
+        // with the stale list still in place the lookup below would match the suburb that
+        // has just been promoted away and skip adopting it as a city.
+        if (data.suburbs) G.suburbs = data.suburbs;
         if (data.cities) {
           for (const cd of data.cities) {
             const city = cityById(cd.id);
-            if (city) city.res = cd.res;
+            if (city) { city.res = cd.res; continue; }
+            // A colony founded inside the worker only exists there until this runs. Without the
+            // branch below the page never learns about it: the city is missing from CITIES, so
+            // getCityResourcesSnapshot skips it, the save drops its resources, and initWorker
+            // re-seeds the worker from the original hard-coded list on the next load. Its
+            // colonists keep cityId 'colony_xxxx', cityOf falls through to CITIES[0], and they
+            // start eating from a city on the far side of the planet.
+            if (cd.mx === undefined || cd.my === undefined) continue;
+            CITIES.push({
+              id: cd.id,
+              name: cd.name || cd.id,
+              emoji: cd.emoji || '\u{1F3D5}\uFE0F',
+              lon: (cd.mx / MAP_W) * 360 - 180,
+              lat: 90 - (cd.my / MAP_H) * 180,
+              mx: cd.mx,
+              my: cd.my,
+              culture: cd.culture || 'american',
+              res: cd.res,
+              founded: true,
+            });
           }
         }
-        if (data.suburbs) G.suburbs = data.suburbs;
         if (data.roadGraph) G.roadGraph = data.roadGraph;
         // Display buffered logs
         for (const l of data.logs) log(l.msg, l.type, l.rarity, l.season, l.cityEmoji, l.lx, l.ly);
